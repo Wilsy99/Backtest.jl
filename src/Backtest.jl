@@ -1,5 +1,9 @@
 module Backtest
 
-# Write your package code here.
+using YFinance
+
+include("data.jl")
+
+export get_data
 
 end
