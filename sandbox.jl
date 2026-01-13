@@ -3,6 +3,6 @@ Pkg.activate(".")
 
 using Backtest
 
-data = get_data("SPY", "1900-01-01", "2025-01-11")
+daily_data = get_data("SPY")
 
-weekly_data = transform_to_weekly(data)
+weekly_data = get_data("SPY", timeframe="W")

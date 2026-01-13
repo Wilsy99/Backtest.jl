@@ -1,33 +1,51 @@
+abstract type Timeframe end
+struct Daily <: Timeframe end
+struct Weekly <: Timeframe end
+
+const TIMEFRAMES = (
+    D = Daily(),
+    W = Weekly()
+)
+
 """
     get_data(ticker::String, start_date::String, end_date::String)
 
 Fetches historical stock data and adjusts OHLC values based on the adjustment factor.
 Example: `get_data("AAPL", "2023-01-01", "2023-12-31")`
 """
-function get_data(ticker::String, start_date::String, end_date::String)
-    df = @chain get_prices(ticker, startdt=start_date, enddt=end_date) begin
+function get_data(ticker::String; start_date::Union{Date, DateTime, AbstractString}="1900-01-01", end_date::Union{Date, DateTime, AbstractString}=today(), timeframe::String="D")::DataFrame
+    get_data(ticker, start_date, end_date, TIMEFRAMES[Symbol(timeframe)])
+end
+
+function get_data(ticker::String, start_date::Union{Date, DateTime, AbstractString}, end_date::Union{Date, DateTime, AbstractString}, timeframe::Daily)::DataFrame
+    @chain get_prices(ticker, startdt=start_date, enddt=end_date) begin
         DataFrame()
-        @transform @astable begin
+        @rename!(:volume = :vol)
+        @transform! @astable begin
             adj_factor = :adjclose ./ :close
-            :open = :open .* adj_factor
-            :high = :high .* adj_factor
-            :low = :low .* adj_factor
-            :close = :adjclose
+            :open .= :open .* adj_factor
+            :high .= :high .* adj_factor
+            :low .= :low .* adj_factor
+            :close .= :adjclose
         end
-        @select(Not(:adjclose))
+        @select!(Not(:adjclose))
         @orderby(:timestamp) 
     end
-    return df
+end
+
+function get_data(ticker::String, start_date::Union{Date, DateTime, AbstractString}, end_date::Union{Date, DateTime, AbstractString}, timeframe::Weekly)::DataFrame
+    get_data(ticker, start_date, end_date, Daily()) |>
+        transform_to_weekly
 end
 
 """
     transform_to_weekly(daily_df::DataFrame)
 
-Aggregates daily OHLC data into weekly bars starting on Monday.
+Aggregates daily OHLC data into weekly bars starting on first trading day of the week.
 """
-function transform_to_weekly(daily_df::DataFrame)
-    weekly_df = @chain daily_df begin
-        @transform(:week_group = firstdayofweek.(:timestamp))
+function transform_to_weekly(daily_df::DataFrame)::DataFrame
+    @chain daily_df begin
+        @transform!(:week_group = firstdayofweek.(:timestamp))
         @groupby(:week_group)
         @combine(
             :timestamp = minimum(:timestamp),
@@ -35,9 +53,8 @@ function transform_to_weekly(daily_df::DataFrame)
             :high = maximum(:high),
             :low = minimum(:low),
             :close = last(:close),
-            :vol = sum(:vol)
+            :volume = sum(:volume),
         )
-        @select(Not(:week_group)) # Optional: remove the helper column
+        @select!(Not(:week_group))
     end
-    return weekly_df
 end
