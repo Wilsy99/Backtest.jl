@@ -1,0 +1,23 @@
+name: Format Check
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1'
+      - name: Format check
+        run: |
+          julia -e 'using Pkg; Pkg.add("JuliaFormatter")'
+          julia -e 'using JuliaFormatter; exit(format(".", verbose=true) ? 0 : 1)'
+```
+
+**5. Add to `.gitignore`**
+```
+.vscode/
