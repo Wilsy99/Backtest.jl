@@ -12,5 +12,7 @@ include("indicator.jl")
 
 export get_data
 export transform_to_weekly
+export EMA
+export calculate_ema!
 
 end
