@@ -8,11 +8,11 @@ using Dates
 using Base.Threads
 
 include("data.jl")
-include("indicator.jl")
+include("indicator/indicator.jl")
 
 export get_data
 export transform_to_weekly
 export EMA
-export calculate_ema!
+export calculate_indicators!
 
 end
