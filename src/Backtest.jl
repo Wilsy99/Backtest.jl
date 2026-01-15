@@ -13,6 +13,7 @@ include("indicator/indicator.jl")
 
 export get_data
 export transform_to_weekly
+export Indicator
 export EMA
 export calculate_indicators!
 
