@@ -1,7 +1,3 @@
-struct EMA <: Indicator
-    period::Int
-end
-
 function _calculate_ema!(df::DataFrame, indicators::EMA...)
     closes = df.close isa Vector{Float64} ? df.close : Float64.(df.close)
     n_rows = length(closes)
