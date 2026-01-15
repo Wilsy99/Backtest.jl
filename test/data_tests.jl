@@ -153,14 +153,81 @@ const TEST_END = "2020-01-31"
     end
 end
 
-@testset "transform_to_weekly" begin
-    daily_df = get_data(
-        TEST_TICKER; start_date=TEST_START, end_date=TEST_END, timeframe=Daily()
-    )
-    weekly_df = transform_to_weekly(daily_df)
+@testset "transform_to_weekly Tests" begin
+    @testset "Schema & Structure" begin
+        daily_df = get_data(
+            TEST_TICKER; start_date=TEST_START, end_date=TEST_END, timeframe=Daily()
+        )
+        weekly_df = transform_to_weekly(daily_df)
 
-    @test nrow(weekly_df) < nrow(daily_df)
-    @test Set(names(weekly_df)) ==
-        Set(["timestamp", "open", "high", "low", "close", "volume"])
-    @test issorted(weekly_df.timestamp)
+        @test nrow(weekly_df) < nrow(daily_df)
+        @test Set(names(weekly_df)) ==
+            Set(["timestamp", "open", "high", "low", "close", "volume"])
+        @test issorted(weekly_df.timestamp)
+    end
+
+    @testset "Empty DataFrame" begin
+        empty_df = DataFrame(;
+            timestamp=Date[],
+            open=Float64[],
+            high=Float64[],
+            low=Float64[],
+            close=Float64[],
+            volume=Int[],
+        )
+        result = transform_to_weekly(empty_df)
+        @test nrow(result) == 0
+        @test Set(names(result)) ==
+            Set(["timestamp", "open", "high", "low", "close", "volume"])
+    end
+
+    @testset "Single day" begin
+        single_df = DataFrame(;
+            timestamp=[Date(2020, 1, 6)],  # Monday
+            open=[100.0],
+            high=[105.0],
+            low=[95.0],
+            close=[102.0],
+            volume=[1000],
+        )
+        result = transform_to_weekly(single_df)
+        @test nrow(result) == 1
+        @test result.open[1] == 100.0
+        @test result.high[1] == 105.0
+        @test result.low[1] == 95.0
+        @test result.close[1] == 102.0
+        @test result.volume[1] == 1000
+    end
+
+    @testset "Two days same week" begin
+        two_day_df = DataFrame(;
+            timestamp=[Date(2020, 1, 6), Date(2020, 1, 7)],  # Mon, Tue
+            open=[100.0, 102.0],
+            high=[105.0, 108.0],
+            low=[95.0, 99.0],
+            close=[102.0, 106.0],
+            volume=[1000, 1500],
+        )
+        result = transform_to_weekly(two_day_df)
+        @test nrow(result) == 1
+        @test result.open[1] == 100.0      # First open
+        @test result.high[1] == 108.0      # Max high
+        @test result.low[1] == 95.0        # Min low
+        @test result.close[1] == 106.0     # Last close
+        @test result.volume[1] == 2500     # Sum volume
+    end
+
+    @testset "Two separate weeks" begin
+        two_week_df = DataFrame(;
+            timestamp=[Date(2020, 1, 6), Date(2020, 1, 13)],  # Mon week 1, Mon week 2
+            open=[100.0, 110.0],
+            high=[105.0, 115.0],
+            low=[95.0, 105.0],
+            close=[102.0, 112.0],
+            volume=[1000, 2000],
+        )
+        result = transform_to_weekly(two_week_df)
+        @test nrow(result) == 2
+        @test issorted(result.timestamp)
+    end
 end
