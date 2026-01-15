@@ -2,12 +2,6 @@ abstract type Timeframe end
 struct Daily <: Timeframe end
 struct Weekly <: Timeframe end
 
-"""
-    get_data(ticker::String, start_date::String, end_date::String)
-
-Fetches historical stock data and adjusts OHLC values based on the adjustment factor.
-Example: `get_data("AAPL", "2023-01-01", "2023-12-31")`
-"""
 function get_data(
     ticker::String;
     start_date::Union{Date,DateTime,AbstractString}="1900-01-01",
@@ -30,12 +24,11 @@ function _get_data(ticker, start_date, end_date, ::Weekly)::DataFrame
     return transform_to_weekly(_get_data(ticker, start_date, end_date, Daily()))
 end
 
-"""
-    transform_to_weekly(daily_df::DataFrame)
-
-Aggregates daily OHLC data into weekly bars starting on first trading day of the week.
-"""
 function transform_to_weekly(daily_df::DataFrame)::DataFrame
+    if isempty(daily_df)
+        return daily_df
+    end
+
     @chain daily_df begin
         @transform(:week_group = firstdayofweek.(:timestamp))
         @groupby(:week_group)
