@@ -34,7 +34,7 @@ function _get_data(ticker, start_date, end_date, ::Daily)::DataFrame
 end
 
 function _get_data(ticker, start_date, end_date, ::Weekly)::DataFrame
-    return transform_to_weekly!(_get_data(ticker, start_date, end_date, Daily()))
+    return transform_to_weekly(_get_data(ticker, start_date, end_date, Daily()))
 end
 
 """
@@ -42,9 +42,9 @@ end
 
 Aggregates daily OHLC data into weekly bars starting on first trading day of the week.
 """
-function transform_to_weekly!(daily_df::DataFrame)::DataFrame
+function transform_to_weekly(daily_df::DataFrame)::DataFrame
     @chain daily_df begin
-        @transform!(:week_group = firstdayofweek.(:timestamp))
+        @transform(:week_group = firstdayofweek.(:timestamp))
         @groupby(:week_group)
         @combine(
             :timestamp = minimum(:timestamp),
