@@ -6,6 +6,7 @@ using Chain
 using Dates
 using Base.Threads
 
+include("utility.jl")
 include("data.jl")
 include("indicator/indicator.jl")
 include("indicator/ema.jl")
