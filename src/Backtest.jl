@@ -8,6 +8,7 @@ using Dates
 using Base.Threads
 
 include("data.jl")
+include("indicator/ema.jl")
 include("indicator/indicator.jl")
 
 export get_data
