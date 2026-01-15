@@ -1,4 +1,4 @@
 using Backtest, Test
 
-include("data.jl")
-include("indicator/ema.jl")
+include("data_tests.jl")
+include("indicator/ema_tests.jl")
