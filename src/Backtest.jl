@@ -9,6 +9,7 @@ using Base.Threads
 
 include("data.jl")
 include("indicator/indicator.jl")
+include("indicator/ema.jl")
 
 export get_data
 export transform_to_weekly!

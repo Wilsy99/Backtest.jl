@@ -16,8 +16,3 @@ jobs:
         run: |
           julia -e 'using Pkg; Pkg.add("JuliaFormatter")'
           julia -e 'using JuliaFormatter; exit(format(".", verbose=true) ? 0 : 1)'
-```
-
-**5. Add to `.gitignore`**
-```
-.vscode/
