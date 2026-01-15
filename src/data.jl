@@ -18,17 +18,10 @@ function get_data(
 end
 
 function _get_data(ticker, start_date, end_date, ::Daily)::DataFrame
-    @chain get_prices(ticker, startdt=start_date, enddt=end_date) begin
+    @chain get_prices(ticker, startdt=start_date, enddt=end_date, autoadjust=true) begin
         DataFrame()
-        @rename!(:volume = :vol)
-        @transform! @astable begin
-            adj_factor = :adjclose ./ :close
-            :open .= :open .* adj_factor
-            :high .= :high .* adj_factor
-            :low .= :low .* adj_factor
-            :close .= :adjclose
-        end
-        @select!(Not(:adjclose))
+        @select!(Not(:close))
+        @rename!(:close = :adjclose, :volume = :vol)
         @orderby(:timestamp)
     end
 end

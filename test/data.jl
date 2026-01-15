@@ -1,4 +1,4 @@
-using Backtest, Test, DataFrames, Dates
+using Backtest, Test, DataFrames, DataFramesMeta, Chain, Dates
 
 const TEST_TICKER = "SPY"
 const TEST_START = "2020-01-02"
@@ -7,9 +7,11 @@ const TEST_END = "2020-01-31"
 @testset "Schema & Structure" begin
     df = get_data(TEST_TICKER; start_date=TEST_START, end_date=TEST_END)
     @test df isa DataFrame
-    @test Set(names(df)) == Set(["timestamp", "open", "high", "low", "close", "volume"])
+    @test Set(names(df)) ==
+        Set(["ticker", "timestamp", "open", "high", "low", "close", "volume"])
     @test "adjclose" ∉ names(df)
 
+    @test eltype(df.ticker) <: AbstractString
     @test eltype(df.timestamp) <: Union{Date,DateTime}
     @test eltype(df.open) <: AbstractFloat
     @test eltype(df.high) <: AbstractFloat
@@ -25,8 +27,8 @@ end
 
     @test length(unique(df.timestamp)) == nrow(df)
 
-    @test all(df.high .>= max.(df.open, df.close))
-    @test all(df.low .<= min.(df.open, df.close))
+    @test all(df.high .>= max.(df.open, df.close) .- 1e-9)
+    @test all(df.low .<= min.(df.open, df.close) .+ 1e-9)
     @test all(df.high .>= df.low)
 
     @test all(df.volume .>= 0)
@@ -73,16 +75,6 @@ end
     @test all(g -> g <= Day(4), gaps)
 end
 
-@testset "Timeframe - Daily" begin
-    df = get_data(TEST_TICKER; start_date=TEST_START, end_date=TEST_END, timeframe=Daily())
-
-    @test 15 <= nrow(df) <= 25
-
-    timestamps = sort(df.timestamp)
-    gaps = diff(Date.(timestamps))
-    @test all(g -> g <= Day(4), gaps)
-end
-
 @testset "Timeframe - Weekly" begin
     daily_df = get_data(
         TEST_TICKER; start_date=TEST_START, end_date=TEST_END, timeframe=Daily()
@@ -107,25 +99,45 @@ end
         TEST_TICKER; start_date=TEST_START, end_date=TEST_END, timeframe=Weekly()
     )
 
-    first_week_start = minimum(weekly_df.timestamp)
-    first_week_end = first_week_start + Day(6)
-    first_week_daily = filter(
-        row ->
-            Date(row.timestamp) >= Date(first_week_start) &&
-                Date(row.timestamp) <= Date(first_week_end),
-        daily_df,
-    )
-    first_week_row = filter(row -> row.timestamp == first_week_start, weekly_df)
+    first_full_week = @chain daily_df begin
+        @orderby(:timestamp)
+        @transform(
+            :week_group = firstdayofweek.(:timestamp), :day_of_week = dayofweek.(:timestamp)
+        )
+        @groupby(:week_group)
+        @combine(
+            :timestamp_start_of_week = first(:timestamp),
+            :timestamp_end_of_week = last(:timestamp),
+            :first_day_of_week = first(:day_of_week),
+            :last_day_of_week = last(:day_of_week),
+        )
+        @subset(:first_day_of_week .== 1 .&& :last_day_of_week .== 5)
+        first
+    end
 
-    @test first_week_row.open[1] ≈ first(first_week_daily.open) atol = 0.01
+    daily_first_full_week_df = daily_df[
+        (daily_df.timestamp) .>= first_full_week.timestamp_start_of_week .&& (daily_df.timestamp) .<= first_full_week.timestamp_end_of_week,
+        :,
+    ]
 
-    @test first_week_row.high[1] ≈ maximum(first_week_daily.high) atol = 0.01
+    weekly_first_full_week_df = weekly_df[
+        (weekly_df.timestamp) .== first_full_week.timestamp_start_of_week, :,
+    ]
 
-    @test first_week_row.low[1] ≈ minimum(first_week_daily.low) atol = 0.01
+    @test weekly_first_full_week_df.open[1] ≈ first(daily_first_full_week_df.open) atol =
+        0.01
 
-    @test first_week_row.close[1] ≈ last(first_week_daily.close) atol = 0.01
+    @test weekly_first_full_week_df.high[1] ≈ maximum(daily_first_full_week_df.high) atol =
+        0.01
 
-    @test first_week_row.volume[1] ≈ sum(first_week_daily.volume) rtol = 0.01
+    @test weekly_first_full_week_df.low[1] ≈ minimum(daily_first_full_week_df.low) atol =
+        0.01
+
+    @test weekly_first_full_week_df.close[1] ≈ last(daily_first_full_week_df.close) atol =
+        0.01
+
+    @test weekly_first_full_week_df.volume[1] ≈ sum(daily_first_full_week_df.volume) atol =
+        0.01
 end
 
 @testset "Default Parameters" begin

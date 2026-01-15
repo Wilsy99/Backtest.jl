@@ -1,6 +1,3 @@
-using Backtest
-using Test
+using Backtest, Test
 
-@testset "Backtest.jl" begin
-    # Write your tests here.
-end
+include("data.jl")
