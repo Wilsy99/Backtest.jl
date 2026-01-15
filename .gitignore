@@ -1,2 +1,20 @@
+# Julia
 /Manifest*.toml
+*.jl.cov
+*.jl.mem
+lcov.info
+docs/build/
+
+# IDE
 /.vscode/
+/.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+*.log
+
