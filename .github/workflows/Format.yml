@@ -8,8 +8,8 @@ jobs:
   format:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: julia-actions/setup-julia@v1
+      - uses: actions/checkout
+      - uses: julia-actions/setup-julia
         with:
           version: '1'
       - name: Format check

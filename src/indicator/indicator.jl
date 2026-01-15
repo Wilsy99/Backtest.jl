@@ -26,7 +26,7 @@ function calculate_indicators!(df::DataFrame, indicators::Indicator...)::DataFra
         throw(ArgumentError("Input 'timestamp' column contains Missing values."))
     end
 
-    if eltype(df.close) <: AbstractFloat && any(!isfinite, df.close)
+    if nonmissingtype(eltype(df.close)) <: AbstractFloat && any(!isfinite, df.close)
         throw(ArgumentError("Input 'close' column contains NaN or Inf values."))
     end
 
