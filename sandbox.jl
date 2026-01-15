@@ -1,10 +1,15 @@
 using Pkg
 Pkg.activate(".")
 
-using Backtest
+using Backtest, DataFrames, DataFramesMeta, Chain
 
 daily_data = get_data("SPY")
+weekly_data = get_data("SPY"; timeframe=Weekly())
 
-weekly_data = get_data("SPY"; timeframe="W")
+@chain copy(daily_data) begin
+    calculate_indicators!(ntuple(i -> EMA(i), 200)...)
+end
 
-calculate_indicators!(daily_data, ntuple(i -> EMA(i), 200)...)
+@chain daily_data begin
+    @subset(:high .< max.(:open, :close))
+end

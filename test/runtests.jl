@@ -1,6 +1,6 @@
-using Backtest
-using Test
+using Backtest, Test
 
-@testset "Backtest.jl" begin
-    # Write your tests here.
-end
+include("utility_tests.jl")
+include("data_tests.jl")
+include("indicator/indicator_tests.jl")
+include("indicator/ema_tests.jl")
