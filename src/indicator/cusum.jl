@@ -6,6 +6,8 @@ function _calculate_cusum!(prices::Vector{Float64}, indicator::CUSUM)
     # We need at least 100 bars for stats, plus 1 for the first return.
     warmup_idx = 101
     if n <= warmup_idx
+        @warn "Data length ($n) is less than recommended warmup ($warmup_idx). 
+               CUSUM triggers are unreliable and set all values to zero."
         return cusum_values
     end
 
