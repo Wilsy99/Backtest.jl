@@ -6,6 +6,7 @@ using Chain
 using Dates
 using Base.Threads
 using Combinatorics
+using Logging
 
 include("utility.jl")
 include("data.jl")
