@@ -5,6 +5,18 @@ struct EMA <: Indicator
     EMA(period) = new(_natural(period))
 end
 
+struct CUSUM <: Indicator
+    multiplier::Float64
+    span::Int
+    expected_value::Float64
+
+    function CUSUM(multiplier, span, expected_value)
+        return new(_positive_float(multiplier), _natural(span), expected_value)
+    end
+end
+
+CUSUM(multiplier; span=100, expected_value=0.0) = CUSUM(multiplier, span, expected_value)
+
 function calculate_indicators!(df::DataFrame, indicators::Indicator...)::DataFrame
     if isempty(df) || isempty(indicators)
         return df
@@ -34,3 +46,6 @@ function calculate_indicators!(df::DataFrame, indicators::Indicator...)::DataFra
 end
 _calculate_indicators!(df::DataFrame, indicators::EMA...)::DataFrame =
     _calculate_ema!(df, indicators...)
+
+_calculate_indicators!(df::DataFrame, indicator::CUSUM)::DataFrame =
+    _calculate_cusum!(df, indicator)
