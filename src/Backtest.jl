@@ -12,6 +12,7 @@ include("utility.jl")
 include("data.jl")
 include("indicator/indicator.jl")
 include("indicator/ema.jl")
+include("indicator/cusum.jl")
 include("cpcv.jl")
 
 export Timeframe, Daily, Weekly

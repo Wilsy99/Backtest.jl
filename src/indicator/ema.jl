@@ -1,71 +1,70 @@
-function _calculate_ema!(df::DataFrame, indicators::EMA...)
-    closes = df.close isa Vector{Float64} ? df.close : Float64.(df.close)
-    n_rows = length(closes)
-    n_inds = length(indicators)
-    results = Vector{Vector{Float64}}(undef, n_inds)
+function calculate_emas(
+    prices::AbstractVector{T}, periods::Vector{Int}
+) where {T<:AbstractFloat}
+    n_rows = length(prices)
+    n_emas = length(periods)
+    results = Vector{Vector{T}}(undef, n_emas)
 
-    @threads for j in 1:n_inds
-        p = indicators[j].period
-
-        if p > n_rows
-            results[j] = fill(NaN, n_rows)
-            continue
-        end
-        ema_vec = Vector{Float64}(undef, n_rows)
-        results[j] = ema_vec
-
-        fill!(view(ema_vec, 1:(p - 1)), NaN)
-        ema_vec[p] = _calculate_sma_seed(closes, p)
-
-        alpha = 2.0 / (p + 1)
-        decay = 1.0 - alpha
-        _ema_engine_unrolled!(ema_vec, closes, p, n_rows, alpha, decay)
+    @threads for j in 1:n_emas
+        results[j] = _single_ema(prices, periods[j], n_rows)
     end
 
-    for (j, ind) in enumerate(indicators)
-        df[!, "ema_$(ind.period)"] = results[j]
-    end
-    return df
+    return results
 end
 
-@inline function _calculate_sma_seed(closes, p)
-    s = 0.0
+function calculate_ema(prices::AbstractVector{T}, period::Int) where {T<:AbstractFloat}
+    return _single_ema(prices, period, length(prices))
+end
+
+function _single_ema(prices::AbstractVector{T}, p::Int, n::Int) where {T<:AbstractFloat}
+    if p > n
+        return fill(T(NaN), n)
+    end
+
+    ema = Vector{T}(undef, n)
+    fill!(view(ema, 1:(p - 1)), T(NaN))
+    ema[p] = _sma_seed(prices, p)
+
+    α = T(2) / (p + 1)
+    β = one(T) - α
+    _ema_kernel_unrolled!(ema, prices, p, n, α, β)
+
+    return ema
+end
+
+@inline function _sma_seed(prices::AbstractVector{T}, p::Int) where {T<:AbstractFloat}
+    s = zero(T)
     @inbounds @simd for i in 1:p
-        s += closes[i]
+        s += prices[i]
     end
     return s / p
 end
 
-@inline function _ema_engine_unrolled!(ema_vec, closes, p, n_rows, alpha, decay)
-    decay2 = decay * decay
-    decay3 = decay2 * decay
-    decay4 = decay3 * decay
+@inline function _ema_kernel_unrolled!(
+    ema::Vector{T}, prices::AbstractVector{T}, p::Int, n::Int, α::T, β::T
+) where {T<:AbstractFloat}
+    β2, β3, β4 = β^2, β^3, β^4
+    c0, c1, c2, c3 = α, α * β, α * β2, α * β3
 
-    c0, c1, c2, c3 = alpha, alpha * decay, alpha * decay2, alpha * decay3
-
-    @inbounds prev = ema_vec[p]
+    @inbounds prev = ema[p]
     i = p + 1
 
-    @inbounds while i <= n_rows - 3
-        p1, p2, p3, p4 = closes[i], closes[i + 1], closes[i + 2], closes[i + 3]
+    # Unroll by 4 to reduce loop overhead and enable ILP
+    @inbounds while i <= n - 3
+        p1, p2, p3, p4 = prices[i], prices[i + 1], prices[i + 2], prices[i + 3]
 
-        term1 = (p1 * c0)
-        term2 = (p2 * c0) + (p1 * c1)
-        term3 = (p3 * c0) + (p2 * c1) + (p1 * c2)
-        term4 = (p4 * c0) + (p3 * c1) + (p2 * c2) + (p1 * c3)
+        ema[i] = c0 * p1 + β * prev
+        ema[i + 1] = c0 * p2 + c1 * p1 + β2 * prev
+        ema[i + 2] = c0 * p3 + c1 * p2 + c2 * p1 + β3 * prev
+        ema[i + 3] = c0 * p4 + c1 * p3 + c2 * p2 + c3 * p1 + β4 * prev
 
-        ema_vec[i] = term1 + (prev * decay)
-        ema_vec[i + 1] = term2 + (prev * decay2)
-        ema_vec[i + 2] = term3 + (prev * decay3)
-        ema_vec[i + 3] = term4 + (prev * decay4)
-
-        prev = ema_vec[i + 3]
+        prev = ema[i + 3]
         i += 4
     end
 
-    @inbounds while i <= n_rows
-        prev = (closes[i] * alpha) + (prev * decay)
-        ema_vec[i] = prev
+    @inbounds while i <= n
+        prev = α * prices[i] + β * prev
+        ema[i] = prev
         i += 1
     end
 end
