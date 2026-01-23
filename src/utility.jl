@@ -1,9 +1,9 @@
-function _positive_float(n::Real)
-    n > 0 || throw(ArgumentError("multiplier must be > 0, got $n"))
-    return Float64(n)
+function _positive_float(n::T) where {T<:Real}
+    n > zero(T) || throw(ArgumentError("Value must be > 0, got $n"))
+    return n
 end
 
-function _natural(n::Integer)
+function _natural(n::Int)
     n > 0 || throw(ArgumentError("span must be a positive integer, got $n"))
-    return Int(n)
+    return n
 end

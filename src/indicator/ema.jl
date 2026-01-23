@@ -1,4 +1,4 @@
-function calculate_emas(
+function _calculate_emas(
     prices::AbstractVector{T}, periods::Vector{Int}
 ) where {T<:AbstractFloat}
     n_rows = length(prices)
@@ -12,7 +12,7 @@ function calculate_emas(
     return results
 end
 
-function calculate_ema(prices::AbstractVector{T}, period::Int) where {T<:AbstractFloat}
+function _calculate_ema(prices::AbstractVector{T}, period::Int) where {T<:AbstractFloat}
     return _single_ema(prices, period, length(prices))
 end
 

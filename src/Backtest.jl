@@ -18,8 +18,8 @@ include("cpcv.jl")
 export Timeframe, Daily, Weekly
 export get_data, transform_to_weekly
 
-export Indicator, EMA
-export calculate_indicators!
+export Indicator, EMA, CUSUM
+export calculate_indicators
 
 export BarType, TimeBar, Config, CPCV
 export generate_config

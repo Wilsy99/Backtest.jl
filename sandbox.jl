@@ -3,13 +3,14 @@ Pkg.activate(".")
 
 using Backtest, DataFrames, DataFramesMeta, Chain
 
-daily_data = get_data("SPY")
+daily_data = get_data(["SPY", "AAPL", "MSFT", "TSLA", "NVDA", "AMZN", "NFLX"])
 weekly_data = get_data("SPY"; timeframe=Weekly())
 
-daily_data_ema = @chain copy(daily_data) begin
-    calculate_indicators!(ntuple(i -> EMA(i), 200)...)
+big_data = reduce(vcat, repeat([daily_data], 50))
+@chain big_data begin
+    @groupby(:ticker)
+    @transform(
+        $AsTable = calculate_indicators(:close, EMA(10), EMA(20)),
+        :cusum = calculate_indicators(:close, CUSUM(1)),
+    )
 end
-
-cpcv_config = generate_config(
-    daily_data_ema, TimeBar, CPCV(; n_groups=10, n_test_sets=2, max_trade=20, embargo=20)
-)

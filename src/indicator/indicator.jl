@@ -5,47 +5,36 @@ struct EMA <: Indicator
     EMA(period) = new(_natural(period))
 end
 
-struct CUSUM <: Indicator
-    multiplier::Float64
+struct CUSUM{T<:AbstractFloat} <: Indicator
+    multiplier::T
     span::Int
-    expected_value::Float64
+    expected_value::T
 
-    function CUSUM(multiplier, span, expected_value)
-        return new(_positive_float(multiplier), _natural(span), expected_value)
-    end
+    CUSUM{T}(m, s, e) where {T} = new{T}(T(m), Int(s), T(e))
 end
 
-CUSUM(multiplier; span=100, expected_value=0.0) = CUSUM(multiplier, span, expected_value)
-
-function calculate_indicators!(df::DataFrame, indicators::Indicator...)::DataFrame
-    if isempty(df) || isempty(indicators)
-        return df
-    end
-
-    if !hasproperty(df, :close)
-        throw(ArgumentError("DataFrame must have a :close column"))
-    end
-
-    if !hasproperty(df, :timestamp)
-        throw(ArgumentError("DataFrame must have a :timestamp column"))
-    end
-
-    if eltype(df.close) >: Missing && any(ismissing, df.close)
-        throw(ArgumentError("Input 'close' column contains Missing values."))
-    end
-
-    if eltype(df.timestamp) >: Missing && any(ismissing, df.timestamp)
-        throw(ArgumentError("Input 'timestamp' column contains Missing values."))
-    end
-
-    if nonmissingtype(eltype(df.close)) <: AbstractFloat && any(!isfinite, df.close)
-        throw(ArgumentError("Input 'close' column contains NaN or Inf values."))
-    end
-
-    return _calculate_indicators!(df, indicators...)
+function CUSUM(multiplier::Real; span=100, expected_value=0.0)
+    m_val = _positive_float(multiplier)
+    s_val = _natural(span)
+    T = typeof(float(m_val))
+    return CUSUM{T}(m_val, s_val, expected_value)
 end
-_calculate_indicators!(df::DataFrame, indicators::EMA...)::DataFrame =
-    _calculate_ema!(df, indicators...)
 
-_calculate_indicators!(df::DataFrame, indicator::CUSUM)::DataFrame =
-    _calculate_cusum!(df, indicator)
+function calculate_indicators(prices::AbstractVector{T}, ema::EMA) where {T<:AbstractFloat}
+    return _calculate_ema(prices, ema.period)
+end
+
+function calculate_indicators(
+    prices::AbstractVector{T}, indicators::EMA...
+) where {T<:AbstractFloat}
+    periods = Int[ind.period for ind in indicators]
+    results = _calculate_emas(prices, periods)
+    names = Tuple(Symbol("ema_", ind.period) for ind in indicators)
+    return NamedTuple{names}(Tuple(results))
+end
+
+function calculate_indicators(
+    prices::AbstractVector{T}, indicator::CUSUM
+) where {T<:AbstractFloat}
+    return _calculate_cusum(prices, indicator)
+end
