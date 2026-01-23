@@ -4,6 +4,6 @@ function _positive_float(n::T) where {T<:Real}
 end
 
 function _natural(n::Int)
-    n > 0 || throw(ArgumentError("span must be a positive integer, got $n"))
+    n > 0 || throw(ArgumentError("Value must be a positive integer, got $n"))
     return n
 end

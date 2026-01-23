@@ -17,7 +17,6 @@ function _get_data(tickers, start_date, end_date, ::Daily)::DataFrame
     raw_results = get_prices.(tickers, startdt=start_date, enddt=end_date, autoadjust=true)
 
     @chain vcat(DataFrame.(raw_results)...) begin
-        vcat()
         @select!(Not(:close))
         @rename!(:close = :adjclose, :volume = :vol)
         @orderby(:ticker, :timestamp)
