@@ -1,346 +1,352 @@
-using Backtest, Test, DataFrames, Dates
+using Backtest, Test
 
-function make_test_df(closes::Vector{Float64})
-    n = length(closes)
-    return DataFrame(;
-        ticker=fill("TEST", n),
-        timestamp=Date(2020, 1, 1) .+ Day.(0:(n - 1)),
-        open=closes,
-        high=closes .+ 0.1,
-        low=closes .- 0.1,
-        close=closes,
-        volume=fill(1000, n),
-    )
-end
-
-function reference_ema(closes::Vector{Float64}, period::Int)
-    n = length(closes)
+# Reference implementation for verification
+function reference_ema(prices::Vector{Float64}, period::Int)
+    n = length(prices)
     result = fill(NaN, n)
     if period > n
         return result
     end
 
-    result[period] = sum(closes[1:period]) / period
+    result[period] = sum(prices[1:period]) / period
     alpha = 2.0 / (period + 1)
 
     for i in (period + 1):n
-        result[i] = (closes[i] * alpha) + (result[i - 1] * (1 - alpha))
+        result[i] = (prices[i] * alpha) + (result[i - 1] * (1 - alpha))
     end
     return result
 end
 
-@testset "EMA Tests" begin
-    @testset "Schema & Structure" begin
-        df = make_test_df(collect(1.0:20.0))
-        result = calculate_indicators!(df, EMA(5))
+@testset "EMA Calculation" begin
+    @testset "Single EMA - Basic Functionality" begin
+        @testset "Return type and length" begin
+            prices = Float64[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+            result = calculate_indicators(prices, EMA(3))
 
-        @test result isa DataFrame
-        @test "ema_5" ∈ names(result)
-        @test eltype(result.ema_5) == Float64
+            @test result isa Vector{Float64}
+            @test length(result) == length(prices)
+        end
 
-        @test Set(["ticker", "timestamp", "open", "high", "low", "close", "volume"]) ⊆
-            Set(names(result))
-    end
+        @testset "NaN placement" begin
+            prices = Float64.(1:20)
+            result = calculate_indicators(prices, EMA(5))
 
-    @testset "Column Naming" begin
-        df = make_test_df(collect(1.0:20.0))
-        result = calculate_indicators!(df, EMA(3), EMA(10), EMA(15))
+            @test all(isnan.(result[1:4]))
+            @test !any(isnan.(result[5:end]))
+        end
 
-        @test "ema_3" ∈ names(result)
-        @test "ema_10" ∈ names(result)
-        @test "ema_15" ∈ names(result)
-    end
+        @testset "Preserves input element type" begin
+            prices_f64 = Float64[1, 2, 3, 4, 5]
+            result_f64 = calculate_indicators(prices_f64, EMA(2))
+            @test eltype(result_f64) == Float64
 
-    @testset "NaN Placement" begin
-        df = make_test_df(collect(1.0:20.0))
-        result = calculate_indicators!(df, EMA(5))
-
-        @test all(isnan.(result.ema_5[1:4]))
-        @test !any(isnan.(result.ema_5[5:end]))
-    end
-
-    @testset "SMA Seed Correctness" begin
-        closes = collect(1.0:10.0)
-        df = make_test_df(closes)
-        result = calculate_indicators!(df, EMA(5))
-
-        expected_sma = sum(closes[1:5]) / 5
-        @test result.ema_5[5] ≈ expected_sma atol = 1e-10
-    end
-
-    @testset "EMA Formula Verification" begin
-        closes = [10.0, 11.0, 12.0, 11.5, 13.0, 12.5, 14.0, 13.5, 15.0, 14.5]
-        df = make_test_df(closes)
-        result = calculate_indicators!(df, EMA(3))
-
-        expected = reference_ema(closes, 3)
-
-        for i in 3:length(closes)
-            @test result.ema_3[i] ≈ expected[i] atol = 1e-10
+            prices_f32 = Float32[1, 2, 3, 4, 5]
+            result_f32 = calculate_indicators(prices_f32, EMA(2))
+            @test eltype(result_f32) == Float32
         end
     end
 
-    @testset "Period = 1 Edge Case" begin
-        closes = [5.0, 10.0, 15.0, 20.0, 25.0]
-        df = make_test_df(closes)
-        result = calculate_indicators!(df, EMA(1))
+    @testset "Single EMA - Mathematical Correctness" begin
+        @testset "SMA seed at position period" begin
+            prices = Float64.(1:10)
+            result = calculate_indicators(prices, EMA(5))
 
-        for i in eachindex(closes)
-            @test result.ema_1[i] ≈ closes[i] atol = 1e-10
+            expected_sma = sum(prices[1:5]) / 5
+            @test result[5] ≈ expected_sma atol = 1e-10
+        end
+
+        @testset "EMA formula verification" begin
+            prices = Float64[10, 11, 12, 11.5, 13, 12.5, 14, 13.5, 15, 14.5]
+            result = calculate_indicators(prices, EMA(3))
+            expected = reference_ema(prices, 3)
+
+            for i in 3:length(prices)
+                @test result[i] ≈ expected[i] atol = 1e-10
+            end
+        end
+
+        @testset "Period = 1 equals input prices" begin
+            prices = Float64[5, 10, 15, 20, 25]
+            result = calculate_indicators(prices, EMA(1))
+
+            for i in eachindex(prices)
+                @test result[i] ≈ prices[i] atol = 1e-10
+            end
+        end
+
+        @testset "Constant prices gives constant EMA" begin
+            prices = fill(50.0, 20)
+            result = calculate_indicators(prices, EMA(5))
+
+            for i in 5:20
+                @test result[i] ≈ 50.0 atol = 1e-10
+            end
         end
     end
 
-    @testset "Period > n_rows" begin
-        closes = collect(1.0:5.0)
-        df = make_test_df(closes)
-        result = calculate_indicators!(df, EMA(10))
+    @testset "Single EMA - Edge Cases" begin
+        @testset "Period > length(prices)" begin
+            prices = Float64.(1:5)
+            result = calculate_indicators(prices, EMA(10))
 
-        @test all(isnan.(result.ema_10))
+            @test all(isnan.(result))
+        end
+
+        @testset "Period == length(prices)" begin
+            prices = Float64.(1:5)
+            result = calculate_indicators(prices, EMA(5))
+
+            @test all(isnan.(result[1:4]))
+            @test result[5] ≈ sum(prices) / 5 atol = 1e-10
+        end
+
+        @testset "Single element, period = 1" begin
+            prices = Float64[100]
+            result = calculate_indicators(prices, EMA(1))
+
+            @test length(result) == 1
+            @test result[1] ≈ 100.0 atol = 1e-10
+        end
+
+        @testset "Two elements, period = 2" begin
+            prices = Float64[100, 200]
+            result = calculate_indicators(prices, EMA(2))
+
+            @test isnan(result[1])
+            @test result[2] ≈ 150.0 atol = 1e-10  # SMA of [100, 200]
+        end
+
+        @testset "Minimum viable: period=2, length=3" begin
+            prices = Float64[10, 20, 30]
+            result = calculate_indicators(prices, EMA(2))
+            expected = reference_ema(prices, 2)
+
+            @test isnan(result[1])
+            @test result[2] ≈ expected[2] atol = 1e-10
+            @test result[3] ≈ expected[3] atol = 1e-10
+        end
+
+        @testset "Long period (50)" begin
+            prices = Float64.(1:100)
+            result = calculate_indicators(prices, EMA(50))
+            expected = reference_ema(prices, 50)
+
+            @test all(isnan.(result[1:49]))
+            for i in 50:100
+                @test result[i] ≈ expected[i] atol = 1e-9
+            end
+        end
     end
 
-    @testset "Period = n_rows" begin
-        closes = collect(1.0:5.0)
-        df = make_test_df(closes)
-        result = calculate_indicators!(df, EMA(5))
-
-        @test all(isnan.(result.ema_5[1:4]))
-        @test result.ema_5[5] ≈ sum(closes) / 5 atol = 1e-10
-    end
-
-    @testset "Single Row Dataset" begin
-        df = make_test_df([100.0])
-        result = calculate_indicators!(df, EMA(1))
-
-        @test result.ema_1[1] ≈ 100.0 atol = 1e-10
-    end
-
-    @testset "Unrolling Remainder Tests" begin
-        # Test datasets where (n_rows - period) % 4 equals 0, 1, 2, 3
-        # to verify the cleanup loop handles all remainder cases
-
+    @testset "Single EMA - Loop Unrolling Verification" begin
         period = 3
 
         @testset "Remainder 0: (n-p) % 4 == 0" begin
-            closes = collect(1.0:11.0)
-            df = make_test_df(closes)
-            result = calculate_indicators!(df, EMA(period))
-            expected = reference_ema(closes, period)
+            prices = Float64.(1:11)  # n=11, n-p=8, 8%4=0
+            result = calculate_indicators(prices, EMA(period))
+            expected = reference_ema(prices, period)
 
-            for i in period:length(closes)
-                @test result.ema_3[i] ≈ expected[i] atol = 1e-10
+            for i in period:length(prices)
+                @test result[i] ≈ expected[i] atol = 1e-10
             end
         end
 
         @testset "Remainder 1: (n-p) % 4 == 1" begin
-            closes = collect(1.0:12.0)
-            df = make_test_df(closes)
-            result = calculate_indicators!(df, EMA(period))
-            expected = reference_ema(closes, period)
+            prices = Float64.(1:12)  # n=12, n-p=9, 9%4=1
+            result = calculate_indicators(prices, EMA(period))
+            expected = reference_ema(prices, period)
 
-            for i in period:length(closes)
-                @test result.ema_3[i] ≈ expected[i] atol = 1e-10
+            for i in period:length(prices)
+                @test result[i] ≈ expected[i] atol = 1e-10
             end
         end
 
         @testset "Remainder 2: (n-p) % 4 == 2" begin
-            closes = collect(1.0:13.0)
-            df = make_test_df(closes)
-            result = calculate_indicators!(df, EMA(period))
-            expected = reference_ema(closes, period)
+            prices = Float64.(1:13)  # n=13, n-p=10, 10%4=2
+            result = calculate_indicators(prices, EMA(period))
+            expected = reference_ema(prices, period)
 
-            for i in period:length(closes)
-                @test result.ema_3[i] ≈ expected[i] atol = 1e-10
+            for i in period:length(prices)
+                @test result[i] ≈ expected[i] atol = 1e-10
             end
         end
 
         @testset "Remainder 3: (n-p) % 4 == 3" begin
-            closes = collect(1.0:14.0)
-            df = make_test_df(closes)
-            result = calculate_indicators!(df, EMA(period))
-            expected = reference_ema(closes, period)
+            prices = Float64.(1:14)  # n=14, n-p=11, 11%4=3
+            result = calculate_indicators(prices, EMA(period))
+            expected = reference_ema(prices, period)
 
-            for i in period:length(closes)
-                @test result.ema_3[i] ≈ expected[i] atol = 1e-10
+            for i in period:length(prices)
+                @test result[i] ≈ expected[i] atol = 1e-10
             end
         end
     end
 
-    @testset "Multiple Indicators Simultaneously" begin
-        closes = collect(1.0:50.0)
-        df = make_test_df(closes)
-        result = calculate_indicators!(df, EMA(5), EMA(10), EMA(20))
+    @testset "Single EMA - Numerical Stability" begin
+        @testset "Large values - no overflow" begin
+            prices = fill(1e15, 20)
+            prices[10] = 1.1e15
+            result = calculate_indicators(prices, EMA(5))
 
-        expected_5 = reference_ema(closes, 5)
-        expected_10 = reference_ema(closes, 10)
-        expected_20 = reference_ema(closes, 20)
-
-        for i in 5:50
-            @test result.ema_5[i] ≈ expected_5[i] atol = 1e-10
+            @test !any(isinf.(result[5:end]))
+            @test !any(isnan.(result[5:end]))
         end
-        for i in 10:50
-            @test result.ema_10[i] ≈ expected_10[i] atol = 1e-10
+
+        @testset "Small values - no underflow" begin
+            prices = fill(1e-15, 20)
+            prices[10] = 1.1e-15
+            result = calculate_indicators(prices, EMA(5))
+
+            @test !any(isinf.(result[5:end]))
+            @test !any(isnan.(result[5:end]))
+            @test all(result[5:end] .> 0)
         end
-        for i in 20:50
-            @test result.ema_20[i] ≈ expected_20[i] atol = 1e-10
-        end
-    end
 
-    @testset "EMA Bounded by Data Range" begin
-        closes = [10.0, 15.0, 8.0, 20.0, 12.0, 18.0, 9.0, 14.0, 11.0, 16.0]
-        df = make_test_df(closes)
-        result = calculate_indicators!(df, EMA(3))
+        @testset "Mixed scales" begin
+            prices = Float64[1e-10, 1e10, 1e-10, 1e10, 1e-10, 1e10, 1e-10, 1e10, 1e-10, 1e10]
+            result = calculate_indicators(prices, EMA(3))
 
-        min_close = minimum(closes)
-        max_close = maximum(closes)
-
-        for i in 3:length(closes)
-            @test min_close <= result.ema_3[i] <= max_close
-        end
-    end
-end
-
-@testset "Constant Prices" begin
-    closes = fill(50.0, 20)
-    df = make_test_df(closes)
-    result = calculate_indicators!(df, EMA(5))
-
-    # EMA of constant values should equal that constant
-    for i in 5:20
-        @test result.ema_5[i] ≈ 50.0 atol = 1e-10
-    end
-end
-
-@testset "Monotonic Increasing Data" begin
-    closes = collect(1.0:20.0)
-    df = make_test_df(closes)
-    result = calculate_indicators!(df, EMA(5))
-
-    # For increasing data, EMA should lag below close (except at seed)
-    for i in 6:20
-        @test result.ema_5[i] < closes[i]
-    end
-
-    # EMA itself should be monotonically increasing
-    for i in 6:20
-        @test result.ema_5[i] > result.ema_5[i - 1]
-    end
-end
-
-@testset "Monotonic Decreasing Data" begin
-    closes = collect(20.0:-1.0:1.0)
-    df = make_test_df(closes)
-    result = calculate_indicators!(df, EMA(5))
-
-    # For decreasing data, EMA should lag above close (except at seed)
-    for i in 6:20
-        @test result.ema_5[i] > closes[i]
-    end
-
-    # EMA itself should be monotonically decreasing
-    for i in 6:20
-        @test result.ema_5[i] < result.ema_5[i - 1]
-    end
-end
-
-@testset "Type Coercion - Float32 Input" begin
-    closes_f32 = Float32[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
-    df = DataFrame(;
-        ticker=fill("TEST", 10),
-        timestamp=Date(2020, 1, 1) .+ Day.(0:9),
-        open=closes_f32,
-        high=closes_f32 .+ 0.1f0,
-        low=closes_f32 .- 0.1f0,
-        close=closes_f32,
-        volume=fill(1000, 10),
-    )
-    result = calculate_indicators!(df, EMA(3))
-
-    @test eltype(result.ema_3) == Float64
-    expected = reference_ema(Float64.(closes_f32), 3)
-    for i in 3:10
-        @test result.ema_3[i] ≈ expected[i] atol = 1e-6
-    end
-
-    @testset "Type Coercion - Integer Input" begin
-        closes_int = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-        df = DataFrame(;
-            ticker=fill("TEST", 10),
-            timestamp=Date(2020, 1, 1) .+ Day.(0:9),
-            open=closes_int,
-            high=closes_int .+ 1,
-            low=closes_int .- 1,
-            close=closes_int,
-            volume=fill(1000, 10),
-        )
-        result = calculate_indicators!(df, EMA(3))
-
-        @test eltype(result.ema_3) == Float64
-        expected = reference_ema(Float64.(closes_int), 3)
-        for i in 3:10
-            @test result.ema_3[i] ≈ expected[i] atol = 1e-10
+            @test !any(isinf.(result[3:end]))
+            @test !any(isnan.(result[3:end]))
         end
     end
 
-    @testset "Large Values - No Overflow" begin
-        closes = fill(1e15, 20)
-        closes[10] = 1.1e15
-        df = make_test_df(closes)
-        result = calculate_indicators!(df, EMA(5))
+    @testset "Single EMA - Mathematical Properties" begin
+        @testset "Monotonic increasing: EMA lags below" begin
+            prices = Float64.(1:20)
+            result = calculate_indicators(prices, EMA(5))
 
-        @test !any(isinf.(result.ema_5[5:end]))
-        @test !any(isnan.(result.ema_5[5:end]))
-    end
-
-    @testset "Small Values - No Underflow" begin
-        closes = fill(1e-15, 20)
-        closes[10] = 1.1e-15
-        df = make_test_df(closes)
-        result = calculate_indicators!(df, EMA(5))
-
-        @test !any(isinf.(result.ema_5[5:end]))
-        @test !any(isnan.(result.ema_5[5:end]))
-        @test all(result.ema_5[5:end] .> 0)
-    end
-
-    @testset "Minimum Viable Dataset" begin
-        # Period=2 with 3 rows - smallest useful case
-        closes = [10.0, 20.0, 30.0]
-        df = make_test_df(closes)
-        result = calculate_indicators!(df, EMA(2))
-
-        expected = reference_ema(closes, 2)
-
-        @test isnan(result.ema_2[1])
-        @test result.ema_2[2] ≈ expected[2] atol = 1e-10
-        @test result.ema_2[3] ≈ expected[3] atol = 1e-10
-    end
-
-    @testset "Longer Period EMA" begin
-        closes = collect(1.0:100.0)
-        df = make_test_df(closes)
-        result = calculate_indicators!(df, EMA(50))
-
-        expected = reference_ema(closes, 50)
-
-        @test all(isnan.(result.ema_50[1:49]))
-        for i in 50:100
-            @test result.ema_50[i] ≈ expected[i] atol = 1e-9
-        end
-    end
-
-    @testset "Many Indicators at Once" begin
-        closes = collect(1.0:200.0)
-        df = make_test_df(closes)
-
-        indicators = ntuple(i -> EMA(i), 50)
-        result = calculate_indicators!(df, indicators...)
-
-        for period in [1, 10, 25, 50]
-            expected = reference_ema(closes, period)
-            col_name = "ema_$period"
-            for i in period:200
-                @test result[!, col_name][i] ≈ expected[i] atol = 1e-9
+            for i in 6:20
+                @test result[i] < prices[i]
             end
+        end
+
+        @testset "Monotonic increasing: EMA itself increases" begin
+            prices = Float64.(1:20)
+            result = calculate_indicators(prices, EMA(5))
+
+            for i in 6:20
+                @test result[i] > result[i - 1]
+            end
+        end
+
+        @testset "Monotonic decreasing: EMA lags above" begin
+            prices = Float64.(20:-1:1)
+            result = calculate_indicators(prices, EMA(5))
+
+            for i in 6:20
+                @test result[i] > prices[i]
+            end
+        end
+
+        @testset "Monotonic decreasing: EMA itself decreases" begin
+            prices = Float64.(20:-1:1)
+            result = calculate_indicators(prices, EMA(5))
+
+            for i in 6:20
+                @test result[i] < result[i - 1]
+            end
+        end
+
+        @testset "EMA bounded by data range" begin
+            prices = Float64[10, 15, 8, 20, 12, 18, 9, 14, 11, 16]
+            result = calculate_indicators(prices, EMA(3))
+
+            min_price = minimum(prices)
+            max_price = maximum(prices)
+
+            for i in 3:length(prices)
+                @test min_price <= result[i] <= max_price
+            end
+        end
+    end
+
+    @testset "Multiple EMAs" begin
+        @testset "Returns NamedTuple" begin
+            prices = Float64.(1:50)
+            result = calculate_indicators(prices, EMA(5), EMA(10))
+
+            @test result isa NamedTuple
+            @test haskey(result, :ema_5)
+            @test haskey(result, :ema_10)
+        end
+
+        @testset "Correct keys" begin
+            prices = Float64.(1:50)
+            result = calculate_indicators(prices, EMA(3), EMA(10), EMA(15))
+
+            @test keys(result) == (:ema_3, :ema_10, :ema_15)
+        end
+
+        @testset "Each value is correct type and length" begin
+            prices = Float64.(1:50)
+            result = calculate_indicators(prices, EMA(5), EMA(10), EMA(20))
+
+            @test result.ema_5 isa Vector{Float64}
+            @test result.ema_10 isa Vector{Float64}
+            @test result.ema_20 isa Vector{Float64}
+
+            @test length(result.ema_5) == 50
+            @test length(result.ema_10) == 50
+            @test length(result.ema_20) == 50
+        end
+
+        @testset "Values match single EMA computation" begin
+            prices = Float64.(1:50)
+            result = calculate_indicators(prices, EMA(5), EMA(10), EMA(20))
+
+            expected_5 = reference_ema(prices, 5)
+            expected_10 = reference_ema(prices, 10)
+            expected_20 = reference_ema(prices, 20)
+
+            for i in 5:50
+                @test result.ema_5[i] ≈ expected_5[i] atol = 1e-10
+            end
+            for i in 10:50
+                @test result.ema_10[i] ≈ expected_10[i] atol = 1e-10
+            end
+            for i in 20:50
+                @test result.ema_20[i] ≈ expected_20[i] atol = 1e-10
+            end
+        end
+
+        @testset "Many indicators at once" begin
+            prices = Float64.(1:200)
+            indicators = ntuple(i -> EMA(i), 50)
+            result = calculate_indicators(prices, indicators...)
+
+            # Spot check a few
+            for period in [1, 10, 25, 50]
+                expected = reference_ema(prices, period)
+                col = result[Symbol("ema_", period)]
+                for i in period:200
+                    @test col[i] ≈ expected[i] atol = 1e-9
+                end
+            end
+        end
+    end
+
+    @testset "Type Handling" begin
+        @testset "Float64 input" begin
+            prices = Float64[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+            result = calculate_indicators(prices, EMA(3))
+            @test eltype(result) == Float64
+        end
+
+        @testset "Float32 input" begin
+            prices = Float32[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+            result = calculate_indicators(prices, EMA(3))
+            @test eltype(result) == Float32
+
+            expected = reference_ema(Float64.(prices), 3)
+            for i in 3:10
+                @test result[i] ≈ expected[i] atol = 1e-5
+            end
+        end
+
+        @testset "Integer input throws" begin
+            prices = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+            @test_throws MethodError calculate_indicators(prices, EMA(3))
         end
     end
 end
