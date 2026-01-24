@@ -15,10 +15,10 @@ big_data = reduce(vcat, repeat([daily_data], 50))
     )
 end
 
-@chain weekly_data begin
+@chain big_data begin
+    @select(:ticker, :timestamp, :close)
+    @groupby(:ticker)
     @transform(
-        :side = calculate_strategy_sides(
-            weekly_data.close, EMACross(EMA(5), EMA(20); long=true)
-        )
+        :side = calculate_strategy_sides(:close, EMACross(EMA(5), EMA(20); long=true))
     )
 end
