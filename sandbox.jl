@@ -14,3 +14,11 @@ big_data = reduce(vcat, repeat([daily_data], 50))
         :cusum = calculate_indicators(:close, CUSUM(1)),
     )
 end
+
+@chain weekly_data begin
+    @transform(
+        :side = calculate_strategy_sides(
+            weekly_data.close, EMACross(EMA(5), EMA(20); long=true)
+        )
+    )
+end
