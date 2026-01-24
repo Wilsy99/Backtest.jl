@@ -1,12 +1,15 @@
 using Pkg
 Pkg.activate(".")
 
-using Backtest, DataFrames, DataFramesMeta, Chain
+using Backtest, DataFrames, DataFramesMeta, Chain, BenchmarkTools
 
 daily_data = get_data(["SPY", "AAPL", "MSFT", "TSLA", "NVDA", "AMZN", "NFLX"])
 weekly_data = get_data("SPY"; timeframe=Weekly())
 
-big_data = reduce(vcat, repeat([daily_data], 50))
+big_data = reduce(
+    vcat, repeat([get_data(["SPY", "AAPL", "MSFT", "TSLA", "NVDA", "AMZN", "NFLX"])], 500)
+)
+
 @chain big_data begin
     @groupby(:ticker)
     @transform(
@@ -15,10 +18,12 @@ big_data = reduce(vcat, repeat([daily_data], 50))
     )
 end
 
-@chain big_data begin
+@btime @chain $big_data begin
     @select(:ticker, :timestamp, :close)
     @groupby(:ticker)
-    @transform(
+    @transform!(
+        :cusum = calculate_indicators(:close, CUSUM(1)),
         :side = calculate_strategy_sides(:close, EMACross(EMA(5), EMA(20); long=true))
     )
+    @subset!(:cusum .== 1)
 end

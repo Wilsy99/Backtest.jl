@@ -4,6 +4,7 @@ version = "1.0.0-DEV"
 authors = ["Adam Wilson <adamwilson99@hotmail.com> and contributors"]
 
 [deps]
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 Chain = "8be319e6-bccf-4806-a6f7-6fae938471bc"
 Combinatorics = "861a8166-3701-5b0c-9a16-15d98fcdc6aa"
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
@@ -13,6 +14,7 @@ Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
 YFinance = "e4b3b0a2-f9a3-42f3-aabb-32142cceaf77"
 
 [compat]
+BenchmarkTools = "1.6.3"
 Chain = "1.0.0"
 Combinatorics = "1.1.0"
 DataFrames = "1.8.1"
