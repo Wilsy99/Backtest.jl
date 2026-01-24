@@ -139,6 +139,7 @@ end
     end
 
     @testset "Single EMA - Loop Unrolling Verification" begin
+        # Tests verify correctness for all remainder cases when (n - period) % 4
         period = 3
 
         @testset "Remainder 0: (n-p) % 4 == 0" begin
@@ -203,7 +204,9 @@ end
         end
 
         @testset "Mixed scales" begin
-            prices = Float64[1e-10, 1e10, 1e-10, 1e10, 1e-10, 1e10, 1e-10, 1e10, 1e-10, 1e10]
+            prices = Float64[
+                1e-10, 1e10, 1e-10, 1e10, 1e-10, 1e10, 1e-10, 1e10, 1e-10, 1e10
+            ]
             result = calculate_indicators(prices, EMA(3))
 
             @test !any(isinf.(result[3:end]))
@@ -324,6 +327,19 @@ end
                 end
             end
         end
+
+        @testset "Thread safety - results are independent" begin
+            prices = Float64.(1:100)
+            result = calculate_indicators(prices, EMA(5), EMA(10), EMA(20), EMA(30))
+
+            # Each EMA should match its individual calculation
+            for (period, key) in [(5, :ema_5), (10, :ema_10), (20, :ema_20), (30, :ema_30)]
+                expected = reference_ema(prices, period)
+                for i in period:100
+                    @test result[key][i] ≈ expected[i] atol = 1e-10
+                end
+            end
+        end
     end
 
     @testset "Type Handling" begin
@@ -347,6 +363,56 @@ end
         @testset "Integer input throws" begin
             prices = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
             @test_throws MethodError calculate_indicators(prices, EMA(3))
+        end
+    end
+
+    @testset "Internal Functions" begin
+        # Test _sma_seed directly
+        @testset "_sma_seed correctness" begin
+            prices = Float64[2, 4, 6, 8, 10]
+            seed = Backtest._sma_seed(prices, 5)
+            @test seed ≈ 6.0 atol = 1e-10  # (2+4+6+8+10)/5 = 6
+
+            seed3 = Backtest._sma_seed(prices, 3)
+            @test seed3 ≈ 4.0 atol = 1e-10  # (2+4+6)/3 = 4
+        end
+
+        # Test _single_ema! directly
+        @testset "_single_ema! correctness" begin
+            prices = Float64[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+            dest = Vector{Float64}(undef, 10)
+            Backtest._single_ema!(dest, prices, 3, 10)
+
+            expected = reference_ema(prices, 3)
+            for i in 1:10
+                if isnan(expected[i])
+                    @test isnan(dest[i])
+                else
+                    @test dest[i] ≈ expected[i] atol = 1e-10
+                end
+            end
+        end
+
+        # Test _calculate_emas returns matrix
+        @testset "_calculate_emas returns Matrix" begin
+            prices = Float64.(1:20)
+            periods = [3, 5, 7]
+            result = Backtest._calculate_emas(prices, periods)
+
+            @test result isa Matrix{Float64}
+            @test size(result) == (20, 3)
+
+            # Verify each column
+            for (j, p) in enumerate(periods)
+                expected = reference_ema(prices, p)
+                for i in 1:20
+                    if isnan(expected[i])
+                        @test isnan(result[i, j])
+                    else
+                        @test result[i, j] ≈ expected[i] atol = 1e-10
+                    end
+                end
+            end
         end
     end
 end
