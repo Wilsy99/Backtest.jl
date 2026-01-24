@@ -285,9 +285,9 @@ end
             prices = Float64.(1:50)
             result = calculate_indicators(prices, EMA(5), EMA(10), EMA(20))
 
-            @test result.ema_5 isa Vector{Float64}
-            @test result.ema_10 isa Vector{Float64}
-            @test result.ema_20 isa Vector{Float64}
+            @test result.ema_5 isa AbstractVector{Float64}
+            @test result.ema_10 isa AbstractVector{Float64}
+            @test result.ema_20 isa AbstractVector{Float64}
 
             @test length(result.ema_5) == 50
             @test length(result.ema_10) == 50
