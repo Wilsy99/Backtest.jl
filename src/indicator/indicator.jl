@@ -39,7 +39,7 @@ function calculate_indicators(
 
     names = Tuple(Symbol("ema_", ind.period) for ind in indicators)
 
-    return NamedTuple{names}(Tuple(eachcol(results)))
+    return NamedTuple{names}(Tuple(Vector(col) for col in eachcol(results)))
 end
 
 function calculate_indicators(
