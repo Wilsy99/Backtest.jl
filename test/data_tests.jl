@@ -154,59 +154,155 @@ const TEST_END = "2020-01-31"
 end
 
 @testset "transform_to_weekly Tests" begin
-    @testset "Schema & Structure" begin
-        daily_df = get_data(
-            TEST_TICKER; start_date=TEST_START, end_date=TEST_END, timeframe=Daily()
+    @testset "Basic weekly aggregation" begin
+        # Create daily data spanning 2 weeks
+        daily_df = DataFrame(
+            ticker = fill("TEST", 10),
+            timestamp = Date(2024, 1, 1) .+ Day.(0:9),
+            open = Float64[100, 101, 102, 103, 104, 105, 106, 107, 108, 109],
+            high = Float64[105, 106, 107, 108, 109, 110, 111, 112, 113, 114],
+            low = Float64[95, 96, 97, 98, 99, 100, 101, 102, 103, 104],
+            close = Float64[102, 103, 104, 105, 106, 107, 108, 109, 110, 111],
+            volume = [1000, 1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900],
         )
-        weekly_df = transform_to_weekly(daily_df)
 
-        @test nrow(weekly_df) < nrow(daily_df)
-        @test Set(names(weekly_df)) ==
-            Set(["timestamp", "open", "high", "low", "close", "volume"])
-        @test issorted(weekly_df.timestamp)
+        weekly = transform_to_weekly(daily_df)
+
+        @test weekly isa DataFrame
+        @test nrow(weekly) < nrow(daily_df)
+    end
+
+    @testset "OHLCV aggregation logic" begin
+        # One complete week: Mon-Fri
+        daily_df = DataFrame(
+            ticker = fill("TEST", 5),
+            timestamp = [Date(2024, 1, 1), Date(2024, 1, 2), Date(2024, 1, 3),
+                         Date(2024, 1, 4), Date(2024, 1, 5)],
+            open = Float64[100, 102, 104, 103, 105],
+            high = Float64[110, 112, 114, 113, 115],
+            low = Float64[90, 92, 94, 93, 95],
+            close = Float64[102, 104, 103, 105, 108],
+            volume = [1000, 1100, 1200, 1300, 1400],
+        )
+
+        weekly = transform_to_weekly(daily_df)
+
+        @test nrow(weekly) == 1
+        @test weekly.open[1] == 100.0          # First open
+        @test weekly.high[1] == 115.0          # Max high
+        @test weekly.low[1] == 90.0            # Min low
+        @test weekly.close[1] == 108.0         # Last close
+        @test weekly.volume[1] == 6000         # Sum of volumes
     end
 
     @testset "Empty DataFrame" begin
-        empty_df = DataFrame(;
-            timestamp=Date[],
-            open=Float64[],
-            high=Float64[],
-            low=Float64[],
-            close=Float64[],
-            volume=Int[],
+        empty_df = DataFrame(
+            ticker = String[],
+            timestamp = Date[],
+            open = Float64[],
+            high = Float64[],
+            low = Float64[],
+            close = Float64[],
+            volume = Int[],
         )
+
         result = transform_to_weekly(empty_df)
+        @test result isa DataFrame
         @test nrow(result) == 0
-        @test Set(names(result)) ==
-            Set(["timestamp", "open", "high", "low", "close", "volume"])
     end
 
     @testset "Single day" begin
-        single_df = DataFrame(;
-            timestamp=[Date(2020, 1, 6)],  # Monday
-            open=[100.0],
-            high=[105.0],
-            low=[95.0],
-            close=[102.0],
-            volume=[1000],
+        single_df = DataFrame(
+            ticker = ["TEST"],
+            timestamp = [Date(2024, 1, 1)],
+            open = [100.0],
+            high = [110.0],
+            low = [90.0],
+            close = [105.0],
+            volume = [1000],
         )
-        result = transform_to_weekly(single_df)
-        @test nrow(result) == 1
-        @test result.open[1] == 100.0
-        @test result.high[1] == 105.0
-        @test result.low[1] == 95.0
-        @test result.close[1] == 102.0
-        @test result.volume[1] == 1000
+
+        weekly = transform_to_weekly(single_df)
+        @test nrow(weekly) == 1
+        @test weekly.open[1] == 100.0
+        @test weekly.close[1] == 105.0
+    end
+
+    @testset "Multi-ticker aggregation" begin
+        daily_df = DataFrame(
+            ticker = ["AAPL", "AAPL", "AAPL", "MSFT", "MSFT", "MSFT"],
+            timestamp = repeat([Date(2024, 1, 1), Date(2024, 1, 2), Date(2024, 1, 3)], 2),
+            open = Float64[100, 101, 102, 200, 201, 202],
+            high = Float64[110, 111, 112, 210, 211, 212],
+            low = Float64[90, 91, 92, 190, 191, 192],
+            close = Float64[105, 106, 107, 205, 206, 207],
+            volume = [1000, 1100, 1200, 2000, 2100, 2200],
+        )
+
+        weekly = transform_to_weekly(daily_df)
+
+        # Should have separate rows for each ticker
+        @test nrow(weekly) == 2
+        @test Set(weekly.ticker) == Set(["AAPL", "MSFT"])
+
+        # Check AAPL aggregation
+        aapl = filter(r -> r.ticker == "AAPL", weekly)
+        @test aapl.open[1] == 100.0
+        @test aapl.close[1] == 107.0
+        @test aapl.volume[1] == 3300
+
+        # Check MSFT aggregation
+        msft = filter(r -> r.ticker == "MSFT", weekly)
+        @test msft.open[1] == 200.0
+        @test msft.close[1] == 207.0
+        @test msft.volume[1] == 6300
+    end
+
+    @testset "Output schema" begin
+        daily_df = DataFrame(
+            ticker = fill("TEST", 5),
+            timestamp = Date(2024, 1, 1) .+ Day.(0:4),
+            open = Float64[100, 101, 102, 103, 104],
+            high = Float64[110, 111, 112, 113, 114],
+            low = Float64[90, 91, 92, 93, 94],
+            close = Float64[105, 106, 107, 108, 109],
+            volume = [1000, 1100, 1200, 1300, 1400],
+        )
+
+        weekly = transform_to_weekly(daily_df)
+
+        expected_cols = Set(["ticker", "timestamp", "open", "high", "low", "close", "volume"])
+        @test Set(names(weekly)) == expected_cols
+    end
+
+    @testset "Ordering" begin
+        # Create data with multiple weeks and tickers, unsorted
+        daily_df = DataFrame(
+            ticker = ["MSFT", "AAPL", "MSFT", "AAPL", "MSFT", "AAPL"],
+            timestamp = [Date(2024, 1, 8), Date(2024, 1, 1), Date(2024, 1, 1),
+                         Date(2024, 1, 8), Date(2024, 1, 15), Date(2024, 1, 15)],
+            open = Float64[200, 100, 201, 101, 202, 102],
+            high = Float64[210, 110, 211, 111, 212, 112],
+            low = Float64[190, 90, 191, 91, 192, 92],
+            close = Float64[205, 105, 206, 106, 207, 107],
+            volume = [2000, 1000, 2100, 1100, 2200, 1200],
+        )
+
+        weekly = transform_to_weekly(daily_df)
+
+        # Should be ordered by ticker, then timestamp
+        @test issorted(weekly, [:ticker, :timestamp])
     end
 
     @testset "Two days same week" begin
-        two_day_df = DataFrame(;
-            timestamp=[Date(2020, 1, 6), Date(2020, 1, 7)],  # Mon, Tue
-            open=[100.0, 102.0],
-            high=[105.0, 108.0],
-            low=[95.0, 99.0],
-            close=[102.0, 106.0],
-            volume=[1000, 1500],
+        two_day_df = DataFrame(
+            ticker = fill("TEST", 2),
+            timestamp = [Date(2020, 1, 6), Date(2020, 1, 7)],  # Mon, Tue
+            open = [100.0, 102.0],
+            high = [105.0, 108.0],
+            low = [95.0, 99.0],
+            close = [102.0, 106.0],
+            volume = [1000, 1500],
         )
         result = transform_to_weekly(two_day_df)
         @test nrow(result) == 1
@@ -218,16 +314,24 @@ end
     end
 
     @testset "Two separate weeks" begin
-        two_week_df = DataFrame(;
-            timestamp=[Date(2020, 1, 6), Date(2020, 1, 13)],  # Mon week 1, Mon week 2
-            open=[100.0, 110.0],
-            high=[105.0, 115.0],
-            low=[95.0, 105.0],
-            close=[102.0, 112.0],
-            volume=[1000, 2000],
+        two_week_df = DataFrame(
+            ticker = fill("TEST", 2),
+            timestamp = [Date(2020, 1, 6), Date(2020, 1, 13)],  # Mon week 1, Mon week 2
+            open = [100.0, 110.0],
+            high = [105.0, 115.0],
+            low = [95.0, 105.0],
+            close = [102.0, 112.0],
+            volume = [1000, 2000],
         )
         result = transform_to_weekly(two_week_df)
         @test nrow(result) == 2
         @test issorted(result.timestamp)
     end
+end
+
+@testset "Timeframe Types" begin
+    @test Daily() isa Timeframe
+    @test Weekly() isa Timeframe
+    @test Daily <: Timeframe
+    @test Weekly <: Timeframe
 end
