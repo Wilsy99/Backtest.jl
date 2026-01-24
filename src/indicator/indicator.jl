@@ -21,16 +21,25 @@ function CUSUM(multiplier::Real; span=100, expected_value=0.0)
 end
 
 function calculate_indicators(prices::AbstractVector{T}, ema::EMA) where {T<:AbstractFloat}
-    return _calculate_ema(prices, ema.period)
+    n = length(prices)
+
+    results = Vector{T}(undef, n)
+
+    _single_ema!(results, prices, ema.period, n)
+
+    return results
 end
 
 function calculate_indicators(
     prices::AbstractVector{T}, indicators::EMA...
 ) where {T<:AbstractFloat}
     periods = Int[ind.period for ind in indicators]
+
     results = _calculate_emas(prices, periods)
+
     names = Tuple(Symbol("ema_", ind.period) for ind in indicators)
-    return NamedTuple{names}(Tuple(results))
+
+    return NamedTuple{names}(Tuple(eachcol(results)))
 end
 
 function calculate_indicators(
