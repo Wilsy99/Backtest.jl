@@ -10,22 +10,24 @@ struct CUSUM{T<:AbstractFloat} <: Indicator
     span::Int
     expected_value::T
 
-    CUSUM{T}(m, s, e) where {T} = new{T}(T(m), Int(s), T(e))
+    function CUSUM{T}(m, s, e) where {T<:AbstractFloat}
+        return new{T}(_positive_float(T(m)), _natural(Int(s)), T(e))
+    end
 end
 
 function CUSUM(multiplier::Real; span=100, expected_value=0.0)
-    m_val = _positive_float(multiplier)
-    s_val = _natural(span)
-    T = typeof(float(m_val))
-    return CUSUM{T}(m_val, s_val, expected_value)
+    T = typeof(float(multiplier))
+    return CUSUM{T}(multiplier, span, expected_value)
 end
 
-function calculate_indicators(prices::AbstractVector{T}, ema::EMA) where {T<:AbstractFloat}
+function calculate_indicators(
+    prices::AbstractVector{T}, indicators::EMA
+) where {T<:AbstractFloat}
     n = length(prices)
 
     results = Vector{T}(undef, n)
 
-    _single_ema!(results, prices, ema.period, n)
+    _single_ema!(results, prices, indicators.period, n)
 
     return results
 end
