@@ -32,16 +32,18 @@ end
             @test strategy isa EMACross{true,false}
         end
 
-        @testset "Fast period > slow period (allowed)" begin
-            strategy = EMACross(EMA(10), EMA(5))
-            @test strategy.fast_ema.period == 10
-            @test strategy.slow_ema.period == 5
+        @testset "Fast period < slow period (allowed)" begin
+            strategy = EMACross(EMA(5), EMA(10))
+            @test strategy.fast_ema.period == 5
+            @test strategy.slow_ema.period == 10
         end
 
-        @testset "Same period for fast and slow" begin
-            strategy = EMACross(EMA(5), EMA(5))
-            @test strategy.fast_ema.period == 5
-            @test strategy.slow_ema.period == 5
+        @testset "Fast period = slow period (not allowed)" begin
+            @test_throws ArgumentError EMACross(EMA(5), EMA(5))
+        end
+
+        @testset "Fast period > slow period (not allowed)" begin
+            @test_throws ArgumentError EMACross(EMA(10), EMA(5))
         end
     end
 
@@ -391,19 +393,6 @@ end
             # Should have both 0s and 1s due to oscillation
             @test any(sides .== 0)
             @test any(sides .== 1)
-        end
-    end
-
-    @testset "calculate_strategy_sides - Swapped Fast/Slow Periods" begin
-        @testset "Fast period > slow period behavior" begin
-            prices = [collect(100.0:-1.0:70.0); collect(70.0:1.0:110.0)]
-            strategy = EMACross(EMA(10), EMA(3))  # Swapped
-            sides = calculate_strategy_sides(prices, strategy)
-
-            # Should still work, but behavior is inverted
-            # "Fast" (period 10) will lag behind "slow" (period 3)
-            @test sides isa Vector{Int8}
-            @test length(sides) == length(prices)
         end
     end
 

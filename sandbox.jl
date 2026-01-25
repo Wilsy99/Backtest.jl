@@ -21,7 +21,7 @@ end
 @btime @chain $big_data begin
     @select(:ticker, :timestamp, :close)
     @groupby(:ticker)
-    @transform!(
+    @transform(
         :cusum = calculate_indicators(:close, CUSUM(1)),
         :side = calculate_strategy_sides(:close, EMACross(EMA(5), EMA(20); long=true))
     )

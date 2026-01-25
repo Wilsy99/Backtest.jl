@@ -5,6 +5,13 @@ struct EMACross{Long,Short} <: Strategy
     slow_ema::EMA
 
     function EMACross{L,S}(f, s) where {L,S}
+        f_period = f.period
+        s_period = s.period
+        f_period < s_period || throw(
+            ArgumentError(
+                "fast_ema period must be < slow_ema period, got fast period = $f_period & slow period = $s_period",
+            ),
+        )
         return new{L::Bool,S::Bool}(f, s)
     end
 end
