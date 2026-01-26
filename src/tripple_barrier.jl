@@ -1,17 +1,17 @@
 abstract type Label end
 
-struct TrippleBarrier{T<:AbstractFloat} <: Label
+struct TripleBarrier{T<:AbstractFloat} <: Label
     take_profit::T
     stop_loss::T
     time_out::Int # Max bars to hold (Vertical Barrier)
 
-    function TrippleBarrier{T}(tp, sl, to) where {T<:AbstractFloat}
+    function TripleBarrier{T}(tp, sl, to) where {T<:AbstractFloat}
         return new{T}(_positive_float(T(tp)), _positive_float(T(sl)), _natural(Int(to)))
     end
 end
 
-function TrippleBarrier(tp::T, sl::T, to::Int) where {T<:AbstractFloat}
-    return TrippleBarrier{T}(tp, sl, to)
+function TripleBarrier(tp::T, sl::T, to::Int) where {T<:AbstractFloat}
+    return TripleBarrier{T}(tp, sl, to)
 end
 
 function calculate_labels(
@@ -45,7 +45,9 @@ function calculate_labels(
         @inbounds begin
             event_idx = event_indices[i]
             entry_price = closes[event_idx]
-            limit_index = min(event_idx + time_out, n_prices)
+            time_out_idx = event_idx + time_out
+            limit_index = min(time_out_idx, n_prices)
+            barrier_hit = false
 
             for prices_idx in (event_idx + 1):limit_index
                 # Check for Gaps at Open (using prices_idx for the future bar)
@@ -55,13 +57,13 @@ function calculate_labels(
                     t₁[i] = prices_idx
                     labels[i] = -1
                     log_returns[i] = log(return_open)
-
+                    barrier_hit = true
                     break
                 elseif return_open >= tp_threshold
                     t₁[i] = prices_idx
                     labels[i] = 1
                     log_returns[i] = log(return_open)
-
+                    barrier_hit = true
                     break
                 end
 
@@ -71,7 +73,7 @@ function calculate_labels(
                     t₁[i] = prices_idx
                     labels[i] = -1
                     log_returns[i] = log_sl
-
+                    barrier_hit = true
                     break
                 end
 
@@ -80,15 +82,15 @@ function calculate_labels(
                     t₁[i] = prices_idx
                     labels[i] = 1
                     log_returns[i] = log_tp
-
+                    barrier_hit = true
                     break
                 end
+            end
 
-                if (event_idx + time_out) <= n_prices
-                    t₁[i] = limit_index
-                    labels[i] = 0
-                    log_returns[i] = log(closes[limit_index] / entry_price)
-                end
+            if !barrier_hit && time_out_idx <= n_prices
+                t₁[i] = time_out_idx
+                labels[i] = 0
+                log_returns[i] = log(closes[time_out_idx] / entry_price)
             end
         end
     end
