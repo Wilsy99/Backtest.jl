@@ -1,5 +1,10 @@
 function _calculate_ema_cross_sides(
-    prices::AbstractVector{T}, fast_ema::EMA, slow_ema::EMA, ::Val{true}, ::Val{false}
+    prices::AbstractVector{T},
+    fast_ema::EMA,
+    slow_ema::EMA,
+    wait_for_cross::Bool,
+    ::Val{true},
+    ::Val{false},
 ) where {T<:AbstractFloat}
     n_prices = length(prices)
     ema_values = _calculate_emas(prices, [fast_ema.period, slow_ema.period])
@@ -11,10 +16,16 @@ function _calculate_ema_cross_sides(
         return sides
     end
 
+    cond = i -> fast_vals[i] > slow_vals[i]
+
+    if !wait_for_cross
+        _fill_sides_generic!(sides, start_idx, cond)
+        return sides
+    end
+
     first_cross = _find_first_long_cross(fast_vals, slow_vals, start_idx)
 
     if first_cross != -1
-        cond = i -> fast_vals[i] > slow_vals[i]
         _fill_sides_generic!(sides, first_cross, cond)
     end
 
@@ -35,4 +46,25 @@ end
         end
     end
     return -1
+end
+
+function _calculate_ema_cross_signals(
+    fast_ema_vals::AbstractVector{T},
+    slow_ema_vals::AbstractVector{T},
+    ::Val{true},
+    ::Val{false},
+) where {T<:AbstractFloat}
+    n = length(fast_ema_vals)
+    signals = Vector{Int8}(undef, n)
+    @inbounds signals[1] = 0
+
+    @inbounds @simd for i in 2:n
+        cross_up =
+            (fast_ema_vals[i] > slow_ema_vals[i]) &&
+            (fast_ema_vals[i - 1] <= slow_ema_vals[i - 1])
+
+        signals[i] = ifelse(cross_up, Int8(1), Int8(0))
+    end
+
+    return signals
 end

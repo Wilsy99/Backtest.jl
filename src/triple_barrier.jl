@@ -15,12 +15,12 @@ function TripleBarrier(tp::T, sl::T, to::Int) where {T<:AbstractFloat}
 end
 
 function calculate_labels(
+    label::TripleBarrier{T},
     event_indices::AbstractVector{Int},
     opens::AbstractVector{T},
     highs::AbstractVector{T},
     lows::AbstractVector{T},
-    closes::AbstractVector{T},
-    label::TripleBarrier{T};
+    closes::AbstractVector{T};
     drop_unfinished::Bool=true,
 ) where {T<:AbstractFloat}
     take_profit = label.take_profit

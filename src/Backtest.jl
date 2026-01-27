@@ -15,6 +15,7 @@ include("indicator/ema.jl")
 include("indicator/cusum.jl")
 include("strategy/strategy.jl")
 include("strategy/ema_cross.jl")
+include("triple_barrier.jl")
 
 export Timeframe, Daily, Weekly
 export get_data, transform_to_weekly
@@ -23,6 +24,9 @@ export Indicator, EMA, CUSUM
 export calculate_indicators
 
 export Strategy, EMACross
-export calculate_strategy_sides
+export calculate_sides, calculate_signals
+
+export Label, TripleBarrier
+export calculate_labels
 
 end

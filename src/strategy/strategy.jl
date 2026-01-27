@@ -20,11 +20,11 @@ function EMACross(fast, slow; long=true, short=false)
     return EMACross{long,short}(fast, slow)
 end
 
-function calculate_strategy_sides(
-    prices::AbstractVector{T}, strategy::EMACross{Long,Short}
+function calculate_sides(
+    strategy::EMACross{Long,Short}, prices::AbstractVector{T}; wait_for_cross::Bool=true
 ) where {T<:AbstractFloat,Long,Short}
     return _calculate_ema_cross_sides(
-        prices, strategy.fast_ema, strategy.slow_ema, Val(Long), Val(Short)
+        prices, strategy.fast_ema, strategy.slow_ema, wait_for_cross, Val(Long), Val(Short)
     )
 end
 
@@ -34,4 +34,18 @@ end
     @inbounds @simd for i in from_idx:length(sides)
         sides[i] = ifelse(condition(i), Int8(1), Int8(0))
     end
+end
+
+function calculate_signals(
+    strategy::EMACross{Long,Short},
+    fast_ema_vals::AbstractVector{T},
+    slow_ema_vals::AbstractVector{T},
+) where {T<:AbstractFloat,Long,Short}
+    return _calculate_ema_cross_signals(fast_ema_vals, slow_ema_vals, Val(Long), Val(Short))
+end
+
+function calculate_indicators(
+    strategy::EMACross{Long,Short}, prices::AbstractVector{T}
+) where {T<:AbstractFloat,Long,Short}
+    return calculate_indicators(prices, strategy.fast_ema, strategy.slow_ema)
 end
