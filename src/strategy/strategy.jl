@@ -36,6 +36,26 @@ end
     end
 end
 
+function calculate_signals(sides::AbstractVector{T}) where {T<:Integer}
+    n_sides = length(sides)
+
+    if n_sides == 0
+        return Int8[]
+    elseif n_sides == 1
+        return Int8[0]
+    end
+
+    signals = Vector{Int8}(undef, n_sides)
+
+    @inbounds signals[1] = 0
+
+    @inbounds @simd for i in 2:n_sides
+        signals[i] = sides[i] - sides[i - 1]
+    end
+
+    return signals
+end
+
 function calculate_signals(
     strategy::EMACross{Long,Short},
     fast_ema_vals::AbstractVector{T},

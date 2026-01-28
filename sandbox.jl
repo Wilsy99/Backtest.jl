@@ -12,8 +12,6 @@ big_data = reduce(
 
 strategy = EMACross(EMA(10), EMA(20); long=true, short=false)
 
-diff_series(x) = [i == 1 ? 0 : x[i] - x[i - 1] for i in eachindex(x)]
-
 @chain daily_data begin
     @select(:ticker, :timestamp, :open, :high, :low, :close)
     @groupby(:ticker)
@@ -22,49 +20,13 @@ diff_series(x) = [i == 1 ? 0 : x[i] - x[i - 1] for i in eachindex(x)]
         :cusum = calculate_indicators(:close, CUSUM(1)),
     )
     @subset(:cusum .!= 0)
-    @transform(:signal = diff_series(:side))
-    @subset(:signal .== 1)
-end
-
-@btime @chain $big_data begin
-    @select(:ticker, :timestamp, :open, :high, :low, :close)
+    @groupby(:ticker)
+    @transform(:signal = calculate_signals(:side))
     @groupby(:ticker)
     combine(_) do gdf
-        fast_ema_vals, slow_ema_vals = calculate_indicators(gdf.close, strategy)
-        cusum = calculate_indicators(gdf.close, CUSUM(1))
-        signals = calculate_signals(
-            strategy, fast_ema_vals[cusum .!= 0], slow_ema_vals[cusum .!= 0]
-        )
-        event_indices = findall(x -> x != 0, signals)
+        event_indices = findall(x -> x == 1, gdf.signal)
         res = calculate_labels(
-            event_indices,
-            gdf.open,
-            gdf.high,
-            gdf.low,
-            gdf.close,
             TripleBarrier(0.02, 0.01, 5),
-        )
-        DataFrame(;
-            t₀_idx=res.event_indices,
-            t₁_idx=res.t₁,
-            label=res.label,
-            log_return=res.log_return,
-        )
-    end
-end
-
-test = @chain weekly_data begin
-    @select(:ticker, :timestamp, :open, :high, :low, :close)
-    @groupby(:ticker)
-    combine(_) do gdf
-        fast_ema_vals, slow_ema_vals = calculate_indicators(gdf.close, strategy)
-        cusum = calculate_indicators(gdf.close, CUSUM(1))
-        signals = calculate_signals(
-            strategy, fast_ema_vals[cusum .!= 0], slow_ema_vals[cusum .!= 0]
-        )
-        event_indices = findall(x -> x != 0, signals)
-        res = calculate_labels(
-            TripleBarrier(0.3, 0.1, 100),
             event_indices,
             gdf.open,
             gdf.high,
@@ -78,4 +40,106 @@ test = @chain weekly_data begin
             log_return=res.log_return,
         )
     end
+end
+
+@chain daily_data begin
+    @select(:ticker, :timestamp, :open, :high, :low, :close)
+    @groupby(:ticker)
+    combine(_) do gdf
+        fast_ema_vals, slow_ema_vals = calculate_indicators(strategy, gdf.close)
+        cusum = calculate_indicators(gdf.close, CUSUM(1))
+
+        # Get indices where cusum != 0
+        valid_indices = findall(!=(0), cusum)
+
+        # Calculate signals on filtered values
+        signals = calculate_signals(
+            strategy, fast_ema_vals[valid_indices], slow_ema_vals[valid_indices]
+        )
+
+        # Find events in the SHORT signals array
+        event_positions_in_signals = findall(!=(0), signals)
+
+        # Map back to ORIGINAL dataframe indices
+        event_indices = valid_indices[event_positions_in_signals]
+
+        # Now event_indices correctly refer to the full dataframe
+        res = calculate_labels(
+            TripleBarrier(0.02, 0.01, 5),
+            event_indices,
+            gdf.open,
+            gdf.high,
+            gdf.low,
+            gdf.close,
+        )
+        DataFrame(;
+            t₀_idx=res.event_indices,
+            t₁_idx=res.t₁,
+            label=res.label,
+            log_return=res.log_return,
+        )
+    end
+end
+
+@chain weekly_data begin
+    @select(:ticker, :timestamp, :open, :high, :low, :close)
+    @groupby(:ticker)
+    combine(_) do gdf
+        fast_ema_vals, slow_ema_vals = calculate_indicators(strategy, gdf.close)
+        cusum = calculate_indicators(gdf.close, CUSUM(1))
+
+        # Get indices where cusum != 0
+        valid_indices = findall(!=(0), cusum)
+
+        # Calculate signals on filtered values
+        signals = calculate_signals(
+            strategy, fast_ema_vals[valid_indices], slow_ema_vals[valid_indices]
+        )
+
+        # Find events in the SHORT signals array
+        event_positions_in_signals = findall(!=(0), signals)
+
+        # Map back to ORIGINAL dataframe indices
+        event_indices = valid_indices[event_positions_in_signals]
+
+        # Now event_indices correctly refer to the full dataframe
+        res = calculate_labels(
+            TripleBarrier(0.02, 0.01, 5),
+            event_indices,
+            gdf.open,
+            gdf.high,
+            gdf.low,
+            gdf.close,
+        )
+        DataFrame(;
+            t₀_idx=res.event_indices,
+            t₁_idx=res.t₁,
+            label=res.label,
+            log_return=res.log_return,
+        )
+    end
+end
+
+# Strategy is composed of indicators, tripple barrier etc
+@chain data begin
+    calculate_indicators(strategy, :close)
+    calculate_events(strategy)
+    calculate_signals(strategy)
+    calculate_lables(strategy)
+end
+
+# Strategy also contains data
+@chain strategy begin
+    calculate_indicators(:close)
+    calculate_events()
+    calculate_signals()
+    calculate_lables()
+end
+
+#each input is just the struct it dispatches on
+@chain strategy begin
+    calculate(indicators)
+    calculate(events)
+    calculate(signals)
+    calculate(labels)
 end
