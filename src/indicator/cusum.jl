@@ -1,5 +1,5 @@
-function _calculate_cusum(
-    prices::AbstractVector{T}, indicator::CUSUM
+function calculate_cusum(
+    prices::AbstractVector{T}, multiplier::T, span::Int, expected_value::T
 ) where {T<:AbstractFloat}
     n = length(prices)
     cusum_values = zeros(Int8, n)
@@ -10,10 +10,10 @@ function _calculate_cusum(
         return cusum_values
     end
 
-    α = T(2.0) / (T(indicator.span) + one(T))
+    α = T(2.0) / (T(span) + one(T))
     β = one(T) - α
-    expected = T(indicator.expected_value)
-    mult = T(indicator.multiplier)
+    expected = expected_value
+    mult = multiplier
 
     sum_sq_ret = zero(T)
     prev_log = log(prices[1])

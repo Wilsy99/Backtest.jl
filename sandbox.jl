@@ -120,26 +120,4 @@ end
     end
 end
 
-# Strategy is composed of indicators, tripple barrier etc
-@chain data begin
-    calculate_indicators(strategy, :close)
-    calculate_events(strategy)
-    calculate_signals(strategy)
-    calculate_lables(strategy)
-end
-
-# Strategy also contains data
-@chain strategy begin
-    calculate_indicators(:close)
-    calculate_events()
-    calculate_signals()
-    calculate_lables()
-end
-
-#each input is just the struct it dispatches on
-@chain strategy begin
-    calculate(indicators)
-    calculate(events)
-    calculate(signals)
-    calculate(labels)
-end
+TripleBarrier(0.02, 0.01, 5)(CrossSignal()(EventFilter()(CUSUM(1)(EMA(10, 20)(bars)))))

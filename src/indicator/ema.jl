@@ -1,15 +1,22 @@
-function _calculate_emas(
+function calculate_emas(
     prices::AbstractVector{T}, periods::Vector{Int}
 ) where {T<:AbstractFloat}
-    n_rows = length(prices)
+    n_prices = length(prices)
     n_emas = length(periods)
 
-    results = Matrix{T}(undef, n_rows, n_emas)
+    results = Matrix{T}(undef, n_prices, n_emas)
 
     @threads for j in 1:n_emas
-        @views _single_ema!(results[:, j], prices, periods[j], n_rows)
+        @views _single_ema!(results[:, j], prices, periods[j], n_prices)
     end
 
+    return results
+end
+
+function calculate_ema(prices::AbstractVector{T}, period::Int) where {T<:AbstractFloat}
+    n_prices = length(prices)
+    results = Vector{T}(undef, n_prices)
+    _single_ema!(results, prices, period, n_prices)
     return results
 end
 
