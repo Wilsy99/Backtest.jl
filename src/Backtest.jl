@@ -16,7 +16,7 @@ include("indicator/ema.jl")
 include("indicator/cusum.jl")
 
 export PriceBars, TimeBar
-export AbstractIndicator, EMA, EMAs, CUSUM
+export AbstractIndicator, EMA, CUSUM
 
 export get_data
 

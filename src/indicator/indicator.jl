@@ -1,57 +1,41 @@
-function (indicator::AbstractIndicator)(bars::PriceBars)
-    return merge((bars=bars,), _calculate(indicator, bars))
+function (ind::AbstractIndicator)(bars::PriceBars)
+    ind_tup = calculate_indicator(ind, bars.close)
+    return merge((bars=bars,), ind_tup)
 end
 
-function (indicator::AbstractIndicator)(d::NamedTuple)
-    return merge(d, _calculate(indicator, d.bars))
+function (ind::AbstractIndicator)(d::NamedTuple)
+    ind_tup = calculate_indicator(ind, d.bars.close)
+    return merge(d, ind_tup)
 end
 
-function _calculate(indicator::EMA, bars::PriceBars)
-    val = calculate_ema(bars.close, indicator.period)
-    name = Symbol("ema_", indicator.period)
-    return NamedTuple{(name,)}((val,))
+@generated function calculate_indicator(
+    ::EMA{Periods}, prices::AbstractVector{T}
+) where {Periods,T<:AbstractFloat}
+    if length(Periods) == 1
+        p = Periods[1]
+        name = (Symbol(:ema_, p),)
+        quote
+            ema_vals = calculate_ema(prices, $p)
+            return NamedTuple{$name}((ema_vals,))
+        end
+    else
+        names = Tuple(Symbol(:ema_, p) for p in Periods)
+        n = length(Periods)
+        quote
+            ema_vals = calculate_emas(prices, collect($Periods))
+            NamedTuple{$names}(NTuple{$n,Vector{$T}}(Tuple(eachcol(ema_vals))))
+        end
+    end
 end
 
-function _calculate(indicator::EMAs, bars::PriceBars)
-    vals = calculate_emas(bars.close, indicator.periods)
-    names = Tuple(Symbol("ema_", p) for p in indicator.periods)
-    return NamedTuple{names}(Tuple(eachcol(vals)))
-end
+function calculate_indicator(ind::CUSUM, prices::AbstractVector{T}) where {T<:AbstractFloat}
+    mult = ind.multiplier
+    span = ind.span
+    exp_val = ind.expected_value
 
-function _calculate(indicator::CUSUM, bars::PriceBars)
-    val = calculate_cusum(
-        bars.close, indicator.multiplier, indicator.span, indicator.expected_value
-    )
+    cusum_vals = calculate_cusum(prices, mult, span, exp_val)
+
     name = :cusum
-    return NamedTuple{(name,)}((val,))
+
+    return NamedTuple{(name,)}((cusum_vals,))
 end
-
-# function calculate_indicators(
-#     prices::AbstractVector{T}, indicators::EMA
-# ) where {T<:AbstractFloat}
-#     n = length(prices)
-
-#     results = Vector{T}(undef, n)
-
-#     _single_ema!(results, prices, indicators.period, n)
-
-#     return results
-# end
-
-# function calculate_indicators(
-#     prices::AbstractVector{T}, indicators::EMA...
-# ) where {T<:AbstractFloat}
-#     periods = Int[ind.period for ind in indicators]
-
-#     results = _calculate_emas(prices, periods)
-
-#     names = Tuple(Symbol("ema_", ind.period) for ind in indicators)
-
-#     return NamedTuple{names}(Tuple(eachcol(results)))
-# end
-
-# function calculate_indicators(
-#     prices::AbstractVector{T}, indicator::CUSUM
-# ) where {T<:AbstractFloat}
-#     return _calculate_cusum(prices, indicator)
-# end

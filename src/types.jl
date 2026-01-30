@@ -7,8 +7,15 @@ abstract type AbstractLabeler end
 struct TimeBar <: AbstractBarType end
 struct DollarBar <: AbstractBarType end
 
+const PipelineObject = Union{AbstractIndicator,AbstractEvent,AbstractSignal,AbstractLabeler}
+
+import Base: >>
+>>(f::PipelineObject, g::PipelineObject) = g ∘ f
+>>(f::PipelineObject, g::Function) = g ∘ f
+>>(f::Function, g::PipelineObject) = g ∘ f
+
 # Core data container
-struct PriceBars{B<:AbstractBarType,T<:Real,V<:AbstractVector{T}}
+struct PriceBars{B<:AbstractBarType,T<:AbstractFloat,V<:AbstractVector{T}}
     open::V
     high::V
     low::V
@@ -18,16 +25,15 @@ struct PriceBars{B<:AbstractBarType,T<:Real,V<:AbstractVector{T}}
     bartype::B
 end
 
-# Indicators
-struct EMA <: AbstractIndicator
-    period::Int
-    EMA(period::Int) = new(_natural(period))
+struct EMA{Periods} <: AbstractIndicator
+    function EMA{Periods}() where {Periods}
+        foreach(_natural, Periods)
+        return new{Periods}()
+    end
 end
 
-struct EMAs <: AbstractIndicator
-    periods::Vector{Int}
-    EMAs(periods::Vector{Int}) = new(map(_natural, periods))
-end
+EMA(p::Int) = EMA{(p,)}()
+EMA(ps::Vararg{Int}) = EMA{ps}()
 
 struct CUSUM{T<:AbstractFloat} <: AbstractIndicator
     multiplier::T
@@ -44,22 +50,6 @@ function CUSUM(multiplier::Real; span=100, expected_value=0.0)
     return CUSUM{T}(multiplier, span, expected_value)
 end
 
-# struct EMACross <: Indicator
-#     fast::EMA
-#     slow::EMA
-
-#     function EMACross(f, s)
-#         f_period = f.period
-#         s_period = s.period
-#         f_period < s_period || throw(
-#             ArgumentError(
-#                 "fast period must be < slow period, got fast period = $f_period & slow period = $s_period",
-#             ),
-#         )
-#         return (f, s)
-#     end
-# end
-
 # # Signals
 # struct CrossSignal <: AbstractSignal end
 
@@ -72,9 +62,4 @@ end
 #     function TripleBarrier{T}(tp, sl, to) where {T<:AbstractFloat}
 #         return new{T}(_positive_float(T(tp)), _positive_float(T(sl)), _natural(Int(to)))
 #     end
-# end
-
-# # Pipeline
-# struct Pipeline{T<:Tuple}
-#     steps::T
 # end
