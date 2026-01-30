@@ -8,11 +8,20 @@ struct TimeBar <: AbstractBarType end
 struct DollarBar <: AbstractBarType end
 
 const PipelineObject = Union{AbstractIndicator,AbstractEvent,AbstractSignal,AbstractLabeler}
+const PipeOrFunc = Union{PipelineObject,Function}
+
+struct Job{D,F}
+    data::D
+    pipeline::F
+end
+
+(j::Job)() = j.pipeline(j.data)
 
 import Base: >>
->>(f::PipelineObject, g::PipelineObject) = g ∘ f
->>(f::PipelineObject, g::Function) = g ∘ f
->>(f::Function, g::PipelineObject) = g ∘ f
+
+>>(f::PipeOrFunc, g::PipeOrFunc) = g ∘ f
+>>(data::Any, pipe::PipeOrFunc) = Job(data, pipe)
+>>(j::Job, next_step::PipeOrFunc) = Job(j.data, next_step ∘ j.pipeline)
 
 # Core data container
 struct PriceBars{B<:AbstractBarType,T<:AbstractFloat,V<:AbstractVector{T}}

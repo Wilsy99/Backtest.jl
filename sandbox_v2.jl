@@ -11,4 +11,8 @@ bars = PriceBars(
 
 inds = EMA(10, 20) >> CUSUM(1)
 
-test = bars |> inds
+bars |> inds |> EMA(5)
+
+test = bars >> inds
+
+test()
