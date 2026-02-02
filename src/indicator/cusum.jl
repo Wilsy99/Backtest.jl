@@ -1,4 +1,28 @@
-function calculate_cusum(
+struct CUSUM{T<:AbstractFloat} <: AbstractIndicator
+    multiplier::T
+    span::Int
+    expected_value::T
+
+    function CUSUM{T}(m, s, e) where {T<:AbstractFloat}
+        return new{T}(_positive_float(T(m)), _natural(Int(s)), T(e))
+    end
+end
+
+function CUSUM(multiplier::Real; span=100, expected_value=0.0)
+    T = typeof(float(multiplier))
+    return CUSUM{T}(multiplier, span, expected_value)
+end
+
+function calculate_indicator(ind::CUSUM, prices::AbstractVector{T}) where {T<:AbstractFloat}
+    return _calculate_cusum(prices, ind.multiplier, ind.span, ind.expected_value)
+end
+
+function _indicator_result(ind::CUSUM, prices::AbstractVector{T}) where {T<:AbstractFloat}
+    vals = calculate_indicator(ind, prices)
+    return (cusum=vals,)
+end
+
+function _calculate_cusum(
     prices::AbstractVector{T}, multiplier::T, span::Int, expected_value::T
 ) where {T<:AbstractFloat}
     n = length(prices)

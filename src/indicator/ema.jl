@@ -1,4 +1,31 @@
-function calculate_emas(
+struct EMA{Periods} <: AbstractIndicator
+    function EMA{Periods}() where {Periods}
+        foreach(_natural, Periods)
+        return new{Periods}()
+    end
+end
+
+EMA(p::Int) = EMA{(p,)}()
+EMA(ps::Vararg{Int}) = EMA{ps}()
+
+function calculate_indicator(
+    ::EMA{Periods}, prices::AbstractVector{T}
+) where {Periods,T<:AbstractFloat}
+    if length(Periods) == 1
+        return _calculate_ema(prices, Periods[1])
+    else
+        return _calculate_emas(prices, collect(Periods))
+    end
+end
+
+function _calculate_ema(prices::AbstractVector{T}, period::Int) where {T<:AbstractFloat}
+    n_prices = length(prices)
+    results = Vector{T}(undef, n_prices)
+    _single_ema!(results, prices, period, n_prices)
+    return results
+end
+
+function _calculate_emas(
     prices::AbstractVector{T}, periods::Vector{Int}
 ) where {T<:AbstractFloat}
     n_prices = length(prices)
@@ -10,13 +37,6 @@ function calculate_emas(
         @views _single_ema!(results[:, j], prices, periods[j], n_prices)
     end
 
-    return results
-end
-
-function calculate_ema(prices::AbstractVector{T}, period::Int) where {T<:AbstractFloat}
-    n_prices = length(prices)
-    results = Vector{T}(undef, n_prices)
-    _single_ema!(results, prices, period, n_prices)
     return results
 end
 
@@ -73,5 +93,23 @@ end
         prev = α * prices[i] + β * prev
         ema[i] = prev
         i += 1
+    end
+end
+
+@generated function _indicator_result(
+    ind::EMA{Periods}, prices::AbstractVector{T}
+) where {Periods,T<:AbstractFloat}
+    names = Tuple(Symbol(:ema_, p) for p in Periods)
+    n = length(Periods)
+    if n == 1
+        quote
+            vals = calculate_indicator(ind, prices)
+            NamedTuple{$names}((vals,))
+        end
+    else
+        quote
+            vals = calculate_indicator(ind, prices)
+            NamedTuple{$names}(NTuple{$n}(Tuple(eachcol(vals))))
+        end
     end
 end

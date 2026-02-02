@@ -34,31 +34,6 @@ struct PriceBars{B<:AbstractBarType,T<:AbstractFloat,V<:AbstractVector{T}}
     bartype::B
 end
 
-struct EMA{Periods} <: AbstractIndicator
-    function EMA{Periods}() where {Periods}
-        foreach(_natural, Periods)
-        return new{Periods}()
-    end
-end
-
-EMA(p::Int) = EMA{(p,)}()
-EMA(ps::Vararg{Int}) = EMA{ps}()
-
-struct CUSUM{T<:AbstractFloat} <: AbstractIndicator
-    multiplier::T
-    span::Int
-    expected_value::T
-
-    function CUSUM{T}(m, s, e) where {T<:AbstractFloat}
-        return new{T}(_positive_float(T(m)), _natural(Int(s)), T(e))
-    end
-end
-
-function CUSUM(multiplier::Real; span=100, expected_value=0.0)
-    T = typeof(float(multiplier))
-    return CUSUM{T}(multiplier, span, expected_value)
-end
-
 # # Signals
 # struct CrossSignal <: AbstractSignal end
 
