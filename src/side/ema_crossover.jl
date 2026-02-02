@@ -1,16 +1,19 @@
 struct EMACrossover{D,Fast,Slow,Wait} <: AbstractSide
     function EMACrossover{D,Fast,Slow,Wait}() where {D,Fast,Slow,Wait}
-        D ∈ (:long_only, :short_only, :long_short) || throw(
-            ArgumentError("Direction must be :long_only, :short_only, or :long_short")
-        )
+        D ∈ (LongOnly, ShortOnly, LongShort) ||
+            throw(ArgumentError("Direction must be LongOnly, ShortOnly, or LongShort"))
         return new{D,Fast,Slow,Wait}()
     end
 end
 
 function EMACrossover(
-    fast::Symbol, slow::Symbol; wait_for_cross::Bool=true, direction::Symbol=:long_short
+    fast::Symbol, slow::Symbol; wait_for_cross::Bool=true, direction::Direction=LongShort
 )
     return EMACrossover{direction,fast,slow,wait_for_cross}()
+end
+
+function EMACrossover(; wait_for_cross::Bool=true, direction::Direction=LongShort)
+    return EMACrossover{direction,nothing,nothing,wait_for_cross}()
 end
 
 function _side_result(
@@ -57,15 +60,15 @@ end
 # Condition functions - dispatched by direction
 # ============================================
 
-@inline function _get_condition_func(::Val{:EMACrossover}, fast, slow, ::Val{:long_only})
+@inline function _get_condition_func(::Val{:EMACrossover}, fast, slow, ::Val{LongOnly})
     return i -> @inbounds ifelse(fast[i] > slow[i], Int8(1), Int8(0))
 end
 
-@inline function _get_condition_func(::Val{:EMACrossover}, fast, slow, ::Val{:short_only})
+@inline function _get_condition_func(::Val{:EMACrossover}, fast, slow, ::Val{ShortOnly})
     return i -> @inbounds ifelse(fast[i] < slow[i], Int8(-1), Int8(0))
 end
 
-@inline function _get_condition_func(::Val{:EMACrossover}, fast, slow, ::Val{:long_short})
+@inline function _get_condition_func(::Val{:EMACrossover}, fast, slow, ::Val{LongShort})
     return i -> @inbounds begin
         f, s = fast[i], slow[i]
         ifelse(f > s, Int8(1), ifelse(f < s, Int8(-1), Int8(0)))
@@ -76,7 +79,7 @@ end
 # Find first cross - dispatched by direction
 # ============================================
 
-@inline function _find_first_cross(fast, slow, start_idx, ::Val{:long_only})
+@inline function _find_first_cross(fast, slow, start_idx, ::Val{LongOnly})
     n = length(fast)
     @inbounds has_been_below = fast[start_idx] <= slow[start_idx]
 
@@ -92,7 +95,7 @@ end
     return -1
 end
 
-@inline function _find_first_cross(fast, slow, start_idx, ::Val{:short_only})
+@inline function _find_first_cross(fast, slow, start_idx, ::Val{ShortOnly})
     n = length(fast)
     @inbounds has_been_above = fast[start_idx] >= slow[start_idx]
 
@@ -108,7 +111,7 @@ end
     return -1
 end
 
-@inline function _find_first_cross(fast, slow, start_idx, ::Val{:long_short})
+@inline function _find_first_cross(fast, slow, start_idx, ::Val{LongShort})
     n = length(fast)
     @inbounds prev_above = fast[start_idx] > slow[start_idx]
 

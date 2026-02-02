@@ -14,7 +14,7 @@ include("side/side.jl")
 
 export PriceBars, TimeBar
 export AbstractIndicator, EMA, CUSUM, calculate_indicator
-export AbstractSide, EMACrossover, calculate_side
+export AbstractSide, LongOnly, ShortOnly, LongShort, EMACrossover, calculate_side
 
 export get_data
 
