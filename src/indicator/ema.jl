@@ -18,6 +18,24 @@ function calculate_indicator(
     end
 end
 
+@generated function _indicator_result(
+    ind::EMA{Periods}, prices::AbstractVector{T}
+) where {Periods,T<:AbstractFloat}
+    names = Tuple(Symbol(:ema_, p) for p in Periods)
+    n = length(Periods)
+    if n == 1
+        quote
+            vals = calculate_indicator(ind, prices)
+            NamedTuple{$names}((vals,))
+        end
+    else
+        quote
+            vals = calculate_indicator(ind, prices)
+            NamedTuple{$names}(NTuple{$n}(Tuple(eachcol(vals))))
+        end
+    end
+end
+
 function _calculate_ema(prices::AbstractVector{T}, period::Int) where {T<:AbstractFloat}
     n_prices = length(prices)
     results = Vector{T}(undef, n_prices)
@@ -93,23 +111,5 @@ end
         prev = α * prices[i] + β * prev
         ema[i] = prev
         i += 1
-    end
-end
-
-@generated function _indicator_result(
-    ind::EMA{Periods}, prices::AbstractVector{T}
-) where {Periods,T<:AbstractFloat}
-    names = Tuple(Symbol(:ema_, p) for p in Periods)
-    n = length(Periods)
-    if n == 1
-        quote
-            vals = calculate_indicator(ind, prices)
-            NamedTuple{$names}((vals,))
-        end
-    else
-        quote
-            vals = calculate_indicator(ind, prices)
-            NamedTuple{$names}(NTuple{$n}(Tuple(eachcol(vals))))
-        end
     end
 end
