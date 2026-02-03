@@ -11,10 +11,12 @@ include("utility.jl")
 include("data.jl")
 include("indicator/indicator.jl")
 include("side/side.jl")
+include("event.jl")
 
 export PriceBars, TimeBar
 export AbstractIndicator, EMA, CUSUM, calculate_indicator
-export AbstractSide, LongOnly, ShortOnly, LongShort, EMACrossover, calculate_side
+export AbstractSide, LongOnly, ShortOnly, LongShort, Crossover, calculate_side
+export AbstractEvent, Event, @Event
 
 export get_data
 

@@ -9,14 +9,19 @@ bars = PriceBars(
     data.open, data.high, data.low, data.close, data.volume, data.timestamp, TimeBar()
 )
 
-bars |> EMA(10, 20) |> CUSUM(1) |> EMACrossover(:ema_10, :ema_20; direction=LongOnly)
+bars |>
+EMA(10, 20) |>
+CUSUM(1) |>
+Crossover(:ema_10, :ema_20; direction=LongOnly) |>
+@Event(:cusum .!= 0, :side .!= 0)
 
 inds = EMA(10, 20) >> CUSUM(1)
-side = EMACrossover(:ema_10, :ema_20; wait_for_cross=false, direction=LongOnly)
+side = Crossover(:ema_10, :ema_20; wait_for_cross=false, direction=LongOnly)
+event = @Event(:cusum .!= 0, :side .!= 0)
 
-bars |> inds |> side
+bars |> inds |> side |> event
 
-test = bars >> inds >> side
+test = bars >> inds >> side >> event
 
 test()
 
@@ -26,10 +31,6 @@ test()
         :ema_20 = calculate_indicator(EMA(20), :close),
         :cusum = calculate_indicator(CUSUM(1), :close)
     )
-    @transform(:side = calculate_side(EMACrossover(), :ema_10, :ema_20))
+    @transform(:side = calculate_side(Crossover(), :ema_10, :ema_20))
+    @transform(:event = Int8.(:cusum .≠ 0 .&& :side .≠ 0))
 end
-
-bars |>
-EMA(10, 20) |>
-CUSUM(1) |>
-EMACrossover(:ema_10, :ema_20; wait_for_cross=false, direction=LongOnly)

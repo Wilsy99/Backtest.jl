@@ -1,53 +1,53 @@
-struct EMACrossover{D,Fast,Slow,Wait} <: AbstractSide
-    function EMACrossover{D,Fast,Slow,Wait}() where {D,Fast,Slow,Wait}
+struct Crossover{D,Fast,Slow,Wait} <: AbstractSide
+    function Crossover{D,Fast,Slow,Wait}() where {D,Fast,Slow,Wait}
         D ∈ (LongOnly, ShortOnly, LongShort) ||
             throw(ArgumentError("Direction must be LongOnly, ShortOnly, or LongShort"))
         return new{D,Fast,Slow,Wait}()
     end
 end
 
-function EMACrossover(
+function Crossover(
     fast::Symbol, slow::Symbol; wait_for_cross::Bool=true, direction::Direction=LongShort
 )
-    return EMACrossover{direction,fast,slow,wait_for_cross}()
+    return Crossover{direction,fast,slow,wait_for_cross}()
 end
 
-function EMACrossover(; wait_for_cross::Bool=true, direction::Direction=LongShort)
-    return EMACrossover{direction,nothing,nothing,wait_for_cross}()
+function Crossover(; wait_for_cross::Bool=true, direction::Direction=LongShort)
+    return Crossover{direction,nothing,nothing,wait_for_cross}()
 end
 
 function _side_result(
-    side::EMACrossover{D,Fast,Slow,Wait}, d::NamedTuple
+    side::Crossover{D,Fast,Slow,Wait}, d::NamedTuple
 ) where {D,Fast,Slow,Wait}
     vals = calculate_side(side, d[Fast], d[Slow])
     return (side=vals,)
 end
 
 function calculate_side(
-    ::EMACrossover{D,Fast,Slow,Wait},
-    fast_ema::AbstractVector{T},
-    slow_ema::AbstractVector{T},
+    ::Crossover{D,Fast,Slow,Wait},
+    fast_series::AbstractVector{T},
+    slow_series::AbstractVector{T},
 ) where {D,Fast,Slow,Wait,T<:AbstractFloat}
-    return _calculate_ema_cross_sides(fast_ema, slow_ema, Val(Wait), Val(D))
+    return _calculate_cross_sides(fast_series, slow_series, Val(Wait), Val(D))
 end
 
-function _calculate_ema_cross_sides(
-    fast_ema::AbstractVector{T}, slow_ema::AbstractVector{T}, ::Val{Wait}, dir::Val{D}
+function _calculate_cross_sides(
+    fast_series::AbstractVector{T}, slow_series::AbstractVector{T}, ::Val{Wait}, dir::Val{D}
 ) where {T<:AbstractFloat,Wait,D}
-    n = length(fast_ema)
+    n = length(fast_series)
     sides = zeros(Int8, n)
 
-    start_idx = findfirst(!isnan, slow_ema)
+    start_idx = findfirst(!isnan, slow_series)
     isnothing(start_idx) && return sides
 
-    cond_f = _get_condition_func(Val(:EMACrossover), fast_ema, slow_ema, dir)
+    cond_f = _get_condition_func(Val(:Crossover), fast_series, slow_series, dir)
 
     if !Wait
         _fill_sides_generic!(sides, start_idx, cond_f)
         return sides
     end
 
-    first_cross = _find_first_cross(fast_ema, slow_ema, start_idx, dir)
+    first_cross = _find_first_cross(fast_series, slow_series, start_idx, dir)
 
     if first_cross != -1
         _fill_sides_generic!(sides, first_cross, cond_f)
@@ -60,15 +60,15 @@ end
 # Condition functions - dispatched by direction
 # ============================================
 
-@inline function _get_condition_func(::Val{:EMACrossover}, fast, slow, ::Val{LongOnly})
+@inline function _get_condition_func(::Val{:Crossover}, fast, slow, ::Val{LongOnly})
     return i -> @inbounds ifelse(fast[i] > slow[i], Int8(1), Int8(0))
 end
 
-@inline function _get_condition_func(::Val{:EMACrossover}, fast, slow, ::Val{ShortOnly})
+@inline function _get_condition_func(::Val{:Crossover}, fast, slow, ::Val{ShortOnly})
     return i -> @inbounds ifelse(fast[i] < slow[i], Int8(-1), Int8(0))
 end
 
-@inline function _get_condition_func(::Val{:EMACrossover}, fast, slow, ::Val{LongShort})
+@inline function _get_condition_func(::Val{:Crossover}, fast, slow, ::Val{LongShort})
     return i -> @inbounds begin
         f, s = fast[i], slow[i]
         ifelse(f > s, Int8(1), ifelse(f < s, Int8(-1), Int8(0)))
