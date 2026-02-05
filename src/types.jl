@@ -3,14 +3,14 @@ abstract type AbstractIndicator end
 abstract type AbstractSide end
 abstract type AbstractEvent end
 abstract type AbstractBarrier end
-abstract type AbstractLabeler end
+abstract type AbstractLabel end
 
 struct TimeBar <: AbstractBarType end
 struct DollarBar <: AbstractBarType end
 
 @enum Direction LongOnly ShortOnly LongShort
 
-const PipelineObject = Union{AbstractIndicator,AbstractSide,AbstractEvent,AbstractLabeler}
+const PipelineObject = Union{AbstractIndicator,AbstractSide,AbstractEvent,AbstractLabel}
 const PipeOrFunc = Union{PipelineObject,Function}
 
 struct Job{D,F}

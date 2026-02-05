@@ -1,7 +1,7 @@
 include("barrier.jl")
-inclide("execution.jl")
+include("execution.jl")
 
-struct Label{B<:Tuple,E1<:ExecutionBasis,E2<:ExecutionBasis,NT<:NamedTuple}
+struct Label{B<:Tuple,E1<:ExecutionBasis,E2<:ExecutionBasis,NT<:NamedTuple} <: AbstractLabel
     barriers::B
     entry_basis::E1
     exit_basis::E2

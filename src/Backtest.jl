@@ -12,11 +12,15 @@ include("data.jl")
 include("indicator/indicator.jl")
 include("side/side.jl")
 include("event.jl")
+include("label/label.jl")
 
 export PriceBars, TimeBar
 export AbstractIndicator, EMA, CUSUM, calculate_indicator
 export AbstractSide, LongOnly, ShortOnly, LongShort, Crossover, calculate_side
 export AbstractEvent, Event, @Event
+export AbstractExecutionBasis, CurrentOpen, CurrentClose, NextOpen, NextClose, Immediate
+export AbstractBarrier, LowerBarrier, UpperBarrier, TimeBarrier
+export AbstractLabel, Label, calculate_label
 
 export get_data
 

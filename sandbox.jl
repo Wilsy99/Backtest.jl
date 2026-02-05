@@ -1,7 +1,7 @@
 using Pkg
 Pkg.activate(".")
 
-using Backtest, BenchmarkTools, DataFrames, DataFramesMeta, Chain
+using Backtest, BenchmarkTools, Dates, DataFrames, DataFramesMeta, Chain
 
 data = get_data(["SPY", "AAPL", "MSFT", "TSLA", "NVDA", "AMZN", "NFLX"])
 
@@ -15,21 +15,20 @@ bars |>
     CUSUM(1) |>
     Crossover(:ema_10, :ema_20; direction=LongOnly) |>
     @Event(:cusum ≠ 0, :side ≠ 0)
-    @Label(
-        entry_basis=next_open, 
-        exit_basis=next_open,
-        entry_price * (1 - :adr_20),
-        entry_price * 1.05,
-        entry_date + 10,
-        :ema_10
-        )
 #! format: on
 
 inds = EMA(10, 20) >> CUSUM(1)
 side = Crossover(:ema_10, :ema_20; wait_for_cross=false, direction=LongOnly)
 event = @Event(:cusum .!= 0, :side .!= 0)
+label = Label(
+    LowerBarrier((idx, ep, _, _) -> ep * 0.98, Int8(-1)),
+    UpperBarrier((idx, ep, _, _) -> ep * 1.02, Int8(1)),
+    TimeBarrier((idx, _, et, args) -> et + Day(10), Int8(0));
+    entry_basis=NextOpen(),
+    exit_basis=Immediate(),
+)
 
-bars |> inds |> side |> event
+bars |> inds |> side |> event |> label
 
 test = bars >> inds >> side >> event
 
