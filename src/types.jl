@@ -2,6 +2,7 @@ abstract type AbstractBarType end
 abstract type AbstractIndicator end
 abstract type AbstractSide end
 abstract type AbstractEvent end
+abstract type AbstractBarrier end
 abstract type AbstractLabeler end
 
 struct TimeBar <: AbstractBarType end
@@ -36,16 +37,4 @@ struct PriceBars{B<:AbstractBarType,T<:AbstractFloat,V<:AbstractVector{T}}
     bartype::B
 end
 
-# # Signals
-# struct CrossSignal <: AbstractSignal end
-
-# # Labelers
-# struct TripleBarrier{T<:AbstractFloat} <: Label
-#     take_profit::T
-#     stop_loss::T
-#     time_out::Int # Max bars to hold (Vertical Barrier)
-
-#     function TripleBarrier{T}(tp, sl, to) where {T<:AbstractFloat}
-#         return new{T}(_positive_float(T(tp)), _positive_float(T(sl)), _natural(Int(to)))
-#     end
-# end
+Base.length(pb::PriceBars) = length(pb.close)

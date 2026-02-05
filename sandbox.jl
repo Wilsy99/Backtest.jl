@@ -9,11 +9,21 @@ bars = PriceBars(
     data.open, data.high, data.low, data.close, data.volume, data.timestamp, TimeBar()
 )
 
+#! format: off
 bars |>
-EMA(10, 20) |>
-CUSUM(1) |>
-Crossover(:ema_10, :ema_20; direction=LongOnly) |>
-@Event(:cusum .!= 0, :side .!= 0)
+    EMA(10, 20) |>
+    CUSUM(1) |>
+    Crossover(:ema_10, :ema_20; direction=LongOnly) |>
+    @Event(:cusum ≠ 0, :side ≠ 0)
+    @Label(
+        entry_basis=next_open, 
+        exit_basis=next_open,
+        entry_price * (1 - :adr_20),
+        entry_price * 1.05,
+        entry_date + 10,
+        :ema_10
+        )
+#! format: on
 
 inds = EMA(10, 20) >> CUSUM(1)
 side = Crossover(:ema_10, :ema_20; wait_for_cross=false, direction=LongOnly)
