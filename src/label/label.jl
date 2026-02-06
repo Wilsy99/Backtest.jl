@@ -53,6 +53,22 @@ function Label(
     return Label(barriers, entry_basis, drop_unfinished, barrier_args)
 end
 
+struct Label!{B<:Tuple,E<:AbstractExecutionBasis,NT<:NamedTuple} <: AbstractLabel
+    barriers::B
+    entry_basis::E
+    drop_unfinished::Bool
+    barrier_args::NT
+end
+
+function Label!(
+    barriers::AbstractBarrier...;
+    entry_basis::AbstractExecutionBasis=NextOpen(),
+    drop_unfinished::Bool=true,
+    barrier_args::NamedTuple=(;),
+)
+    return Label!(barriers, entry_basis, drop_unfinished, barrier_args)
+end
+
 # ── Label results ──
 
 """
@@ -120,6 +136,17 @@ function (lab::Label)(d::NamedTuple)
     return merge(d, (; labels=results))
 end
 
+function (lab::Label!)(d::NamedTuple)
+    return calculate_label(
+        d.event_indices,
+        d.bars,
+        lab.barriers;
+        entry_basis=lab.entry_basis,
+        drop_unfinished=lab.drop_unfinished,
+        barrier_args=merge(d, lab.barrier_args),
+    )
+end
+
 # ── Core calculation (raw vectors) ──
 
 """
@@ -129,6 +156,7 @@ end
 Convenience method that constructs a [`PriceBars`](@ref) from raw vectors and
 delegates to the primary [`calculate_label`](@ref) method.
 """
+
 function calculate_label(
     event_indices::AbstractVector{Int},
     timestamps::Vector{<:TimeType},
@@ -174,6 +202,20 @@ For each event index, the algorithm:
 # Returns
 A [`LabelResults`](@ref) containing entry/exit timestamps, labels, and returns.
 """
+struct LoopArgs{NT<:NamedTuple,T<:AbstractFloat,D<:TimeType}
+    base::NT
+    idx::Int
+    entry_price::T
+    entry_ts::D
+end
+
+@inline function Base.getproperty(a::LoopArgs, s::Symbol)
+    s === :idx && return getfield(a, :idx)
+    s === :entry_price && return getfield(a, :entry_price)
+    s === :entry_ts && return getfield(a, :entry_ts)
+    return getproperty(getfield(a, :base), s)
+end
+
 function calculate_label(
     event_indices::AbstractVector{Int},
     price_bars::PriceBars,
@@ -198,7 +240,7 @@ function calculate_label(
 
     entry_adj = _get_idx_adj(entry_basis)
 
-    @inbounds for i in 1:n_events
+    @inbounds @threads for i in 1:n_events
         entry_idx = event_indices[i] + entry_adj
 
         if entry_idx < 1 || entry_idx > n_prices
@@ -210,7 +252,8 @@ function calculate_label(
         entry_timestamps[i] = entry_ts
 
         for j in (entry_idx + 1):n_prices
-            loop_args = merge(full_args, (; idx=j, entry_price, entry_ts))
+            loop_args = LoopArgs(full_args, j, entry_price, entry_ts)
+            barrier, level = _find_triggered_barrier(barriers, loop_args, price_bars, j)
 
             barrier, level = _find_triggered_barrier(barriers, loop_args, price_bars, j)
             isnothing(barrier) && continue

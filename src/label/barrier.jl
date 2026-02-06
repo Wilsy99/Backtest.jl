@@ -147,7 +147,7 @@ Returns:
 - `TimeType` for `TimeBarrier`.
 - `Bool` for `ConditionBarrier`.
 """
-@inline barrier_level(b::AbstractBarrier, args::NamedTuple) = b.level_func(args)
+@inline barrier_level(b::AbstractBarrier, args) = b.level_func(args)
 
 # ── Gap detection ──
 

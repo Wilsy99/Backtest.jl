@@ -20,7 +20,7 @@ export AbstractSide, LongOnly, ShortOnly, LongShort, Crossover, calculate_side
 export AbstractEvent, Event, @Event
 export AbstractExecutionBasis, CurrentOpen, CurrentClose, NextOpen, NextClose, Immediate
 export AbstractBarrier, LowerBarrier, UpperBarrier, TimeBarrier, ConditionBarrier
-export AbstractLabel, Label, calculate_label
+export AbstractLabel, Label, Label!, calculate_label
 
 export get_data
 

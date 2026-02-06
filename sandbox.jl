@@ -4,10 +4,22 @@ Pkg.activate(".")
 using Backtest, BenchmarkTools, Dates, DataFrames, DataFramesMeta, Chain
 
 data = get_data(["SPY", "AAPL", "MSFT", "TSLA", "NVDA", "AMZN", "NFLX"])
+big_data = vcat(fill(data, 500)...)
 
 bars = PriceBars(
     data.open, data.high, data.low, data.close, data.volume, data.timestamp, TimeBar()
 )
+
+big_bars =
+    bars = PriceBars(
+        big_data.open,
+        big_data.high,
+        big_data.low,
+        big_data.close,
+        big_data.volume,
+        big_data.timestamp,
+        TimeBar(),
+    )
 
 #! format: off
 bars |>
@@ -20,7 +32,7 @@ bars |>
 inds = EMA(10, 20) >> CUSUM(1)
 side = Crossover(:ema_10, :ema_20; wait_for_cross=false, direction=LongOnly)
 event = @Event(:cusum .!= 0, :side .!= 0)
-label = Label(
+label = Label!(
     ConditionBarrier(a -> a.ema_10[a.idx] < a.ema_20[a.idx], Int8(-1), NextOpen()),
     LowerBarrier(a -> a.ema_20[a.idx], Int8(-1), NextOpen()),
     UpperBarrier(a -> a.entry_price * 1.2, Int8(1), NextOpen()),
@@ -30,9 +42,9 @@ label = Label(
 
 bars |> inds |> side |> event |> label
 
-test = bars >> inds >> side >> event >> label
+benchmark_strat = big_bars >> inds >> side >> event >> label
 
-test_strat = test()
+@btime $benchmark_strat()
 
 @chain data begin
     @transform(
