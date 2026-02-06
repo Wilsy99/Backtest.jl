@@ -51,7 +51,7 @@ function (lab::Label)(d::NamedTuple)
         entry_basis=lab.entry_basis,
         exit_basis=lab.exit_basis,
         drop_unfinished=lab.drop_unfinished,
-        barrier_args=lab.barrier_args,
+        barrier_args=merge(d, lab.barrier_args),
     )
 
     return merge(d, (; labels=results))
@@ -123,8 +123,9 @@ function calculate_label(
         hit_occurred = false
 
         for j in (entry_idx + 1):n_prices
+            loop_args = merge(full_args, (; idx=j, entry_price, entry_ts))
             for barrier in barriers
-                level = barrier_level(barrier, j, entry_price, entry_ts, full_args)
+                level = barrier_level(barrier, loop_args)
 
                 if barrier_hit(
                     barrier,
