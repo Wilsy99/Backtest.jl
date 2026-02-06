@@ -11,4 +11,5 @@ _get_idx_adj(::Union{NextOpen,NextClose}) = 1
 
 @inline _get_price(::Union{CurrentOpen,NextOpen}, ::Any, idx, args) = args.bars.open[idx]
 @inline _get_price(::Union{CurrentClose,NextClose}, ::Any, idx, args) = args.bars.close[idx]
-@inline _get_price(::Immediate, level, ::Any, ::Any) = level
+@inline _get_price(::Immediate, level::AbstractFloat, ::Any, ::Any) = level
+@inline _get_price(::Immediate, ::TimeType, idx, args) = args.bars.close[idx]

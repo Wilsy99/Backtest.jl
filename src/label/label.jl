@@ -54,7 +54,7 @@ function (lab::Label)(d::NamedTuple)
         barrier_args=lab.barrier_args,
     )
 
-    return merge(d, (labels = results))
+    return merge(d, (; labels=results))
 end
 
 function calculate_label(

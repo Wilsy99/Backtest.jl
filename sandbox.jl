@@ -30,9 +30,9 @@ label = Label(
 
 bars |> inds |> side |> event |> label
 
-test = bars >> inds >> side >> event
+test = bars >> inds >> side >> event >> label
 
-test()
+test_strat = test()
 
 @chain data begin
     @transform(
