@@ -21,12 +21,11 @@ inds = EMA(10, 20) >> CUSUM(1)
 side = Crossover(:ema_10, :ema_20; wait_for_cross=false, direction=LongOnly)
 event = @Event(:cusum .!= 0, :side .!= 0)
 label = Label(
-    ConditionBarrier(a -> a.ema_10[a.idx] < a.ema_20[a.idx], Int8(-1)),
-    LowerBarrier(a -> a.ema_20[a.idx], Int8(-1)),
-    UpperBarrier(a -> a.entry_price * 1.2, Int8(1)),
-    TimeBarrier(a -> a.entry_ts + Day(10), Int8(0));
+    ConditionBarrier(a -> a.ema_10[a.idx] < a.ema_20[a.idx], Int8(-1), NextOpen()),
+    LowerBarrier(a -> a.ema_20[a.idx], Int8(-1), NextOpen()),
+    UpperBarrier(a -> a.entry_price * 1.2, Int8(1), NextOpen()),
+    TimeBarrier(a -> a.entry_ts + Day(10), Int8(0), NextOpen());
     entry_basis=NextOpen(),
-    exit_basis=Immediate(),
 )
 
 bars |> inds |> side |> event |> label
