@@ -86,13 +86,13 @@ Container for the output of [`calculate_label`](@ref).
 If `drop_unfinished=true` (default), events with label `-99` (no barrier hit) are
 filtered out during construction.
 """
+
 struct LabelResults{D<:TimeType,T<:AbstractFloat}
     t₀::Vector{D}
     t₁::Vector{D}
     label::Vector{Int8}
     ret::Vector{T}
     log_ret::Vector{T}
-
     function LabelResults(
         t₀::Vector{D},
         t₁::Vector{D},
@@ -102,14 +102,17 @@ struct LabelResults{D<:TimeType,T<:AbstractFloat}
         drop_unfinished::Bool=true,
     ) where {D<:TimeType,T<:AbstractFloat}
         if drop_unfinished
-            mask = labels .!= Int8(-99)
-            return new{D,T}(t₀[mask], t₁[mask], labels[mask], rets[mask], log_rets[mask])
-        else
-            return new{D,T}(t₀, t₁, labels, rets, log_rets)
+            n = _compact!(labels, t₀, t₁, rets, log_rets)
+            resize!(t₀, n)
+            resize!(t₁, n)
+            resize!(labels, n)
+            resize!(rets, n)
+            resize!(log_rets, n)
         end
+
+        return new{D,T}(t₀, t₁, labels, rets, log_rets)
     end
 end
-
 # ── Pipeline functor ──
 
 """
@@ -253,8 +256,6 @@ function calculate_label(
 
         for j in (entry_idx + 1):n_prices
             loop_args = LoopArgs(full_args, j, entry_price, entry_ts)
-            barrier, level = _find_triggered_barrier(barriers, loop_args, price_bars, j)
-
             barrier, level = _find_triggered_barrier(barriers, loop_args, price_bars, j)
             isnothing(barrier) && continue
 
