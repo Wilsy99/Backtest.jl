@@ -40,38 +40,66 @@ function _calculate_cross_sides(
     start_idx = findfirst(!isnan, slow_series)
     isnothing(start_idx) && return sides
 
-    cond_f = _get_condition_func(Val(:Crossover), fast_series, slow_series, dir)
-
-    if !Wait
-        _fill_sides_generic!(sides, start_idx, cond_f)
-        return sides
+    if Wait
+        first_cross = _find_first_cross(fast_series, slow_series, start_idx, dir)
+        first_cross == -1 && return sides
+        start_idx = first_cross
     end
 
-    first_cross = _find_first_cross(fast_series, slow_series, start_idx, dir)
-
-    if first_cross != -1
-        _fill_sides_generic!(sides, first_cross, cond_f)
-    end
+    _fill_cross_transitions!(sides, fast_series, slow_series, start_idx, dir)
 
     return sides
 end
 
 # ============================================
-# Condition functions - dispatched by direction
+# Fill only at crossover transition points
 # ============================================
 
-@inline function _get_condition_func(::Val{:Crossover}, fast, slow, ::Val{LongOnly})
-    return i -> @inbounds ifelse(fast[i] > slow[i], Int8(1), Int8(0))
+@inline function _fill_cross_transitions!(
+    sides::AbstractVector{Int8}, fast, slow, from_idx::Int, ::Val{LongOnly}
+)
+    n = length(sides)
+    from_idx > n && return
+    @inbounds if fast[from_idx] > slow[from_idx]
+        sides[from_idx] = Int8(1)
+    end
+    @inbounds for i in (from_idx + 1):n
+        if fast[i] > slow[i] && fast[i - 1] <= slow[i - 1]
+            sides[i] = Int8(1)
+        end
+    end
 end
 
-@inline function _get_condition_func(::Val{:Crossover}, fast, slow, ::Val{ShortOnly})
-    return i -> @inbounds ifelse(fast[i] < slow[i], Int8(-1), Int8(0))
+@inline function _fill_cross_transitions!(
+    sides::AbstractVector{Int8}, fast, slow, from_idx::Int, ::Val{ShortOnly}
+)
+    n = length(sides)
+    from_idx > n && return
+    @inbounds if fast[from_idx] < slow[from_idx]
+        sides[from_idx] = Int8(-1)
+    end
+    @inbounds for i in (from_idx + 1):n
+        if fast[i] < slow[i] && fast[i - 1] >= slow[i - 1]
+            sides[i] = Int8(-1)
+        end
+    end
 end
 
-@inline function _get_condition_func(::Val{:Crossover}, fast, slow, ::Val{LongShort})
-    return i -> @inbounds begin
-        f, s = fast[i], slow[i]
-        ifelse(f > s, Int8(1), ifelse(f < s, Int8(-1), Int8(0)))
+@inline function _fill_cross_transitions!(
+    sides::AbstractVector{Int8}, fast, slow, from_idx::Int, ::Val{LongShort}
+)
+    n = length(sides)
+    from_idx > n && return
+    @inbounds begin
+        f, s = fast[from_idx], slow[from_idx]
+        sides[from_idx] = ifelse(f > s, Int8(1), ifelse(f < s, Int8(-1), Int8(0)))
+    end
+    @inbounds for i in (from_idx + 1):n
+        if fast[i] > slow[i] && fast[i - 1] <= slow[i - 1]
+            sides[i] = Int8(1)
+        elseif fast[i] < slow[i] && fast[i - 1] >= slow[i - 1]
+            sides[i] = Int8(-1)
+        end
     end
 end
 
