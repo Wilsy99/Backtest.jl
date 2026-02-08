@@ -1,12 +1,17 @@
 abstract type AbstractBarType end
 abstract type AbstractIndicator end
 abstract type AbstractSide end
+abstract type AbstractDirection end
 abstract type AbstractEvent end
 abstract type AbstractBarrier end
 abstract type AbstractLabel end
 
 struct TimeBar <: AbstractBarType end
 struct DollarBar <: AbstractBarType end
+
+struct LongOnly <: AbstractDirection end
+struct ShortOnly <: AbstractDirection end
+struct LongShort <: AbstractDirection end
 
 const PipelineObject = Union{AbstractIndicator,AbstractSide,AbstractEvent,AbstractLabel}
 const PipeOrFunc = Union{PipelineObject,Function}
