@@ -100,20 +100,6 @@ function calculate_label(
     )
 end
 
-struct LoopArgs{NT<:NamedTuple,T<:AbstractFloat,D<:TimeType}
-    base::NT
-    idx::Int
-    entry_price::T
-    entry_ts::D
-end
-
-@inline function Base.getproperty(a::LoopArgs, s::Symbol)
-    s === :idx && return getfield(a, :idx)
-    s === :entry_price && return getfield(a, :entry_price)
-    s === :entry_ts && return getfield(a, :entry_ts)
-    return getproperty(getfield(a, :base), s)
-end
-
 function calculate_label(
     event_indices::AbstractVector{Int},
     price_bars::PriceBars,
@@ -150,7 +136,7 @@ function calculate_label(
         entry_timestamps[i] = entry_ts
 
         for j in (entry_idx + 1):n_prices
-            loop_args = LoopArgs(full_args, j, entry_price, entry_ts)
+            loop_args = (; full_args..., idx=j, entry_price=entry_price, entry_ts=entry_ts)
 
             hit = _check_and_process_barriers!(
                 i,

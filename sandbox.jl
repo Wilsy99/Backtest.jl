@@ -25,8 +25,8 @@ big_bars =
 bars |>
     EMA(10, 20) |>
     CUSUM(1) |>
-    Crossover(:ema_10, :ema_20; direction=LongOnly) |>
-    @Event(:cusum ≠ 0, :side ≠ 0)
+    Crossover(:ema_10, :ema_20; direction=LongOnly()) |>
+    @Event(:cusum .!= 0, :side .!= 0)
 #! format: on
 
 inds = EMA(10, 20) >> CUSUM(1)

@@ -8,8 +8,6 @@ abstract type AbstractLabel end
 struct TimeBar <: AbstractBarType end
 struct DollarBar <: AbstractBarType end
 
-@enum Direction LongOnly ShortOnly LongShort
-
 const PipelineObject = Union{AbstractIndicator,AbstractSide,AbstractEvent,AbstractLabel}
 const PipeOrFunc = Union{PipelineObject,Function}
 

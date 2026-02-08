@@ -1,3 +1,11 @@
+include("crossover.jl")
+
+abstract type AbstractDirection end
+
+struct LongOnly <: AbstractDirection end
+struct ShortOnly <: AbstractDirection end
+struct LongShort <: AbstractDirection end
+
 function (s::AbstractSide)(d::NamedTuple)
     return merge(d, _side_result(s, d))
 end
@@ -9,5 +17,3 @@ end
         sides[i] = condition_func(i)
     end
 end
-
-include("crossover.jl")

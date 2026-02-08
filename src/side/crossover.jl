@@ -1,19 +1,20 @@
-struct Crossover{D,Fast,Slow,Wait} <: AbstractSide
-    function Crossover{D,Fast,Slow,Wait}() where {D,Fast,Slow,Wait}
-        D ∈ (LongOnly, ShortOnly, LongShort) ||
-            throw(ArgumentError("Direction must be LongOnly, ShortOnly, or LongShort"))
+struct Crossover{D<:AbstractDirection,Fast,Slow,Wait} <: AbstractSide
+    function Crossover{D,Fast,Slow,Wait}() where {D<:AbstractDirection,Fast,Slow,Wait}
         return new{D,Fast,Slow,Wait}()
     end
 end
 
 function Crossover(
-    fast::Symbol, slow::Symbol; wait_for_cross::Bool=true, direction::Direction=LongShort
+    fast::Symbol,
+    slow::Symbol;
+    wait_for_cross::Bool=true,
+    direction::AbstractDirection=LongShort(),
 )
-    return Crossover{direction,fast,slow,wait_for_cross}()
+    return Crossover{typeof(direction),fast,slow,wait_for_cross}()
 end
 
-function Crossover(; wait_for_cross::Bool=true, direction::Direction=LongShort)
-    return Crossover{direction,nothing,nothing,wait_for_cross}()
+function Crossover(; wait_for_cross::Bool=true, direction::AbstractDirection=LongShort())
+    return Crossover{typeof(direction),nothing,nothing,wait_for_cross}()
 end
 
 function _side_result(
@@ -27,20 +28,20 @@ function calculate_side(
     ::Crossover{D,Fast,Slow,Wait},
     fast_series::AbstractVector{T},
     slow_series::AbstractVector{T},
-) where {D,Fast,Slow,Wait,T<:AbstractFloat}
-    return _calculate_cross_sides(fast_series, slow_series, Val(Wait), Val(D))
+) where {D<:AbstractDirection,Fast,Slow,Wait,T<:AbstractFloat}
+    return _calculate_cross_sides(fast_series, slow_series, Val(Wait), D())
 end
 
 function _calculate_cross_sides(
-    fast_series::AbstractVector{T}, slow_series::AbstractVector{T}, ::Val{Wait}, dir::Val{D}
-) where {T<:AbstractFloat,Wait,D}
+    fast_series::AbstractVector{T}, slow_series::AbstractVector{T}, ::Val{Wait}, dir::D
+) where {T<:AbstractFloat,Wait,D<:AbstractDirection}
     n = length(fast_series)
     sides = zeros(Int8, n)
 
     start_idx = findfirst(!isnan, slow_series)
     isnothing(start_idx) && return sides
 
-    cond_f = _get_condition_func(Val(:Crossover), fast_series, slow_series, dir)
+    cond_f = _get_condition_func(fast_series, slow_series, dir)
 
     if !Wait
         _fill_sides_generic!(sides, start_idx, cond_f)
@@ -60,15 +61,15 @@ end
 # Condition functions - dispatched by direction
 # ============================================
 
-@inline function _get_condition_func(::Val{:Crossover}, fast, slow, ::Val{LongOnly})
+@inline function _get_condition_func(fast, slow, ::LongOnly)
     return i -> @inbounds ifelse(fast[i] > slow[i], Int8(1), Int8(0))
 end
 
-@inline function _get_condition_func(::Val{:Crossover}, fast, slow, ::Val{ShortOnly})
+@inline function _get_condition_func(fast, slow, ::ShortOnly)
     return i -> @inbounds ifelse(fast[i] < slow[i], Int8(-1), Int8(0))
 end
 
-@inline function _get_condition_func(::Val{:Crossover}, fast, slow, ::Val{LongShort})
+@inline function _get_condition_func(fast, slow, ::LongShort)
     return i -> @inbounds begin
         f, s = fast[i], slow[i]
         ifelse(f > s, Int8(1), ifelse(f < s, Int8(-1), Int8(0)))
@@ -79,7 +80,7 @@ end
 # Find first cross - dispatched by direction
 # ============================================
 
-@inline function _find_first_cross(fast, slow, start_idx, ::Val{LongOnly})
+@inline function _find_first_cross(fast, slow, start_idx, ::LongOnly)
     n = length(fast)
     @inbounds has_been_below = fast[start_idx] <= slow[start_idx]
 
@@ -95,7 +96,7 @@ end
     return -1
 end
 
-@inline function _find_first_cross(fast, slow, start_idx, ::Val{ShortOnly})
+@inline function _find_first_cross(fast, slow, start_idx, ::ShortOnly)
     n = length(fast)
     @inbounds has_been_above = fast[start_idx] >= slow[start_idx]
 
@@ -111,7 +112,7 @@ end
     return -1
 end
 
-@inline function _find_first_cross(fast, slow, start_idx, ::Val{LongShort})
+@inline function _find_first_cross(fast, slow, start_idx, ::LongShort)
     n = length(fast)
     @inbounds prev_above = fast[start_idx] > slow[start_idx]
 
