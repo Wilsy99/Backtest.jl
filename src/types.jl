@@ -8,7 +8,21 @@ abstract type AbstractLabel end
 struct TimeBar <: AbstractBarType end
 struct DollarBar <: AbstractBarType end
 
-@enum Direction LongOnly ShortOnly LongShort
+"""
+    AbstractDirection
+
+Abstract type representing the directionality of a trading strategy.
+
+# Subtypes
+- [`LongOnly`](@ref): only take long positions.
+- [`ShortOnly`](@ref): only take short positions.
+- [`LongShort`](@ref): take both long and short positions.
+"""
+abstract type AbstractDirection end
+
+struct LongOnly <: AbstractDirection end
+struct ShortOnly <: AbstractDirection end
+struct LongShort <: AbstractDirection end
 
 const PipelineObject = Union{AbstractIndicator,AbstractSide,AbstractEvent,AbstractLabel}
 const PipeOrFunc = Union{PipelineObject,Function}

@@ -16,7 +16,8 @@ include("label/label.jl")
 
 export PriceBars, TimeBar
 export AbstractIndicator, EMA, CUSUM, calculate_indicator
-export AbstractSide, LongOnly, ShortOnly, LongShort, Crossover, calculate_side
+export AbstractDirection, LongOnly, ShortOnly, LongShort
+export AbstractSide, Crossover, calculate_side
 export AbstractEvent, Event, @Event
 export AbstractExecutionBasis, CurrentOpen, CurrentClose, NextOpen, NextClose, Immediate
 export AbstractBarrier, LowerBarrier, UpperBarrier, TimeBarrier, ConditionBarrier
