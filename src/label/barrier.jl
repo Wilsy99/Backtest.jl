@@ -71,9 +71,12 @@ end
 
 function _replace_symbols(::BarrierContext, ex::QuoteNode)
     direct_fields = (:entry_price, :entry_ts, :idx)
+    bars_fields = (:open, :high, :low, :close, :volume, :timestamp)
     if ex.value in direct_fields
         return :(d.$(ex.value))
-    else
+    elseif ex.value in bars_fields
         return :(d.bars.$(ex.value)[d.idx])
+    else
+        return :(d.$(ex.value)[d.idx])
     end
 end
