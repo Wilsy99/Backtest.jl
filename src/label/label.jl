@@ -108,6 +108,8 @@ function calculate_label(
     drop_unfinished::Bool=true,
     barrier_args::NamedTuple=(;),
 )
+    _warn_barrier_ordering(barriers)
+
     D = eltype(price_bars.timestamp)
     T = eltype(price_bars.close)
 
@@ -162,6 +164,19 @@ function calculate_label(
     return LabelResults(
         entry_timestamps, exit_timestamps, labels, rets, log_rets; drop_unfinished
     )
+end
+
+function _warn_barrier_ordering(barriers::Tuple)
+    for i in 1:(length(barriers) - 1)
+        a = barriers[i]
+        b = barriers[i + 1]
+        if _temporal_priority(a.exit_basis) > _temporal_priority(b.exit_basis)
+            @warn "Barrier $(typeof(a).name.name) with $(typeof(a.exit_basis).name.name) " *
+                "exit basis is listed before $(typeof(b).name.name) with " *
+                "$(typeof(b.exit_basis).name.name) exit basis. The first-listed " *
+                "barrier takes priority when both trigger on the same bar."
+        end
+    end
 end
 
 # ── Barrier checking: recursive tuple unrolling ──

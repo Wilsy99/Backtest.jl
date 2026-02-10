@@ -43,32 +43,40 @@ end
 
 struct BarrierContext end
 
+function _build_barrier_expr(type::Symbol, default_label, args)
+    funcs, kwargs = _build_macro_components(BarrierContext(), args)
+    has_label = any(kw -> kw.args[1] == :label, kwargs)
+    if has_label
+        return esc(:($type($(funcs[1]); $(kwargs...))))
+    else
+        return esc(:($type($(funcs[1]); label=$default_label, $(kwargs...))))
+    end
+end
+
 macro UpperBarrier(ex, args...)
-    return :(@_Barrier UpperBarrier 1 $ex $(args...))
+    return _build_barrier_expr(:UpperBarrier, 1, (ex, args...))
 end
 
 macro LowerBarrier(ex, args...)
-    return :(@_Barrier LowerBarrier -1 $ex $(args...))
+    return _build_barrier_expr(:LowerBarrier, -1, (ex, args...))
 end
 
 macro TimeBarrier(ex, args...)
-    return :(@_Barrier TimeBarrier 0 $ex $(args...))
+    return _build_barrier_expr(:TimeBarrier, 0, (ex, args...))
 end
 
 macro ConditionBarrier(ex, args...)
-    return :(@_Barrier ConditionBarrier 0 $ex $(args...))
-end
-
-macro _Barrier(type, default_label, args...)
-    funcs, kwargs = _build_macro_components(BarrierContext(), args)
-    return esc(:($type($(funcs[1]); label=$default_label, $(kwargs...))))
+    return _build_barrier_expr(:ConditionBarrier, 0, (ex, args...))
 end
 
 function _replace_symbols(::BarrierContext, ex::QuoteNode)
     direct_fields = (:entry_price, :entry_ts, :idx)
+    bars_fields = (:open, :high, :low, :close, :volume, :timestamp)
     if ex.value in direct_fields
         return :(d.$(ex.value))
-    else
+    elseif ex.value in bars_fields
         return :(d.bars.$(ex.value)[d.idx])
+    else
+        return :(d.$(ex.value)[d.idx])
     end
 end

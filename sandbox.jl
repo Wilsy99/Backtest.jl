@@ -28,16 +28,43 @@ bars |>
     Crossover(:ema_10, :ema_20; direction=LongOnly()) |>
     @Event(:cusum .!= 0, :side .!= 0) |> 
     Label!(
-        @LowerBarrier(:ema_20, label=Int8(-1), exit_basis=NextOpen()),
+        @LowerBarrier(:entry_price * 0.95, label=Int8(-1), exit_basis=Immediate()),
         @UpperBarrier(:entry_price * 1.2, label=Int8(1), exit_basis=Immediate()),
-        @TimeBarrier(:entry_ts + Day(10), label=Int8(0), exit_basis=NextOpen())
+        @LowerBarrier(:ema_20, label=Int8(-1), exit_basis=NextOpen()),
+        @TimeBarrier(:entry_ts + Day(10), label=Int8(0), exit_basis=NextOpen()),
+        @ConditionBarrier(:ema_10 < :ema_20 && :close <= :entry_price, label=Int8(-1), exit_basis=NextOpen()),
+        @ConditionBarrier(:ema_10 < :ema_20 && :close > :entry_price, label=Int8(1), exit_basis=NextOpen());
+        entry_basis=NextOpen()
         )
 #! format: on
 
+
+strat(bars::PriceBars) = 
+#! format: off
+    bars >>
+    EMA(10, 20) >>
+    CUSUM(1) >>
+    Crossover(:ema_10, :ema_20; direction=LongOnly()) >>
+    @Event(:cusum .!= 0, :side .!= 0) >> 
+    Label!(
+        @LowerBarrier(:entry_price * 0.95, label=Int8(-1), exit_basis=Immediate()),
+        @UpperBarrier(:entry_price * 1.2, label=Int8(1), exit_basis=Immediate()),
+        @LowerBarrier(:ema_20, label=Int8(-1), exit_basis=NextOpen()),
+        @TimeBarrier(:entry_ts + Day(10), label=Int8(0), exit_basis=NextOpen()),
+        @ConditionBarrier(:ema_10 < :ema_20 && :close <= :entry_price, label=Int8(-1), exit_basis=NextOpen()),
+        @ConditionBarrier(:ema_10 < :ema_20 && :close > :entry_price, label=Int8(1), exit_basis=NextOpen());
+        entry_basis=NextOpen()
+        )
+#! format: on
+
+@benchmark $strat(bars)()
+
+@benchmark $strat(big_bars)()
+
 inds = EMA(10, 20) >> CUSUM(1)
 side = Crossover(:ema_10, :ema_20; wait_for_cross=false, direction=LongOnly())
-event = @Event(:cusum .!= 0, :side .!= 0)
-label = Label!(
+event = Event(d -> d.cusum .!= 0 .&& d.side .!= 0)
+label = Label(
     ConditionBarrier(a -> a.ema_10[a.idx] < a.ema_20[a.idx], Int8(-1), NextOpen()),
     LowerBarrier(a -> a.ema_20[a.idx], Int8(-1), NextOpen()),
     UpperBarrier(a -> a.entry_price * 1.2, Int8(1), NextOpen()),
