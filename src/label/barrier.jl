@@ -22,10 +22,12 @@ struct ConditionBarrier{F<:Function,E<:AbstractExecutionBasis} <: AbstractBarrie
     exit_basis::E
 end
 
-LowerBarrier(f, label) = LowerBarrier(f, label, Immediate())
-UpperBarrier(f, label) = UpperBarrier(f, label, Immediate())
-TimeBarrier(f, label) = TimeBarrier(f, label, Immediate())
-ConditionBarrier(f, label) = ConditionBarrier(f, label, NextClose())
+LowerBarrier(f; label=-1, exit_basis=Immediate()) = LowerBarrier(f, label, exit_basis)
+UpperBarrier(f; label=1, exit_basis=Immediate()) = UpperBarrier(f, label, exit_basis)
+TimeBarrier(f; label=0, exit_basis=Immediate()) = TimeBarrier(f, label, exit_basis)
+function ConditionBarrier(f; label=0, exit_basis=NextClose())
+    return ConditionBarrier(f, label, exit_basis)
+end
 
 @inline barrier_level(b::AbstractBarrier, args) = b.level_func(args)
 
@@ -41,25 +43,25 @@ ConditionBarrier(f, label) = ConditionBarrier(f, label, NextClose())
 
 struct BarrierContext end
 
-macro UpperBarrier(ex, label=1)
-    return :(@_Barrier UpperBarrier $ex label = $label)
+macro UpperBarrier(ex, args...)
+    return :(@_Barrier UpperBarrier 1 $ex $(args...))
 end
 
-macro LowerBarrier(ex, label=-1)
-    return :(@_Barrier LowerBarrier $ex label = $label)
+macro LowerBarrier(ex, args...)
+    return :(@_Barrier LowerBarrier -1 $ex $(args...))
 end
 
-macro TimeBarrier(ex, label=0)
-    return :(@_Barrier TimeBarrier $ex label = $label)
+macro TimeBarrier(ex, args...)
+    return :(@_Barrier TimeBarrier 0 $ex $(args...))
 end
 
-macro ConditionBarrier(ex, label=0)
-    return :(@_Barrier TimeBarrier $ex label = $label)
+macro ConditionBarrier(ex, args...)
+    return :(@_Barrier ConditionBarrier 0 $ex $(args...))
 end
 
-macro _Barrier(type, args...)
+macro _Barrier(type, default_label, args...)
     funcs, kwargs = _build_macro_components(BarrierContext(), args)
-    return esc(:($type($(funcs[1]), $(kwargs...))))
+    return esc(:($type($(funcs[1]); label=$default_label, $(kwargs...))))
 end
 
 function _replace_symbols(::BarrierContext, ex::QuoteNode)
@@ -67,7 +69,6 @@ function _replace_symbols(::BarrierContext, ex::QuoteNode)
     if ex.value in direct_fields
         return :(d.$(ex.value))
     else
-        # Barrier logic: :close -> d.bars.close[d.idx]
         return :(d.bars.$(ex.value)[d.idx])
     end
 end

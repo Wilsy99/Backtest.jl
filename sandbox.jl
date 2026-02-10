@@ -26,7 +26,12 @@ bars |>
     EMA(10, 20) |>
     CUSUM(1) |>
     Crossover(:ema_10, :ema_20; direction=LongOnly()) |>
-    @Event(:cusum .!= 0, :side .!= 0)
+    @Event(:cusum .!= 0, :side .!= 0) |> 
+    Label!(
+        @LowerBarrier(:ema_20, label=Int8(-1), exit_basis=NextOpen()),
+        @UpperBarrier(:entry_price * 1.2, label=Int8(1), exit_basis=Immediate()),
+        @TimeBarrier(:entry_ts + Day(10), label=Int8(0), exit_basis=NextOpen())
+        )
 #! format: on
 
 inds = EMA(10, 20) >> CUSUM(1)
