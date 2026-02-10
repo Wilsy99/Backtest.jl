@@ -25,40 +25,26 @@ function _resolve_indices(e::Event, data, n::Int)
     mask = is_and_mode ? trues(n) : falses(n)
 
     for condition in e.conditions
-        mask .= e.logic.(mask, condition(data))
+        res = condition(data)
+
+        if res isa Bool
+            @warn "Event condition returned a single Bool instead of a vector. " *
+                "This usually means you forgot a dot (.) for broadcasting (e.g., use .!= instead of !=)."
+        end
+
+        mask .= e.logic.(mask, res)
     end
 
     return findall(mask)
 end
 
+struct EventContext end
+
 macro Event(args...)
-    exprs = []
-    kwargs = []
-
-    for arg in args
-        if isa(arg, Expr) && arg.head == :(=)
-            push!(kwargs, arg)
-        else
-            push!(exprs, arg)
-        end
-    end
-
-    funcs = map(exprs) do ex
-        transformed = _replace_symbols(ex)
-        :(d -> $transformed)
-    end
-
+    funcs, kwargs = _build_macro_components(EventContext(), args)
     return esc(:(Event($(funcs...); $(kwargs...))))
 end
 
-function _replace_symbols(ex)
-    if isa(ex, QuoteNode)
-        # Found :symbol -> Convert to d.symbol
-        return Expr(:., :d, ex)
-    elseif isa(ex, Expr)
-        # Recursively process sub-expressions (args of functions)
-        return Expr(ex.head, map(_replace_symbols, ex.args)...)
-    else
-        return ex
-    end
+function _replace_symbols(::EventContext, ex::QuoteNode)
+    return Expr(:., :d, ex)
 end

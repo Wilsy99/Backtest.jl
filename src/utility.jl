@@ -8,21 +8,28 @@ function _natural(n::Int)
     return n
 end
 
-"""
-Compact finished events to the front of each vector in-place.
-Returns the count of kept elements.
-"""
-function _compact!(labels, vecs::Vararg{AbstractVector})
-    n = 0
-    @inbounds for i in eachindex(labels)
-        labels[i] == Int8(-99) && continue
-        n += 1
-        if n != i
-            labels[n] = labels[i]
-            for v in vecs
-                v[n] = v[i]
-            end
+function _build_macro_components(context, args)
+    exprs = []
+    kwargs = []
+    for arg in args
+        if isa(arg, Expr) && arg.head == :(=)
+            push!(kwargs, arg)
+        else
+            push!(exprs, arg)
         end
     end
-    return n
+
+    funcs = map(exprs) do ex
+        transformed = _replace_symbols(context, ex)
+        :(d -> $transformed)
+    end
+
+    return funcs, kwargs
 end
+
+function _replace_symbols(ctx, ex::Expr)
+    return Expr(ex.head, map(x -> _replace_symbols(ctx, x), ex.args)...)
+end
+
+# Fallback for non-symbols (numbers, strings, etc.)
+_replace_symbols(ctx, ex) = ex

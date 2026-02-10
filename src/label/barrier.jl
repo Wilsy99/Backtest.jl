@@ -38,3 +38,36 @@ ConditionBarrier(f, label) = ConditionBarrier(f, label, NextClose())
 @inline barrier_hit(::TimeBarrier, level::TimeType, ::Any, ::Any, ts::TimeType) =
     ts >= level
 @inline barrier_hit(::ConditionBarrier, level, ::Any, ::Any, ::Any) = level
+
+struct BarrierContext end
+
+macro UpperBarrier(ex, label=1)
+    return :(@_Barrier UpperBarrier $ex label = $label)
+end
+
+macro LowerBarrier(ex, label=-1)
+    return :(@_Barrier LowerBarrier $ex label = $label)
+end
+
+macro TimeBarrier(ex, label=0)
+    return :(@_Barrier TimeBarrier $ex label = $label)
+end
+
+macro ConditionBarrier(ex, label=0)
+    return :(@_Barrier TimeBarrier $ex label = $label)
+end
+
+macro _Barrier(type, args...)
+    funcs, kwargs = _build_macro_components(BarrierContext(), args)
+    return esc(:($type($(funcs[1]), $(kwargs...))))
+end
+
+function _replace_symbols(::BarrierContext, ex::QuoteNode)
+    direct_fields = (:entry_price, :entry_ts, :idx)
+    if ex.value in direct_fields
+        return :(d.$(ex.value))
+    else
+        # Barrier logic: :close -> d.bars.close[d.idx]
+        return :(d.bars.$(ex.value)[d.idx])
+    end
+end
