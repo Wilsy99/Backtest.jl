@@ -87,4 +87,21 @@ benchmark_strat = big_bars >> inds >> side >> event >> label
     )
     @transform(:side = calculate_side(Crossover(), :ema_10, :ema_20))
     @transform(:event = Int8.(:cusum .≠ 0 .&& :side .≠ 0))
+    calculate_label(
+        findall(_.event .!= 0),
+        _.timestamp,
+        _.open,
+        _.high,
+        _.low,
+        _.close,
+        _.volume,
+        (
+            LowerBarrier(a -> a.ema_20[a.idx], Int8(-1), NextOpen()),
+            UpperBarrier(a -> a.entry_price * 1.2, Int8(1), Immediate()),
+            TimeBarrier(a -> a.entry_ts + Day(10), Int8(0), NextOpen()),
+        );
+        entry_basis=NextOpen(),
+        barrier_args=(; ema_20=_.ema_20),
+    )
 end
+
