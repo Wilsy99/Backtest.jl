@@ -560,7 +560,7 @@ The test directory mirrors `src/` — one subdirectory per module, one test file
 ```
 test/
 ├── runtests.jl                      # TestItems entry point (rarely changes)
-├── setup_testdata.jl                # @testsetup module TestData
+├── testdata_testsetup.jl            # @testsetup module TestData (shared fixtures)
 ├── aqua_test.jl                     # Package quality (Aqua.jl)
 ├── type_tests.jl                    # Core types: PriceBars, directions, execution basis
 ├── macro_tests.jl                   # All DSL macros: symbol rewriting, default labels
@@ -586,7 +586,7 @@ When you add a new module (e.g., `src/Portfolio/`):
 ```
 test/
 ├── runtests.jl
-├── setup_testdata.jl
+├── testdata_testsetup.jl
 ├── aqua_test.jl
 ├── type_tests.jl
 ├── indicator/
