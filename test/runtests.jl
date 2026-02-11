@@ -1,2 +1,2 @@
 using ReTestItems
-@run_package_tests
+runtests(@__DIR__)

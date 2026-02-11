@@ -33,7 +33,7 @@ end
     else
         quote
             vals = calculate_indicator(ind, prices)
-            NamedTuple{$names}(NTuple{$n}(Tuple(eachcol(vals))))
+            NamedTuple{$names}(NTuple{$n}(ntuple(i -> @view(vals[:, i]), Val(n))))
         end
     end
 end
@@ -72,7 +72,7 @@ function _single_ema!(
 
     dest[p] = _sma_seed(prices, p)
 
-    α = T(2) / (p + 1)
+    α = T(2) / T(p + 1)
     β = one(T) - α
 
     _ema_kernel_unrolled!(dest, prices, p, n, α, β)
@@ -85,7 +85,7 @@ end
     @inbounds @simd for i in 1:p
         s += prices[i]
     end
-    return s / p
+    return s / T(p)
 end
 
 @inline function _ema_kernel_unrolled!(

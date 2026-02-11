@@ -252,9 +252,9 @@ end
     ema20 = calculate_indicator(EMA(20), prices)
 
     @test size(multi) == (100, 3)
-    @test multi[:, 1] ≈ ema5
-    @test multi[:, 2] ≈ ema10
-    @test multi[:, 3] ≈ ema20
+    @test isequal(multi[:, 1], ema5)
+    @test isequal(multi[:, 2], ema10)
+    @test isequal(multi[:, 3], ema20)
 end
 
 @testitem "EMA: Named Result Builder (_indicator_result)" tags = [:indicator, :ema, :unit] begin
@@ -266,7 +266,7 @@ end
     nt = Backtest._indicator_result(EMA(10), prices)
     @test nt isa NamedTuple
     @test haskey(nt, :ema_10)
-    @test nt.ema_10 == calculate_indicator(EMA(10), prices)
+    @test isequal(nt.ema_10, calculate_indicator(EMA(10), prices))
 
     # Multi-period → NamedTuple with :ema_5 and :ema_20
     nt2 = Backtest._indicator_result(EMA(5, 20), prices)
