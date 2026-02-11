@@ -66,17 +66,16 @@ Every `@testitem` gets **at least one category tag** and **at least one componen
 | `:edge` | Boundary conditions, numerical extremes |
 | `:macro` | DSL macro tests |
 
-**Component tags** (grows with the package — these describe *what* is being tested):
+**Component tags** grow organically with the package. Don't predefine a full taxonomy — add a component tag when you write the first test for that component. Use lowercase, singular, matching the module or type name (e.g., `:ema`, `:cusum`, `:crossover`, `:pipeline`). For modules with multiple implementations, use a finer-grained tag per type (e.g., `:ema` and `:cusum` both fall under the broader `:indicator` tag).
+
+The current component tags in use are:
 
 | Tag | Meaning |
 |-----|---------|
 | `:indicator` | Indicator module |
-| `:side` | Side module |
-| `:label` | Label module |
-| `:event` | Event module |
-| `:pipeline` | `>>` operator and Job composition |
+| `:ema` | EMA indicator |
 
-**Convention for new components**: When you add a new module or major feature, add a matching component tag (e.g., `:portfolio`, `:risk`, `:broker`). Use lowercase, singular, matching the module name. Also add a finer-grained tag per type when there are multiple implementations (e.g., `:ema`, `:cusum` under `:indicator`).
+When you add a new module or type, register a new component tag by adding a row to the table above and using it in your `@testitem` blocks.
 
 ---
 
@@ -96,6 +95,13 @@ Test data generators are defined once and referenced by any `@testitem` that nee
     )
         timestamps = [start_date + Day(i - 1) for i in 1:n]
         close = [start_price + 0.05 * i + volatility * sin(2π * i / 20) for i in 1:n]
+
+        # Guard against negative prices — the trend term (0.05 * i) grows slowly
+        # relative to the sine amplitude (volatility). For short series with high
+        # volatility, close prices can go negative, which causes DomainError in
+        # CUSUM's log() call. Clamp to a small positive floor.
+        close = max.(close, 0.01)
+
         open = vcat([start_price], close[1:(end - 1)])
         spread = [0.5 + 0.3 * abs(sin(0.7 * i)) for i in 1:n]
         high = max.(open, close) .+ spread
@@ -128,6 +134,8 @@ Test data generators are defined once and referenced by any `@testitem` that nee
     end
 end
 ```
+
+**Safe parameter ranges for `make_pricebars`**: The default parameters (`start_price=100.0`, `volatility=2.0`) are safe for any `n`. If you increase `volatility` or decrease `start_price`, check that `start_price + 0.05 * 1 - volatility > 0` (i.e., `start_price > volatility`) to avoid relying on the floor clamp. When you need negative prices for edge-case testing, generate them explicitly rather than relying on fixture parameters — this makes the test intent clear.
 
 Deterministic sine-wave fixtures are the default for most tests. Use `StableRNGs.jl` only when you need realistic stochastic price paths (e.g., stress-testing CUSUM signal rates under random walks).
 
@@ -309,6 +317,8 @@ Also test: empty events (no signals → empty `LabelResults`), different directi
 
 The `@Event`, `@UpperBarrier`, `@LowerBarrier`, `@TimeBarrier`, and `@ConditionBarrier` macros perform symbol rewriting via `_replace_symbols`. They are the most fragile part of the public API and must be tested explicitly.
 
+#### Happy path: macro output matches manual construction
+
 ```julia
 @testitem "Macro: @Event symbol rewriting" tags=[:macro, :event] begin
     using Backtest, Test, Dates
@@ -338,6 +348,65 @@ end
 end
 ```
 
+#### Complex expressions: nested, mixed literals, and ambiguous syntax
+
+Macro hygiene is a top failure mode. The happy-path tests above only verify that simple expressions rewrite correctly. You must also test expressions that stress the AST walker:
+
+```julia
+@testitem "Macro: Complex expression rewriting" tags=[:macro, :event, :edge] begin
+    using Backtest, Test, Dates
+
+    bars = # ... make_pricebars with EMA(10, 50) applied ...
+    nt = EMA(10, 50)(bars)
+
+    # Nested arithmetic: multiple symbols mixed with literals
+    evt_manual = Event(d -> (d.ema_10 .* 0.5 .+ d.ema_50 .* 0.5) .> 100.0)
+    evt_macro  = @Event (:ema_10 .* 0.5 .+ :ema_50 .* 0.5) .> 100.0
+
+    r_manual = evt_manual(nt)
+    r_macro  = evt_macro(nt)
+    @test r_manual.event_indices == r_macro.event_indices
+
+    # Multiple symbols in one barrier expression
+    ub_manual = UpperBarrier(d -> d.entry_price + (d.ema_10[d.idx] - d.ema_50[d.idx]))
+    ub_macro  = @UpperBarrier :entry_price + (:ema_10 - :ema_50)
+    @test ub_manual.label == ub_macro.label
+end
+
+@testitem "Macro: Barrier with literals and field mixing" tags=[:macro, :label, :edge] begin
+    using Backtest, Test, Dates
+
+    # Literal-heavy expression: the walker must not rewrite numeric literals
+    lb_macro = @LowerBarrier 0.95 * :entry_price - 2.0
+    @test lb_macro isa LowerBarrier
+    @test lb_macro.label == Int8(-1)
+
+    # Expression that looks like a kwarg but isn't — verify it doesn't
+    # get swallowed into the kwargs branch of _build_macro_components
+    cb_macro = @ConditionBarrier :close <= :entry_price
+    @test cb_macro isa ConditionBarrier
+
+    # Boolean combination in ConditionBarrier
+    cb_manual = ConditionBarrier(
+        d -> d.ema_10[d.idx] < d.ema_50[d.idx] && d.bars.close[d.idx] <= d.entry_price
+    )
+    cb_macro = @ConditionBarrier :ema_10 < :ema_50 && :close <= :entry_price
+    @test cb_manual.label == cb_macro.label
+end
+```
+
+**What to cover for every macro:**
+
+| Expression pattern | Why it matters |
+|--------------------|---------------|
+| Single symbol (`:close`) | Baseline — must work |
+| Symbol × literal (`:entry_price * 1.05`) | Verify literals pass through untouched |
+| Multiple symbols (`:ema_10 - :ema_50`) | Verify both get rewritten |
+| Nested arithmetic (`:ema_10 * 0.5 + :ema_50 * 0.5`) | Deep AST traversal |
+| Boolean operators (`&&`, `\|\|`) | Common in `@ConditionBarrier` |
+| Comparison that resembles `=` (`:close <= :entry_price`) | Must not parse as a keyword argument |
+| Parenthesised sub-expressions | Verify `Expr(:call, ...)` vs `Expr(:block, ...)` handling |
+
 ### E. Warning and Error Path Tests
 
 Use `@test_throws` for invalid construction and `@test_logs` for expected warnings.
@@ -363,7 +432,56 @@ end
 
 ---
 
-## 6. Decision Matrix: Testing Internal Functions
+## 6. Performance Testing
+
+This is a performance-oriented package — SIMD kernels, unrolled loops, and `@inbounds` are load-bearing. Performance regressions are bugs. This section covers how to catch them.
+
+### Allocation Tests
+
+Computation kernels must not allocate on the hot path. Use `@allocated` to enforce this in tests.
+
+```julia
+@testitem "EMA: Zero allocations in kernel" tags=[:indicator, :ema, :stability] begin
+    using Backtest, Test
+
+    prices = collect(1.0:200.0)
+    dest = similar(prices)
+    p = 10
+    n = length(prices)
+    α = 2.0 / (p + 1)
+    β = 1.0 - α
+    dest[p] = Backtest._sma_seed(prices, p)
+
+    # Warmup call (JIT compilation)
+    Backtest._ema_kernel_unrolled!(dest, prices, p, n, α, β)
+
+    # Measurement call — must be zero allocations
+    allocs = @allocated Backtest._ema_kernel_unrolled!(dest, prices, p, n, α, β)
+    @test allocs == 0
+end
+```
+
+**When to use `@allocated`:**
+
+- Mutating kernel functions (`_ema_kernel_unrolled!`, `_fill_sides_generic!`, `_calculate_cusum`)
+- Any function annotated with `@inbounds @simd`
+- Inner loops of the barrier checking recursion
+
+**When NOT to use `@allocated`:**
+
+- Public API functions that construct result vectors (allocation is expected)
+- Pipeline composition (`>>`) which creates NamedTuples
+- Test setup and fixture generation
+
+### Benchmark Regression (manual, not CI)
+
+Full benchmark regression in CI is fragile (noisy timing on shared runners). Instead, maintain a `benchmarks/` directory with `BenchmarkTools.jl` scripts for manual use when optimising. The `sandbox.jl` file serves this purpose today.
+
+The rule: **if you change a kernel, run the relevant benchmark before and after and include the comparison in your PR description.**
+
+---
+
+## 7. Decision Matrix: Testing Internal Functions
 
 Use this decision tree when deciding whether a new internal function needs its own tests.
 
@@ -381,7 +499,7 @@ When in doubt: if the function has a branch, a loop, or arithmetic, test it dire
 
 ---
 
-## 7. Data Generation Strategy
+## 8. Data Generation Strategy
 
 Use two complementary approaches:
 
@@ -403,7 +521,7 @@ The seed is always fixed. Tests must be deterministic.
 
 ---
 
-## 8. CI Integration
+## 9. CI Integration
 
 ### Test Execution
 
@@ -420,11 +538,20 @@ The seed is always fixed. Tests must be deterministic.
 - uses: codecov/codecov-action@v4
 ```
 
-Coverage is not a vanity metric here — it directly shows which kernels and barrier-checking code paths are exercised. The goal is not 100%; the goal is that every code path reachable by user input is tested.
+### Coverage Target
+
+Coverage is not a vanity metric — it directly shows which kernels and barrier-checking code paths are exercised. The goal is not 100%. The goal is:
+
+- **Every public API function** has at least one test that exercises it.
+- **Every branch in computation kernels** (the `if`/`else` paths inside `_ema_kernel_unrolled!`, `_calculate_cusum`, `_check_barrier_recursive!`, etc.) is hit by at least one test.
+- **Every error/warning path** reachable by user input is covered by a `@test_throws` or `@test_logs`.
+- **Every macro** is tested with at least one simple and one complex expression.
+
+Use the coverage report to identify gaps — if a branch in a kernel has zero hits, write a test that exercises it. If a public function has zero coverage, it's untested and therefore untrustworthy.
 
 ---
 
-## 9. File Structure
+## 10. File Structure
 
 ### Convention
 
@@ -450,7 +577,7 @@ When you add a new module (e.g., `src/Portfolio/`):
 
 1. Create `test/portfolio/` to mirror it.
 2. Add one `<type>_tests.jl` per major type (e.g., `portfolio_optimizer_tests.jl`).
-3. Register a component tag (`:portfolio`) in your test items.
+3. Register a component tag (`:portfolio`) in the tag taxonomy table in Section 2.
 4. If the module has a callable/pipeline interface, add `portfolio_interface_tests.jl`.
 5. Add at least one integration test in `integration_tests.jl` that composes the new module with existing pipeline stages.
 
@@ -479,7 +606,7 @@ test/
 
 ---
 
-## 10. Priority Order
+## 11. Priority Order
 
 This is a phased approach. Complete each phase before moving to the next. Within a phase, order doesn't matter.
 
@@ -505,7 +632,8 @@ This is a phased approach. Complete each phase before moving to the next. Within
 |------|-----|
 | Edge case tests | Numerical robustness at boundaries |
 | Integration (pipeline) tests | Catches interface mismatches between stages |
-| DSL macro tests | Fragile surface area, test before users depend on them |
+| DSL macro tests (simple + complex) | Fragile surface area, test before users depend on them |
+| `@allocated` kernel tests | Catches accidental allocation regressions in hot paths |
 
 ### Phase 4: Deep analysis (do periodically)
 
@@ -515,4 +643,4 @@ This is a phased approach. Complete each phase before moving to the next. Within
 
 ### When adding a new component
 
-Follow the same phase order: write a reference test first, then `@inferred`, then properties, then edge cases, then hook it into an integration test. This applies to every new indicator, side, event, label, or future module.
+Follow the same phase order: write a reference test first, then `@inferred`, then properties, then edge cases, then hook it into an integration test, then check allocations on any new kernels. This applies to every new indicator, side, event, label, or future module.
