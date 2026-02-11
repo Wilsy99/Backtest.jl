@@ -1,2 +1,2 @@
-using TestItemRunner
-@run_package_tests
+using ReTestItems
+runtests(@__DIR__)
