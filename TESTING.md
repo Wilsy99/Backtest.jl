@@ -1,5 +1,7 @@
 # Testing Philosophy & Framework for Backtest.jl
 
+> **Living document.** This describes the testing *philosophy* and *conventions*, not a snapshot of what exists today. When you add a new module, indicator, or pipeline stage, follow the patterns here. Sections marked with specific examples (EMA, CUSUM, etc.) are illustrative — apply the same patterns to every new component.
+
 ## 1. Core Mandate: Adversarial QA
 
 Do not write tests to confirm the code works. Write tests to break it.
@@ -50,6 +52,10 @@ end
 
 ### Tag Taxonomy
 
+Every `@testitem` gets **at least one category tag** and **at least one component tag**.
+
+**Category tags** (fixed — these describe *what kind* of test):
+
 | Tag | Meaning |
 |-----|---------|
 | `:unit` | Tests a single function/type in isolation |
@@ -58,12 +64,19 @@ end
 | `:integration` | Tests multiple pipeline stages composed together |
 | `:stability` | `@inferred` and JET checks |
 | `:edge` | Boundary conditions, numerical extremes |
-| `:indicator` | Indicator module (EMA, CUSUM) |
-| `:side` | Side module (Crossover) |
-| `:label` | Label module (barriers, execution) |
+| `:macro` | DSL macro tests |
+
+**Component tags** (grows with the package — these describe *what* is being tested):
+
+| Tag | Meaning |
+|-----|---------|
+| `:indicator` | Indicator module |
+| `:side` | Side module |
+| `:label` | Label module |
 | `:event` | Event module |
-| `:macro` | DSL macro tests (`@Event`, `@UpperBarrier`, etc.) |
 | `:pipeline` | `>>` operator and Job composition |
+
+**Convention for new components**: When you add a new module or major feature, add a matching component tag (e.g., `:portfolio`, `:risk`, `:broker`). Use lowercase, singular, matching the module name. Also add a finer-grained tag per type when there are multiple implementations (e.g., `:ema`, `:cusum` under `:indicator`).
 
 ---
 
@@ -352,14 +365,19 @@ end
 
 ## 6. Decision Matrix: Testing Internal Functions
 
-| Criteria | Test directly? | Rationale |
-|----------|---------------|-----------|
-| Public API (`calculate_indicator`, `calculate_side`, `calculate_label`) | **Always** | Primary testing surface |
-| Math kernels (`_single_ema!`, `_ema_kernel_unrolled!`, `_calculate_cusum`) | **Always** | Complex math + SIMD. Debug hell if you only test via the public API |
-| Index math (`_get_idx_adj`, `_temporal_priority`) | **Always** | Backtesting correctness depends on perfect index alignment |
-| Named result builders (`_indicator_result`, `_side_result`) | **Always** | These define the NamedTuple keys that downstream stages depend on |
-| Macro internals (`_replace_symbols`, `_build_macro_components`) | **Via macro output** | Test the macros end-to-end, not the rewriting helpers |
-| Simple validators (`_positive_float`, `_natural`) | **Via constructors** | Tested sufficiently through `@test_throws` on the public constructors |
+Use this decision tree when deciding whether a new internal function needs its own tests.
+
+| Pattern | Test directly? | Rationale |
+|---------|---------------|-----------|
+| **Public API** (`calculate_*`, exported constructors) | **Always** | Primary testing surface |
+| **Math/computation kernels** (mutating `!` functions, SIMD loops, numerical algorithms) | **Always** | Complex math + performance. Debug hell if you only test via the public API |
+| **Index/alignment logic** (anything computing array indices, temporal offsets, warmup lengths) | **Always** | Backtesting correctness depends on perfect index alignment |
+| **Named result builders** (functions that define NamedTuple keys consumed by downstream stages) | **Always** | These define the interface contract between pipeline stages |
+| **DSL macro internals** (symbol rewriting, AST transforms) | **Via macro output** | Test the macros end-to-end, not the rewriting helpers |
+| **Simple validators** (single-field checks like "must be positive") | **Via constructors** | Tested sufficiently through `@test_throws` on the public constructors |
+| **Glue code** (thin wrappers, delegation, formatting) | **Via caller** | No independent logic to test |
+
+When in doubt: if the function has a branch, a loop, or arithmetic, test it directly.
 
 ---
 
@@ -408,41 +426,93 @@ Coverage is not a vanity metric here — it directly shows which kernels and bar
 
 ## 9. File Structure
 
+### Convention
+
+The test directory mirrors `src/` — one subdirectory per module, one test file per major type or concept. Shared infrastructure lives at the top level.
+
 ```
 test/
-├── runtests.jl                      # TestItems entry point
+├── runtests.jl                      # TestItems entry point (rarely changes)
 ├── setup_testdata.jl                # @testsetup module TestData
-├── aqua_test.jl                     # Package quality
-├── type_tests.jl                    # PriceBars, directions, pipeline, execution basis
-├── indicator/
-│   ├── ema_tests.jl                 # Reference, properties, edge cases, stability
-│   ├── cusum_tests.jl               # Reference, properties, edge cases, stability
-│   └── indicator_interface_tests.jl # Callable interface, chaining, close-price dispatch
-├── side/
-│   └── crossover_tests.jl           # Direction dispatch, wait_for_cross, edge cases
-├── event/
-│   └── event_tests.jl               # Event construction, :all/:any logic, @Event macro
-├── label/
-│   ├── barrier_tests.jl             # Barrier hit/gap logic, @UpperBarrier etc. macros
-│   └── label_tests.jl               # LabelResults, drop_unfinished, return consistency
+├── aqua_test.jl                     # Package quality (Aqua.jl)
+├── type_tests.jl                    # Core types: PriceBars, directions, execution basis
 ├── macro_tests.jl                   # All DSL macros: symbol rewriting, default labels
-└── integration_tests.jl             # Full pipelines, >> operator, data preservation
+├── integration_tests.jl             # Full pipelines, >> operator, data preservation
+├── <module>/                        # One directory per src/ module
+│   ├── <type>_tests.jl              # One file per major type/concept in that module
+│   └── <module>_interface_tests.jl  # Callable interface, chaining, shared dispatch
+└── ...
+```
+
+### Adding tests for a new module
+
+When you add a new module (e.g., `src/Portfolio/`):
+
+1. Create `test/portfolio/` to mirror it.
+2. Add one `<type>_tests.jl` per major type (e.g., `portfolio_optimizer_tests.jl`).
+3. Register a component tag (`:portfolio`) in your test items.
+4. If the module has a callable/pipeline interface, add `portfolio_interface_tests.jl`.
+5. Add at least one integration test in `integration_tests.jl` that composes the new module with existing pipeline stages.
+
+### Current structure (as of initial setup)
+
+```
+test/
+├── runtests.jl
+├── setup_testdata.jl
+├── aqua_test.jl
+├── type_tests.jl
+├── indicator/
+│   ├── ema_tests.jl
+│   ├── cusum_tests.jl
+│   └── indicator_interface_tests.jl
+├── side/
+│   └── crossover_tests.jl
+├── event/
+│   └── event_tests.jl
+├── label/
+│   ├── barrier_tests.jl
+│   └── label_tests.jl
+├── macro_tests.jl
+└── integration_tests.jl
 ```
 
 ---
 
 ## 10. Priority Order
 
-| Priority | What | Why |
-|----------|------|-----|
-| 1 | Aqua.jl | 5 minutes, catches whole bug classes |
-| 2 | `@inferred` type stability | Your SIMD optimisations depend on it |
-| 3 | Coverage in CI | Shows you where the gaps are before writing more tests |
-| 4 | Test fixtures (`@testsetup`) | Unblocks everything else |
-| 5 | Reference value tests | Catches algorithmic bugs that properties miss |
-| 6 | Property/invariant tests | More robust than hardcoded values across inputs |
-| 7 | Integration (pipeline) tests | Catches interface mismatches between stages |
-| 8 | JET.jl static analysis | Catches internal type issues `@inferred` misses |
-| 9 | Edge case tests | Numerical robustness |
-| 10 | DSL macro tests | Fragile surface area, needed before users depend on them |
-| 11 | Crossover unit tests | Three direction dispatches with subtle edge cases |
+This is a phased approach. Complete each phase before moving to the next. Within a phase, order doesn't matter.
+
+### Phase 1: Infrastructure (do once, benefits everything)
+
+| What | Why |
+|------|-----|
+| Aqua.jl | 5 minutes, catches whole bug classes for free |
+| Coverage in CI | Shows where gaps are before writing more tests |
+| Test fixtures (`@testsetup`) | Unblocks all subsequent test writing |
+
+### Phase 2: Core correctness (do for every component)
+
+| What | Why |
+|------|-----|
+| Reference value tests | Catches algorithmic bugs that properties miss |
+| `@inferred` type stability | Your SIMD optimisations depend on it |
+| Property/invariant tests | More robust than hardcoded values across inputs |
+
+### Phase 3: Robustness (do for every component)
+
+| What | Why |
+|------|-----|
+| Edge case tests | Numerical robustness at boundaries |
+| Integration (pipeline) tests | Catches interface mismatches between stages |
+| DSL macro tests | Fragile surface area, test before users depend on them |
+
+### Phase 4: Deep analysis (do periodically)
+
+| What | Why |
+|------|-----|
+| JET.jl static analysis | Catches internal type issues `@inferred` misses |
+
+### When adding a new component
+
+Follow the same phase order: write a reference test first, then `@inferred`, then properties, then edge cases, then hook it into an integration test. This applies to every new indicator, side, event, label, or future module.
