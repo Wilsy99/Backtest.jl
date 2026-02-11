@@ -355,13 +355,16 @@ end
     Backtest._ema_kernel_unrolled!(dest, prices, p, n, α, β)
 
     # Measurement — must be zero allocations
-    allocs = @allocated Backtest._ema_kernel_unrolled!(dest, prices, p, n, α, β)
-    @test allocs == 0
+    # Pass inputs as argument — closures that capture outer-scope variables
+    # allocate due to Core.Box wrapping (Julia boxing for potential reassignment).
+    allocs(dest, prices, p, n, α, β) =
+        @allocated Backtest._ema_kernel_unrolled!(dest, prices, p, n, α, β)
+    @test allocs(dest, prices, p, n, α, β) == 0
 
     # Also test _sma_seed
     Backtest._sma_seed(prices, 10)   # warmup
-    allocs_seed = @allocated Backtest._sma_seed(prices, 10)
-    @test allocs_seed == 0
+    allocs_seed(prices) = @allocated Backtest._sma_seed(prices, 10)
+    @test allocs_seed(prices) == 0
 end
 
 @testitem "EMA: Kernel Unrolled Covers All Remainders" tags = [:indicator, :ema, :unit] begin

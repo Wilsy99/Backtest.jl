@@ -105,3 +105,6 @@ benchmark_strat = big_bars >> inds >> side >> event >> label
     )
 end
 
+@allocations bars |> EMA(5,10,15,20,3,4,6,1)
+
+@allocations tst()

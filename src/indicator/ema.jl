@@ -31,9 +31,10 @@ end
             NamedTuple{$names}((vals,))
         end
     else
+        col_exprs = [:((@view(vals[:, $i]))) for i in 1:n]
         quote
             vals = calculate_indicator(ind, prices)
-            NamedTuple{$names}(NTuple{$n}(ntuple(i -> @view(vals[:, i]), Val(n))))
+            NamedTuple{$names}(($(col_exprs...),))
         end
     end
 end
@@ -68,9 +69,11 @@ function _single_ema!(
         return nothing
     end
 
-    fill!(view(dest, 1:(p - 1)), T(NaN))
+    for i in 1:(p - 1)
+        @inbounds dest[i] = T(NaN)
+    end
 
-    dest[p] = _sma_seed(prices, p)
+    @inbounds dest[p] = _sma_seed(prices, p)
 
     α = T(2) / T(p + 1)
     β = one(T) - α
