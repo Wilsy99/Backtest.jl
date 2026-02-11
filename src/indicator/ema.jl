@@ -1,5 +1,7 @@
 struct EMA{Periods} <: AbstractIndicator
     function EMA{Periods}() where {Periods}
+        isempty(Periods) && throw(ArgumentError("At least one period is required"))
+        allunique(Periods) || throw(ArgumentError("Periods must be unique, got $Periods"))
         foreach(_natural, Periods)
         return new{Periods}()
     end
