@@ -11,12 +11,12 @@ EMA(p::Int) = EMA{(p,)}()
 EMA(ps::Vararg{Int}) = EMA{ps}()
 
 function calculate_indicator(
-    ::EMA{Periods}, prices::AbstractVector{T}
+    ::EMA{Periods}, prices::AbstractVector{T}; multi_thread::Bool=true
 ) where {Periods,T<:AbstractFloat}
     if length(Periods) == 1
         return _calculate_ema(prices, Periods[1])
     else
-        return _calculate_emas(prices, collect(Periods))
+        return _calculate_emas(prices, collect(Periods), multi_thread)
     end
 end
 
@@ -46,15 +46,21 @@ function _calculate_ema(prices::AbstractVector{T}, period::Int) where {T<:Abstra
 end
 
 function _calculate_emas(
-    prices::AbstractVector{T}, periods::Vector{Int}
+    prices::AbstractVector{T}, periods::Vector{Int}, multi_thread::Bool=true
 ) where {T<:AbstractFloat}
     n_prices = length(prices)
     n_emas = length(periods)
 
     results = Matrix{T}(undef, n_prices, n_emas)
 
-    @threads for j in 1:n_emas
-        @views _single_ema!(results[:, j], prices, periods[j], n_prices)
+    if multi_thread
+        @threads for j in 1:n_emas
+            @views _single_ema!(results[:, j], prices, periods[j], n_prices)
+        end
+    else
+        for j in 1:n_emas
+            @views _single_ema!(results[:, j], prices, periods[j], n_prices)
+        end
     end
 
     return results
