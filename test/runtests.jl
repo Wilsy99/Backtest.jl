@@ -1,2 +1,2 @@
-using TestItems
+using ReTestItems
 @run_package_tests
