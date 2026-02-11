@@ -33,7 +33,7 @@ end
     else
         quote
             vals = calculate_indicator(ind, prices)
-            NamedTuple{$names}(NTuple{$n}(Tuple(eachcol(vals))))
+            NamedTuple{$names}(ntuple(i -> @view(vals[:, i]), Val($n)))
         end
     end
 end
