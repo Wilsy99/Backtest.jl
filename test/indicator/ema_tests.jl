@@ -367,6 +367,21 @@ end
     @test allocs_seed(prices) == 0
 end
 
+@testitem "EMA: _calculate_emas view allocations" tags = [:indicator, :ema, :stability] begin
+    using Backtest, Test
+
+    prices = collect(1.0:200.0)
+    periods = [5, 10, 20]
+
+    # Warmup
+    Backtest._calculate_emas(prices, periods)
+
+    # Only the result matrix should be allocated (n × k Float64s)
+    expected_bytes = sizeof(Float64) * length(prices) * length(periods)
+    actual = @allocated Backtest._calculate_emas(prices, periods)
+    @test actual <= expected_bytes + 0  # small tolerance for threading overhead
+end
+
 @testitem "EMA: Kernel Unrolled Covers All Remainders" tags = [:indicator, :ema, :unit] begin
     using Backtest, Test
 
