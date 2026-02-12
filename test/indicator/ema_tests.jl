@@ -367,27 +367,28 @@ end
     @test allocs_seed(prices) == 0
 end
 
-@testitem "EMA: Expected Allocations in _calculate_emas" tags = [
-    :indicator, :ema, :stability
+@testitem "EMA: Allocation — _calculate_emas (multi-period)" tags = [
+    :indicator, :ema, :allocation
 ] begin
     using Backtest, Test
 
     prices = collect(1.0:200.0)
     periods = [5, 10, 20]
-    T = eltype(prices)
-
-    # Force the compiler to allocate a header to find its size
-    # We assign to a local variable and use it to prevent DCE
-    matrix_header_alloc = @allocated identity(Matrix{T}(undef, 0, 0))
-    data_bytes = sizeof(T) * length(prices) * length(periods)
-    buffer = 100
+    n_periods = length(periods)
 
     # Warmup
     Backtest._calculate_emas(prices, periods)
 
-    actual = @allocated Backtest._calculate_emas(prices, periods)
+    # Expected: one Matrix{Float64} allocation = header + data
+    expected_data = sizeof(Float64) * length(prices) * n_periods
+    mat_header = @allocated identity(Matrix{Float64}(undef, 0, 0))
+    budget = expected_data + mat_header + 64
 
-    @test actual <= data_bytes + matrix_header_alloc + 100
+    allocs_emas(prices, periods) = @allocated Backtest._calculate_emas(prices, periods)
+    actual = allocs_emas(prices, periods)
+
+    @test actual <= budget
+    @test actual > 0  # sanity: must allocate the result matrix
 end
 
 @testitem "EMA: Kernel Unrolled Covers All Remainders" tags = [:indicator, :ema, :unit] begin
@@ -437,4 +438,168 @@ end
 
     # Method errors (calling a function that doesn't exist for those types)
     @test_call target_modules = (Backtest,) calculate_indicator(EMA(10), prices)
+end
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 5 — Allocation Budget Tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+@testitem "EMA: Allocation — _calculate_ema (single period)" tags = [
+    :indicator, :ema, :allocation
+] begin
+    using Backtest, Test
+
+    prices = collect(1.0:200.0)
+
+    # Warmup
+    Backtest._calculate_ema(prices, 10)
+
+    # Expected: one Vector{Float64} allocation = header + data
+    expected_data = sizeof(Float64) * length(prices)
+    vec_header = @allocated identity(Vector{Float64}(undef, 0))
+    budget = expected_data + vec_header + 64
+
+    allocs_ema(prices) = @allocated Backtest._calculate_ema(prices, 10)
+    actual = allocs_ema(prices)
+
+    @test actual <= budget
+    @test actual > 0  # sanity: must allocate the result vector
+end
+
+@testitem "EMA: Allocation — _calculate_ema Float32" tags = [:indicator, :ema, :allocation] begin
+    using Backtest, Test
+
+    prices = collect(Float32.(1:200))
+
+    # Warmup
+    Backtest._calculate_ema(prices, 10)
+
+    # Expected: one Vector{Float32} allocation = header + data
+    expected_data = sizeof(Float32) * length(prices)
+    vec_header = @allocated identity(Vector{Float32}(undef, 0))
+    budget = expected_data + vec_header + 64
+
+    allocs_ema(prices) = @allocated Backtest._calculate_ema(prices, 10)
+    actual = allocs_ema(prices)
+
+    @test actual <= budget
+end
+
+@testitem "EMA: Allocation — calculate_indicator single period" tags = [
+    :indicator, :ema, :allocation
+] begin
+    using Backtest, Test
+
+    prices = collect(1.0:200.0)
+    ind = EMA(10)
+
+    # Warmup
+    calculate_indicator(ind, prices)
+
+    # Expected: one Vector{Float64} allocation = header + data
+    expected_data = sizeof(Float64) * length(prices)
+    vec_header = @allocated identity(Vector{Float64}(undef, 0))
+    budget = expected_data + vec_header + 64
+
+    allocs_calc(ind, prices) = @allocated calculate_indicator(ind, prices)
+    actual = allocs_calc(ind, prices)
+
+    @test actual <= budget
+end
+
+@testitem "EMA: Allocation — calculate_indicator multi-period" tags = [
+    :indicator, :ema, :allocation
+] begin
+    using Backtest, Test
+
+    prices = collect(1.0:200.0)
+    ind = EMA(5, 10, 20)
+    n_periods = 3
+
+    # Warmup
+    calculate_indicator(ind, prices)
+
+    # Expected: one Matrix{Float64} allocation = header + data
+    expected_data = sizeof(Float64) * length(prices) * n_periods
+    mat_header = @allocated identity(Matrix{Float64}(undef, 0, 0))
+    budget = expected_data + mat_header + 64
+
+    allocs_calc(ind, prices) = @allocated calculate_indicator(ind, prices)
+    actual = allocs_calc(ind, prices)
+
+    @test actual <= budget
+end
+
+@testitem "EMA: Allocation — EMA functor with PriceBars" tags = [
+    :indicator, :ema, :allocation
+] setup = [TestData] begin
+    using Backtest, Test
+
+    bars = TestData.make_pricebars(; n=200)
+    ind = EMA(10)
+
+    # Warmup
+    ind(bars)
+
+    # The functor creates: result vector + NamedTuple merge overhead
+    expected_vec = sizeof(Float64) * 200
+    vec_header = @allocated identity(Vector{Float64}(undef, 0))
+    nt_overhead = 1024  # NamedTuple construction + merge
+    budget = expected_vec + vec_header + nt_overhead
+
+    allocs_functor(ind, bars) = @allocated ind(bars)
+    actual = allocs_functor(ind, bars)
+
+    @test actual <= budget
+    @test actual > 0  # must allocate result vector at minimum
+end
+
+@testitem "EMA: Allocation — EMA functor with NamedTuple (chaining)" tags = [
+    :indicator, :ema, :allocation
+] setup = [TestData] begin
+    using Backtest, Test
+
+    bars = TestData.make_pricebars(; n=200)
+    ind1 = EMA(10)
+    ind2 = EMA(20)
+
+    # Build input NamedTuple from first call
+    step1 = ind1(bars)
+
+    # Warmup second call
+    ind2(step1)
+
+    # The chained call creates: result vector + NamedTuple merge
+    expected_vec = sizeof(Float64) * 200
+    vec_header = @allocated identity(Vector{Float64}(undef, 0))
+    nt_overhead = 1024
+    budget = expected_vec + vec_header + nt_overhead
+
+    allocs_chain(ind2, step1) = @allocated ind2(step1)
+    actual = allocs_chain(ind2, step1)
+
+    @test actual <= budget
+end
+
+@testitem "EMA: Allocation — EMA functor multi-period with PriceBars" tags = [
+    :indicator, :ema, :allocation
+] setup = [TestData] begin
+    using Backtest, Test
+
+    bars = TestData.make_pricebars(; n=200)
+    ind = EMA(5, 10, 20)
+
+    # Warmup
+    ind(bars)
+
+    # Matrix data + NamedTuple with views + merge overhead
+    expected_mat = sizeof(Float64) * 200 * 3
+    mat_header = @allocated identity(Matrix{Float64}(undef, 0, 0))
+    nt_overhead = 1024
+    budget = expected_mat + mat_header + nt_overhead
+
+    allocs_functor(ind, bars) = @allocated ind(bars)
+    actual = allocs_functor(ind, bars)
+
+    @test actual <= budget
 end

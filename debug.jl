@@ -1,4 +1,5 @@
-
+using Pkg
+Pkg.activate(".")
 using Backtest
 
 prices = collect(1.0:200.0)

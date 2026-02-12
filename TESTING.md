@@ -62,7 +62,8 @@ Every `@testitem` gets **at least one category tag** and **at least one componen
 | `:property` | Invariant/property-based test (no hardcoded expected values) |
 | `:reference` | Pinned against hand-calculated or external reference values |
 | `:integration` | Tests multiple pipeline stages composed together |
-| `:stability` | `@inferred` and JET checks |
+| `:stability` | `@inferred`, JET checks, and zero-allocation kernel tests |
+| `:allocation` | Allocation budget tests — verifies functions stay within computed byte limits |
 | `:edge` | Boundary conditions, numerical extremes |
 | `:macro` | DSL macro tests |
 
@@ -436,12 +437,12 @@ end
 
 This is a performance-oriented package — SIMD kernels, unrolled loops, and `@inbounds` are load-bearing. Performance regressions are bugs. This section covers how to catch them.
 
-### Allocation Tests
+### 6a. Zero-Allocation Kernel Tests (`:stability` tag)
 
 Computation kernels must not allocate on the hot path. Use `@allocated` to enforce this in tests.
 
 ```julia
-@testitem "EMA: Zero allocations in kernel" tags=[:indicator, :ema, :stability] begin
+@testitem "EMA: Zero Allocations in Kernel" tags=[:indicator, :ema, :stability] begin
     using Backtest, Test
 
     prices = collect(1.0:200.0)
@@ -455,25 +456,77 @@ Computation kernels must not allocate on the hot path. Use `@allocated` to enfor
     # Warmup call (JIT compilation)
     Backtest._ema_kernel_unrolled!(dest, prices, p, n, α, β)
 
-    # Measurement call — must be zero allocations
-    allocs = @allocated Backtest._ema_kernel_unrolled!(dest, prices, p, n, α, β)
-    @test allocs == 0
+    # Pass inputs as arguments — closures that capture outer-scope variables
+    # allocate due to Core.Box wrapping (Julia boxing for potential reassignment).
+    allocs(dest, prices, p, n, α, β) =
+        @allocated Backtest._ema_kernel_unrolled!(dest, prices, p, n, α, β)
+    @test allocs(dest, prices, p, n, α, β) == 0
 end
 ```
 
-**When to use `@allocated`:**
+**When to test for zero allocations:**
 
 - Mutating kernel functions (`_ema_kernel_unrolled!`, `_fill_sides_generic!`, `_calculate_cusum`)
+- Pure helper functions (`_sma_seed`)
 - Any function annotated with `@inbounds @simd`
 - Inner loops of the barrier checking recursion
 
+### 6b. Allocation Budget Tests (`:allocation` tag)
+
+Non-kernel functions that allocate their result (vectors, matrices) must stay within a computed budget. These tests verify that no *unexpected* allocations sneak in — only the result container should be allocated.
+
+**The pattern:**
+
+1. **Warmup** — call the function once to trigger JIT compilation.
+2. **Compute expected overhead** — calculate the exact bytes for the result container (header + data).
+3. **Wrap in a function** — avoid Core.Box overhead from captured variables.
+4. **Assert budget** — `actual <= expected_data + header + small_buffer`.
+5. **Sanity check** — `actual > 0` (the function *must* allocate its result).
+
+```julia
+@testitem "EMA: Allocation — _calculate_ema (single period)" tags=[:indicator, :ema, :allocation] begin
+    using Backtest, Test
+
+    prices = collect(1.0:200.0)
+
+    # Warmup
+    Backtest._calculate_ema(prices, 10)
+
+    # Expected: one Vector{Float64} allocation = header + data
+    expected_data = sizeof(Float64) * length(prices)
+    vec_header = @allocated identity(Vector{Float64}(undef, 0))
+    budget = expected_data + vec_header + 64
+
+    allocs_ema(prices) = @allocated Backtest._calculate_ema(prices, 10)
+    actual = allocs_ema(prices)
+
+    @test actual <= budget
+    @test actual > 0  # sanity: must allocate the result vector
+end
+```
+
+**Why the function wrapper?** Julia's closures box outer-scope variables that *might* be reassigned (`Core.Box`), which adds spurious allocations to `@allocated`. Wrapping in a named function with explicit arguments avoids this entirely.
+
+**What to test with allocation budgets:**
+
+| Function layer | Expected allocation | Buffer |
+|----------------|-------------------|--------|
+| `_calculate_ema` (single period) | `Vector{T}(undef, n)` | 64 bytes |
+| `_calculate_emas` (multi-period) | `Matrix{T}(undef, n, k)` | 64 bytes |
+| `calculate_indicator` (single) | `Vector{T}(undef, n)` | 64 bytes |
+| `calculate_indicator` (multi) | `Matrix{T}(undef, n, k)` | 64 bytes |
+| EMA functor with PriceBars | Result vector + NamedTuple merge | 1024 bytes |
+| EMA functor chaining | Result vector + NamedTuple merge | 1024 bytes |
+| EMA functor multi-period | Result matrix + NamedTuple merge | 1024 bytes |
+
+The NamedTuple merge overhead (1024 bytes) accounts for the `merge(input, indicator_result)` construction in the callable interface. This is higher than raw container tests because NamedTuple construction involves type computation at the compiler level.
+
 **When NOT to use `@allocated`:**
 
-- Public API functions that construct result vectors (allocation is expected)
-- Pipeline composition (`>>`) which creates NamedTuples
+- Pipeline composition (`>>`) which creates arbitrarily nested NamedTuples
 - Test setup and fixture generation
 
-### Benchmark Regression (manual, not CI)
+### 6c. Benchmark Regression (manual, not CI)
 
 Full benchmark regression in CI is fragile (noisy timing on shared runners). Instead, maintain a `benchmarks/` directory with `BenchmarkTools.jl` scripts for manual use when optimising. The `sandbox.jl` file serves this purpose today.
 
@@ -633,7 +686,7 @@ This is a phased approach. Complete each phase before moving to the next. Within
 | Edge case tests | Numerical robustness at boundaries |
 | Integration (pipeline) tests | Catches interface mismatches between stages |
 | DSL macro tests (simple + complex) | Fragile surface area, test before users depend on them |
-| `@allocated` kernel tests | Catches accidental allocation regressions in hot paths |
+| Zero-allocation kernel tests (`:stability`) | Catches accidental allocation regressions in hot paths |
 
 ### Phase 4: Deep analysis (do periodically)
 
@@ -641,6 +694,15 @@ This is a phased approach. Complete each phase before moving to the next. Within
 |------|-----|
 | JET.jl static analysis | Catches internal type issues `@inferred` misses |
 
+### Phase 5: Allocation budgets (do for every component with public API)
+
+| What | Why |
+|------|-----|
+| `_calculate_ema` / `_calculate_emas` budget | Verifies internal functions allocate only the result container |
+| `calculate_indicator` budget (single + multi) | Verifies public API doesn't add hidden allocations on top of internals |
+| Functor budget (PriceBars, chaining, multi-period) | Verifies callable interface overhead stays bounded |
+| Float32 allocation parity | Ensures type-generic paths don't introduce extra allocations |
+
 ### When adding a new component
 
-Follow the same phase order: write a reference test first, then `@inferred`, then properties, then edge cases, then hook it into an integration test, then check allocations on any new kernels. This applies to every new indicator, side, event, label, or future module.
+Follow the same phase order: write a reference test first, then `@inferred`, then properties, then edge cases, then hook it into an integration test, then zero-allocation kernel tests, then allocation budgets for every public-facing function layer. This applies to every new indicator, side, event, label, or future module.
