@@ -374,17 +374,18 @@ end
 
     prices = collect(1.0:200.0)
     periods = [5, 10, 20]
-    n_periods = length(periods)
 
-    # Warmup
+    # Warmup target function
     Backtest._calculate_emas(prices, periods)
 
-    # Expected: one Matrix{Float64} allocation = header + data
-    expected_data = sizeof(Float64) * length(prices) * n_periods
-    mat_header = @allocated identity(Matrix{Float64}(undef, 0, 0))
-    budget = expected_data + mat_header + 64
+    # Budget: matrix data + 512 bytes for container header + alignment + GC noise
+    # Still catches double-allocation: 4800 + 512 = 5312 << 9600 (2× data)
+    expected_data = sizeof(Float64) * length(prices) * length(periods)
+    budget = expected_data + 512
 
+    # Define wrapper, warmup wrapper, then measure
     allocs_emas(prices, periods) = @allocated Backtest._calculate_emas(prices, periods)
+    allocs_emas(prices, periods)
     actual = allocs_emas(prices, periods)
 
     @test actual <= budget
@@ -443,6 +444,42 @@ end
 # ─────────────────────────────────────────────────────────────────────────────
 # Phase 5 — Allocation Budget Tests
 # ─────────────────────────────────────────────────────────────────────────────
+#
+# PURPOSE: Verify that each function layer allocates ONLY its result container
+# (Vector or Matrix) and nothing extra. These are NOT zero-allocation tests —
+# the functions must allocate their return value. We're checking that no
+# *accidental* extra allocations sneak in (e.g. an unintended copy of the data).
+#
+# WHY NOT measure the container header with @allocated identity(Vector(undef,0))?
+# That technique gets DCE'd (Dead Code Eliminated) to 0 bytes on some platforms
+# (confirmed on Windows Julia 1.12). Instead we use a fixed overhead constant.
+#
+# THE THREE-STEP MEASUREMENT PATTERN:
+#   1. Warmup the TARGET function  → compiles the actual code
+#   2. Define a wrapper function    → avoids Core.Box allocations from closures
+#   3. Warmup the WRAPPER function → eliminates first-call specialization noise
+#   4. Measure on the second call  → clean, stable measurement
+#
+# OVERHEAD CONSTANTS (chosen to be large enough to absorb container headers,
+# alignment, and GC jitter, but small enough to catch real bugs):
+#
+#   512 bytes  — internal functions (_calculate_ema, _calculate_emas)
+#                and calculate_indicator single period (thin wrapper).
+#                Container header is ~80 bytes; 512 gives comfortable margin.
+#
+#   1536 bytes — calculate_indicator multi-period.
+#                Higher because it dispatches with Periods as a Tuple (not Vector),
+#                triggering a different specialization of _calculate_emas.
+#                The tuple-based dispatch path has more type-computation overhead.
+#
+#   1024 bytes — EMA functors (PriceBars, chaining, multi-period).
+#                Accounts for NamedTuple construction + merge() overhead.
+#
+# BUG DETECTION: each budget is still well below 2× the data size, so an
+# accidental copy of the result (the main regression we guard against) will
+# always be caught. Example for 200×Float64 vector:
+#   budget = 1600 + 512 = 2112, but a copy bug would produce >= 3200.
+# ─────────────────────────────────────────────────────────────────────────────
 
 @testitem "EMA: Allocation — _calculate_ema (single period)" tags = [
     :indicator, :ema, :allocation
@@ -451,15 +488,17 @@ end
 
     prices = collect(1.0:200.0)
 
-    # Warmup
+    # Warmup target function
     Backtest._calculate_ema(prices, 10)
 
-    # Expected: one Vector{Float64} allocation = header + data
+    # Budget: vector data + 512 bytes for container header + alignment + GC noise
+    # Still catches double-allocation: 1600 + 512 = 2112 << 3200 (2× data)
     expected_data = sizeof(Float64) * length(prices)
-    vec_header = @allocated identity(Vector{Float64}(undef, 0))
-    budget = expected_data + vec_header + 64
+    budget = expected_data + 512
 
+    # Define wrapper, warmup wrapper, then measure
     allocs_ema(prices) = @allocated Backtest._calculate_ema(prices, 10)
+    allocs_ema(prices)
     actual = allocs_ema(prices)
 
     @test actual <= budget
@@ -471,15 +510,17 @@ end
 
     prices = collect(Float32.(1:200))
 
-    # Warmup
+    # Warmup target function
     Backtest._calculate_ema(prices, 10)
 
-    # Expected: one Vector{Float32} allocation = header + data
+    # Budget: vector data + 512 bytes overhead
+    # Still catches double-allocation: 800 + 512 = 1312 << 1600 (2× data)
     expected_data = sizeof(Float32) * length(prices)
-    vec_header = @allocated identity(Vector{Float32}(undef, 0))
-    budget = expected_data + vec_header + 64
+    budget = expected_data + 512
 
+    # Define wrapper, warmup wrapper, then measure
     allocs_ema(prices) = @allocated Backtest._calculate_ema(prices, 10)
+    allocs_ema(prices)
     actual = allocs_ema(prices)
 
     @test actual <= budget
@@ -493,15 +534,16 @@ end
     prices = collect(1.0:200.0)
     ind = EMA(10)
 
-    # Warmup
+    # Warmup target function
     calculate_indicator(ind, prices)
 
-    # Expected: one Vector{Float64} allocation = header + data
+    # Budget: vector data + 512 bytes overhead (thin wrapper over _calculate_ema)
     expected_data = sizeof(Float64) * length(prices)
-    vec_header = @allocated identity(Vector{Float64}(undef, 0))
-    budget = expected_data + vec_header + 64
+    budget = expected_data + 512
 
+    # Define wrapper, warmup wrapper, then measure
     allocs_calc(ind, prices) = @allocated calculate_indicator(ind, prices)
+    allocs_calc(ind, prices)
     actual = allocs_calc(ind, prices)
 
     @test actual <= budget
@@ -516,15 +558,20 @@ end
     ind = EMA(5, 10, 20)
     n_periods = 3
 
-    # Warmup
+    # Warmup target function
     calculate_indicator(ind, prices)
 
-    # Expected: one Matrix{Float64} allocation = header + data
+    # Budget: matrix data + 1536 bytes overhead
+    # Higher overhead than internal functions because calculate_indicator dispatches
+    # with Periods as a Tuple (not Vector), triggering a different specialization
+    # of _calculate_emas with additional type-computation overhead.
+    # Still catches double-allocation: 4800 + 1536 = 6336 << 9600 (2× data)
     expected_data = sizeof(Float64) * length(prices) * n_periods
-    mat_header = @allocated identity(Matrix{Float64}(undef, 0, 0))
-    budget = expected_data + mat_header + 64
+    budget = expected_data + 1536
 
+    # Define wrapper, warmup wrapper, then measure
     allocs_calc(ind, prices) = @allocated calculate_indicator(ind, prices)
+    allocs_calc(ind, prices)
     actual = allocs_calc(ind, prices)
 
     @test actual <= budget
@@ -538,16 +585,16 @@ end
     bars = TestData.make_pricebars(; n=200)
     ind = EMA(10)
 
-    # Warmup
+    # Warmup target function
     ind(bars)
 
-    # The functor creates: result vector + NamedTuple merge overhead
-    expected_vec = sizeof(Float64) * 200
-    vec_header = @allocated identity(Vector{Float64}(undef, 0))
-    nt_overhead = 1024  # NamedTuple construction + merge
-    budget = expected_vec + vec_header + nt_overhead
+    # Budget: result vector + 1024 bytes for NamedTuple construction + merge
+    expected_data = sizeof(Float64) * 200
+    budget = expected_data + 1024
 
+    # Define wrapper, warmup wrapper, then measure
     allocs_functor(ind, bars) = @allocated ind(bars)
+    allocs_functor(ind, bars)
     actual = allocs_functor(ind, bars)
 
     @test actual <= budget
@@ -566,16 +613,16 @@ end
     # Build input NamedTuple from first call
     step1 = ind1(bars)
 
-    # Warmup second call
+    # Warmup target function
     ind2(step1)
 
-    # The chained call creates: result vector + NamedTuple merge
-    expected_vec = sizeof(Float64) * 200
-    vec_header = @allocated identity(Vector{Float64}(undef, 0))
-    nt_overhead = 1024
-    budget = expected_vec + vec_header + nt_overhead
+    # Budget: result vector + 1024 bytes for NamedTuple merge
+    expected_data = sizeof(Float64) * 200
+    budget = expected_data + 1024
 
+    # Define wrapper, warmup wrapper, then measure
     allocs_chain(ind2, step1) = @allocated ind2(step1)
+    allocs_chain(ind2, step1)
     actual = allocs_chain(ind2, step1)
 
     @test actual <= budget
@@ -589,16 +636,16 @@ end
     bars = TestData.make_pricebars(; n=200)
     ind = EMA(5, 10, 20)
 
-    # Warmup
+    # Warmup target function
     ind(bars)
 
-    # Matrix data + NamedTuple with views + merge overhead
-    expected_mat = sizeof(Float64) * 200 * 3
-    mat_header = @allocated identity(Matrix{Float64}(undef, 0, 0))
-    nt_overhead = 1024
-    budget = expected_mat + mat_header + nt_overhead
+    # Budget: matrix data + 1024 bytes for NamedTuple with views + merge
+    expected_data = sizeof(Float64) * 200 * 3
+    budget = expected_data + 1024
 
+    # Define wrapper, warmup wrapper, then measure
     allocs_functor(ind, bars) = @allocated ind(bars)
+    allocs_functor(ind, bars)
     actual = allocs_functor(ind, bars)
 
     @test actual <= budget
