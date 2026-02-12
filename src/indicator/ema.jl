@@ -17,7 +17,7 @@ function calculate_indicator(
     if length(Periods) == 1
         return _calculate_ema(prices, Periods[1])
     else
-        return _calculate_emas(prices, collect(Periods), ind.multi_thread)
+        return _calculate_emas(prices, Periods, ind.multi_thread)
     end
 end
 
@@ -47,7 +47,7 @@ function _calculate_ema(prices::AbstractVector{T}, period::Int) where {T<:Abstra
 end
 
 function _calculate_emas(
-    prices::AbstractVector{T}, periods::Vector{Int}, multi_thread::Bool=false
+    prices::AbstractVector{T}, periods, multi_thread::Bool=false
 ) where {T<:AbstractFloat}
     n_prices = length(prices)
     n_emas = length(periods)
