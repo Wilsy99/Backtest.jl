@@ -30,8 +30,7 @@ function _calculate_cusum(
 
     warmup_idx = 101
     if n <= warmup_idx
-        @warn "Data length ($n) is less than warmup ($warmup_idx). Returning zeros."
-        return cusum_values
+        return _warn_and_return_zeros(n, warmup_idx)
     end
 
     α = T(2.0) / (T(span) + one(T))
@@ -74,4 +73,9 @@ function _calculate_cusum(
     end
 
     return cusum_values
+end
+
+@noinline function _warn_and_return_zeros(n, warmup_idx)
+    @warn "Data length ($n) is less than warmup ($warmup_idx). Returning zeros."
+    return zeros(Int8, n)
 end
