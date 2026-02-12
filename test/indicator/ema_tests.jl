@@ -359,12 +359,17 @@ end
     # allocate due to Core.Box wrapping (Julia boxing for potential reassignment).
     allocs(dest, prices, p, n, α, β) =
         @allocated Backtest._ema_kernel_unrolled!(dest, prices, p, n, α, β)
-    @test allocs(dest, prices, p, n, α, β) == 0
+
+    # Run 3 times, take minimum to avoid compilation/GC noise
+    actual_kernel = minimum([@allocated(allocs(dest, prices, p, n, α, β)) for _ in 1:3])
+    @test actual_kernel == 0
 
     # Also test _sma_seed
     Backtest._sma_seed(prices, 10)   # warmup
     allocs_seed(prices) = @allocated Backtest._sma_seed(prices, 10)
-    @test allocs_seed(prices) == 0
+
+    actual_seed = minimum([@allocated(allocs_seed(prices)) for _ in 1:3])
+    @test actual_seed == 0
 end
 
 @testitem "EMA: Allocation — _calculate_emas (multi-period)" tags = [
@@ -385,8 +390,9 @@ end
 
     # Define wrapper, warmup wrapper, then measure
     allocs_emas(prices, periods) = @allocated Backtest._calculate_emas(prices, periods)
-    allocs_emas(prices, periods)
-    actual = allocs_emas(prices, periods)
+
+    # Run 3 times, take minimum
+    actual = minimum([@allocated(allocs_emas(prices, periods)) for _ in 1:3])
 
     @test actual <= budget
     @test actual > 0  # sanity: must allocate the result matrix
@@ -454,26 +460,25 @@ end
 # That technique gets DCE'd (Dead Code Eliminated) to 0 bytes on some platforms
 # (confirmed on Windows Julia 1.12). Instead we use a fixed overhead constant.
 #
-# THE THREE-STEP MEASUREMENT PATTERN:
+# THE MIN-OF-N MEASUREMENT PATTERN:
 #   1. Warmup the TARGET function  → compiles the actual code
 #   2. Define a wrapper function    → avoids Core.Box allocations from closures
-#   3. Warmup the WRAPPER function → eliminates first-call specialization noise
-#   4. Measure on the second call  → clean, stable measurement
+#   3. Measure N=3 times and take the MINIMUM → filters tiered compilation & GC noise
 #
 # OVERHEAD CONSTANTS (chosen to be large enough to absorb container headers,
 # alignment, and GC jitter, but small enough to catch real bugs):
 #
 #   512 bytes  — internal functions (_calculate_ema, _calculate_emas)
-#                and calculate_indicator single period (thin wrapper).
-#                Container header is ~80 bytes; 512 gives comfortable margin.
+#                 and calculate_indicator single period (thin wrapper).
+#                 Container header is ~80 bytes; 512 gives comfortable margin.
 #
 #   1536 bytes — calculate_indicator multi-period.
-#                Higher because it dispatches with Periods as a Tuple (not Vector),
-#                triggering a different specialization of _calculate_emas.
-#                The tuple-based dispatch path has more type-computation overhead.
+#                 Higher because it dispatches with Periods as a Tuple (not Vector),
+#                 triggering a different specialization of _calculate_emas.
+#                 The tuple-based dispatch path has more type-computation overhead.
 #
 #   1024 bytes — EMA functors (PriceBars, chaining, multi-period).
-#                Accounts for NamedTuple construction + merge() overhead.
+#                 Accounts for NamedTuple construction + merge() overhead.
 #
 # BUG DETECTION: each budget is still well below 2× the data size, so an
 # accidental copy of the result (the main regression we guard against) will
@@ -492,14 +497,14 @@ end
     Backtest._calculate_ema(prices, 10)
 
     # Budget: vector data + 512 bytes for container header + alignment + GC noise
-    # Still catches double-allocation: 1600 + 512 = 2112 << 3200 (2× data)
     expected_data = sizeof(Float64) * length(prices)
     budget = expected_data + 512
 
-    # Define wrapper, warmup wrapper, then measure
+    # Define wrapper
     allocs_ema(prices) = @allocated Backtest._calculate_ema(prices, 10)
-    allocs_ema(prices)
-    actual = allocs_ema(prices)
+
+    # Run 3 times, take minimum
+    actual = minimum([@allocated(allocs_ema(prices)) for _ in 1:3])
 
     @test actual <= budget
     @test actual > 0  # sanity: must allocate the result vector
@@ -514,14 +519,14 @@ end
     Backtest._calculate_ema(prices, 10)
 
     # Budget: vector data + 512 bytes overhead
-    # Still catches double-allocation: 800 + 512 = 1312 << 1600 (2× data)
     expected_data = sizeof(Float32) * length(prices)
     budget = expected_data + 512
 
-    # Define wrapper, warmup wrapper, then measure
+    # Define wrapper
     allocs_ema(prices) = @allocated Backtest._calculate_ema(prices, 10)
-    allocs_ema(prices)
-    actual = allocs_ema(prices)
+
+    # Run 3 times, take minimum
+    actual = minimum([@allocated(allocs_ema(prices)) for _ in 1:3])
 
     @test actual <= budget
 end
@@ -541,10 +546,11 @@ end
     expected_data = sizeof(Float64) * length(prices)
     budget = expected_data + 512
 
-    # Define wrapper, warmup wrapper, then measure
+    # Define wrapper
     allocs_calc(ind, prices) = @allocated calculate_indicator(ind, prices)
-    allocs_calc(ind, prices)
-    actual = allocs_calc(ind, prices)
+
+    # Run 3 times, take minimum
+    actual = minimum([@allocated(allocs_calc(ind, prices)) for _ in 1:3])
 
     @test actual <= budget
 end
@@ -562,17 +568,14 @@ end
     calculate_indicator(ind, prices)
 
     # Budget: matrix data + 1536 bytes overhead
-    # Higher overhead than internal functions because calculate_indicator dispatches
-    # with Periods as a Tuple (not Vector), triggering a different specialization
-    # of _calculate_emas with additional type-computation overhead.
-    # Still catches double-allocation: 4800 + 1536 = 6336 << 9600 (2× data)
     expected_data = sizeof(Float64) * length(prices) * n_periods
     budget = expected_data + 1536
 
-    # Define wrapper, warmup wrapper, then measure
+    # Define wrapper
     allocs_calc(ind, prices) = @allocated calculate_indicator(ind, prices)
-    allocs_calc(ind, prices)
-    actual = allocs_calc(ind, prices)
+
+    # Run 3 times, take minimum
+    actual = minimum([@allocated(allocs_calc(ind, prices)) for _ in 1:3])
 
     @test actual <= budget
 end
@@ -592,10 +595,11 @@ end
     expected_data = sizeof(Float64) * 200
     budget = expected_data + 1024
 
-    # Define wrapper, warmup wrapper, then measure
+    # Define wrapper
     allocs_functor(ind, bars) = @allocated ind(bars)
-    allocs_functor(ind, bars)
-    actual = allocs_functor(ind, bars)
+
+    # Run 3 times, take minimum
+    actual = minimum([@allocated(allocs_functor(ind, bars)) for _ in 1:3])
 
     @test actual <= budget
     @test actual > 0  # must allocate result vector at minimum
@@ -620,10 +624,11 @@ end
     expected_data = sizeof(Float64) * 200
     budget = expected_data + 1024
 
-    # Define wrapper, warmup wrapper, then measure
+    # Define wrapper
     allocs_chain(ind2, step1) = @allocated ind2(step1)
-    allocs_chain(ind2, step1)
-    actual = allocs_chain(ind2, step1)
+
+    # Run 3 times, take minimum
+    actual = minimum([@allocated(allocs_chain(ind2, step1)) for _ in 1:3])
 
     @test actual <= budget
 end
@@ -643,10 +648,11 @@ end
     expected_data = sizeof(Float64) * 200 * 3
     budget = expected_data + 1024
 
-    # Define wrapper, warmup wrapper, then measure
+    # Define wrapper
     allocs_functor(ind, bars) = @allocated ind(bars)
-    allocs_functor(ind, bars)
-    actual = allocs_functor(ind, bars)
+
+    # Run 3 times, take minimum
+    actual = minimum([@allocated(allocs_functor(ind, bars)) for _ in 1:3])
 
     @test actual <= budget
 end

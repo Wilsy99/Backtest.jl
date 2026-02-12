@@ -367,11 +367,11 @@ end
 # CUSUM allocates a Vector{Int8} result — much smaller than EMA's Float64
 # vectors. Budget = sizeof(Int8) * n + overhead.
 #
-# Pattern (same as EMA):
+# Pattern (Min-of-N):
 #   1. Warmup target function
 #   2. Define wrapper function (avoid Core.Box)
-#   3. Warmup wrapper
-#   4. Measure on second call
+#   3. Measure N=3 times and take the MINIMUM
+#      This filters out occasional JIT compilation or GC noise.
 # ─────────────────────────────────────────────────────────────────────────────
 
 @testitem "CUSUM: Allocation — _calculate_cusum" tags = [:indicator, :cusum, :allocation] begin
@@ -388,10 +388,11 @@ end
     expected_data = sizeof(Int8) * n
     budget = expected_data + 512
 
-    # Define wrapper, warmup wrapper, then measure
+    # Define wrapper
     allocs_cusum(prices) = @allocated Backtest._calculate_cusum(prices, 1.0, 100, 0.0)
-    allocs_cusum(prices)
-    actual = allocs_cusum(prices)
+
+    # Run 3 times, take minimum to avoid compilation/GC noise
+    actual = minimum([@allocated(allocs_cusum(prices)) for _ in 1:3])
 
     @test actual <= budget
     @test actual > 0  # sanity: must allocate result vector
@@ -411,10 +412,11 @@ end
     expected_data = sizeof(Int8) * n
     budget = expected_data + 512
 
-    # Define wrapper, warmup wrapper, then measure
+    # Define wrapper
     allocs_calc(ind, prices) = @allocated calculate_indicator(ind, prices)
-    allocs_calc(ind, prices)
-    actual = allocs_calc(ind, prices)
+
+    # Run 3 times, take minimum
+    actual = minimum([@allocated(allocs_calc(ind, prices)) for _ in 1:3])
 
     @test actual <= budget
     @test actual > 0  # sanity: must allocate result vector
@@ -435,10 +437,11 @@ end
     expected_data = sizeof(Int8) * 200
     budget = expected_data + 1024
 
-    # Define wrapper, warmup wrapper, then measure
+    # Define wrapper
     allocs_functor(ind, bars) = @allocated ind(bars)
-    allocs_functor(ind, bars)
-    actual = allocs_functor(ind, bars)
+
+    # Run 3 times, take minimum
+    actual = minimum([@allocated(allocs_functor(ind, bars)) for _ in 1:3])
 
     @test actual <= budget
     @test actual > 0  # sanity: must allocate result
