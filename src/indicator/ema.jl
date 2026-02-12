@@ -1,22 +1,23 @@
 struct EMA{Periods} <: AbstractIndicator
-    function EMA{Periods}() where {Periods}
+    multi_thread::Bool
+    function EMA{Periods}(; multi_thread::Bool=false) where {Periods}
         isempty(Periods) && throw(ArgumentError("At least one period is required"))
         allunique(Periods) || throw(ArgumentError("Periods must be unique, got $Periods"))
         foreach(_natural, Periods)
-        return new{Periods}()
+        return new{Periods}(multi_thread)
     end
 end
 
-EMA(p::Int) = EMA{(p,)}()
-EMA(ps::Vararg{Int}) = EMA{ps}()
+EMA(p::Int; multi_thread::Bool=false) = EMA{(p,)}(; multi_thread)
+EMA(ps::Vararg{Int}; multi_thread::Bool=false) = EMA{ps}(; multi_thread)
 
 function calculate_indicator(
-    ::EMA{Periods}, prices::AbstractVector{T}; multi_thread::Bool=false
+    ind::EMA{Periods}, prices::AbstractVector{T}
 ) where {Periods,T<:AbstractFloat}
     if length(Periods) == 1
         return _calculate_ema(prices, Periods[1])
     else
-        return _calculate_emas(prices, collect(Periods), multi_thread)
+        return _calculate_emas(prices, collect(Periods), ind.multi_thread)
     end
 end
 
