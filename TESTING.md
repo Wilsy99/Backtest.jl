@@ -477,11 +477,13 @@ Non-kernel functions that allocate their result (vectors, matrices) must stay wi
 
 **The pattern:**
 
-1. **Warmup** — call the function once to trigger JIT compilation.
-2. **Compute expected overhead** — calculate the exact bytes for the result container (header + data).
-3. **Wrap in a function** — avoid Core.Box overhead from captured variables.
-4. **Assert budget** — `actual <= expected_data + header + small_buffer`.
-5. **Sanity check** — `actual > 0` (the function *must* allocate its result).
+1. **Warmup target** — call the function once to trigger JIT compilation.
+2. **Compute budget** — `expected_data + overhead` where overhead is a fixed constant per function layer.
+3. **Define wrapper function** — avoids Core.Box overhead from captured variables.
+4. **Warmup wrapper** — call the wrapper once to eliminate first-call compilation noise.
+5. **Measure** — call the wrapper a second time for a clean measurement.
+6. **Assert budget** — `actual <= budget`.
+7. **Sanity check** — `actual > 0` (the function *must* allocate its result).
 
 ```julia
 @testitem "EMA: Allocation — _calculate_ema (single period)" tags=[:indicator, :ema, :allocation] begin
@@ -489,15 +491,17 @@ Non-kernel functions that allocate their result (vectors, matrices) must stay wi
 
     prices = collect(1.0:200.0)
 
-    # Warmup
+    # Warmup target function
     Backtest._calculate_ema(prices, 10)
 
-    # Expected: one Vector{Float64} allocation = header + data
+    # Budget: vector data + 512 bytes for container header + alignment + GC noise
+    # Still catches double-allocation: 1600 + 512 = 2112 << 3200 (2× data)
     expected_data = sizeof(Float64) * length(prices)
-    vec_header = @allocated identity(Vector{Float64}(undef, 0))
-    budget = expected_data + vec_header + 64
+    budget = expected_data + 512
 
+    # Define wrapper, warmup wrapper, then measure
     allocs_ema(prices) = @allocated Backtest._calculate_ema(prices, 10)
+    allocs_ema(prices)
     actual = allocs_ema(prices)
 
     @test actual <= budget
@@ -507,19 +511,24 @@ end
 
 **Why the function wrapper?** Julia's closures box outer-scope variables that *might* be reassigned (`Core.Box`), which adds spurious allocations to `@allocated`. Wrapping in a named function with explicit arguments avoids this entirely.
 
+**Why warmup the wrapper too?** Even though the target function is already compiled, the first call through a new wrapper can include residual specialization overhead. Calling the wrapper once before measuring eliminates this noise.
+
+**Why not measure the container header with `@allocated identity(...)`?** This technique (`@allocated identity(Vector{T}(undef, 0))`) is unreliable — Julia's compiler can DCE the allocation away, returning 0 bytes. Instead, we use a fixed overhead constant that accounts for the header, alignment, and minor GC jitter. The overhead is chosen to be:
+- **Small enough** to catch real bugs (an accidental copy of the data would exceed the budget)
+- **Large enough** to absorb platform/version differences in container header sizes and GC behaviour
+
 **What to test with allocation budgets:**
 
-| Function layer | Expected allocation | Buffer |
-|----------------|-------------------|--------|
-| `_calculate_ema` (single period) | `Vector{T}(undef, n)` | 64 bytes |
-| `_calculate_emas` (multi-period) | `Matrix{T}(undef, n, k)` | 64 bytes |
-| `calculate_indicator` (single) | `Vector{T}(undef, n)` | 64 bytes |
-| `calculate_indicator` (multi) | `Matrix{T}(undef, n, k)` | 64 bytes |
-| EMA functor with PriceBars | Result vector + NamedTuple merge | 1024 bytes |
-| EMA functor chaining | Result vector + NamedTuple merge | 1024 bytes |
-| EMA functor multi-period | Result matrix + NamedTuple merge | 1024 bytes |
-
-The NamedTuple merge overhead (1024 bytes) accounts for the `merge(input, indicator_result)` construction in the callable interface. This is higher than raw container tests because NamedTuple construction involves type computation at the compiler level.
+| Function layer | Expected allocation | Overhead | Rationale |
+|----------------|-------------------|----------|-----------|
+| `_calculate_ema` (single period) | `Vector{T}(undef, n)` | 512 bytes | Container header + alignment |
+| `_calculate_ema` (Float32) | `Vector{T}(undef, n)` | 512 bytes | Type-generic parity |
+| `_calculate_emas` (multi-period) | `Matrix{T}(undef, n, k)` | 512 bytes | Container header + alignment |
+| `calculate_indicator` (single) | `Vector{T}(undef, n)` | 512 bytes | Thin wrapper, same as internal |
+| `calculate_indicator` (multi) | `Matrix{T}(undef, n, k)` | 1536 bytes | Dispatches via tuple `Periods` — different specialization path with additional type-computation overhead |
+| EMA functor with PriceBars | Result vector + NamedTuple merge | 1024 bytes | NamedTuple construction + `merge` |
+| EMA functor chaining | Result vector + NamedTuple merge | 1024 bytes | NamedTuple merge with existing fields |
+| EMA functor multi-period | Result matrix + NamedTuple merge | 1024 bytes | NamedTuple with `@views` columns |
 
 **When NOT to use `@allocated`:**
 
