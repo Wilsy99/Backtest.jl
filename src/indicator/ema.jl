@@ -34,7 +34,7 @@ end
     else
         quote
             vals = calculate_indicator(ind, prices)
-            NamedTuple{$names}(NTuple{$n}(ntuple(i -> @view(vals[:, i]), Val(n))))
+            @views NamedTuple{$names}(NTuple{$n}(ntuple(i -> vals[:, i], Val(n))))
         end
     end
 end
@@ -75,7 +75,7 @@ function _single_ema!(
         return nothing
     end
 
-    fill!(view(dest, 1:(p - 1)), T(NaN))
+    @views fill!(dest[1:(p - 1)], T(NaN))
 
     dest[p] = _sma_seed(prices, p)
 
