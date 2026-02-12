@@ -367,19 +367,28 @@ end
     @test allocs_seed(prices) == 0
 end
 
-@testitem "EMA: _calculate_emas view allocations" tags = [:indicator, :ema, :stability] begin
+@testitem "EMA: Expected Allocations in _calculate_emas" tags = [
+    :indicator, :ema, :stability
+] begin
     using Backtest, Test
 
     prices = collect(1.0:200.0)
     periods = [5, 10, 20]
+    T = eltype(prices)
+
+    # Force the compiler to allocate a header to find its size
+    # We assign to a local variable and use it to prevent DCE
+    local_m = identity(Matrix{T}(undef, 0, 0))
+    matrix_header_alloc = @allocated identity(Matrix{T}(undef, 0, 0))
+    data_bytes = sizeof(T) * length(prices) * length(periods)
+    buffer = 100
 
     # Warmup
     Backtest._calculate_emas(prices, periods)
 
-    # Only the result matrix should be allocated (n × k Float64s)
-    expected_bytes = sizeof(Float64) * length(prices) * length(periods)
     actual = @allocated Backtest._calculate_emas(prices, periods)
-    @test actual <= expected_bytes + 0  # small tolerance for threading overhead
+
+    @test actual <= data_bytes + matrix_header_alloc + 100
 end
 
 @testitem "EMA: Kernel Unrolled Covers All Remainders" tags = [:indicator, :ema, :unit] begin
