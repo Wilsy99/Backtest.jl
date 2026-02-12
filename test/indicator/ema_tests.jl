@@ -378,7 +378,6 @@ end
 
     # Force the compiler to allocate a header to find its size
     # We assign to a local variable and use it to prevent DCE
-    local_m = identity(Matrix{T}(undef, 0, 0))
     matrix_header_alloc = @allocated identity(Matrix{T}(undef, 0, 0))
     data_bytes = sizeof(T) * length(prices) * length(periods)
     buffer = 100
