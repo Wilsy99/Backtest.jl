@@ -482,10 +482,10 @@ Non-kernel functions that allocate their result (vectors, matrices) must stay wi
 **The Min-of-N measurement pattern:**
 
 1. **Warmup** — call the target function once to trigger JIT compilation.
-2. **Compute expected overhead** — calculate the exact bytes for the result container (header + data).
+2. **Compute budget** — calculate the exact bytes for the result container data, plus a fixed overhead constant (see table below).
 3. **Wrap in a function** — avoid Core.Box overhead from captured variables.
 4. **Measure N=3 times, take the minimum** — filters tiered compilation and GC noise that inflate individual measurements.
-5. **Assert budget** — `actual <= expected_data + header + small_buffer`.
+5. **Assert budget** — `actual <= budget`.
 6. **Sanity check** — `actual > 0` (the function *must* allocate its result).
 
 ```julia
@@ -494,13 +494,12 @@ Non-kernel functions that allocate their result (vectors, matrices) must stay wi
 
     prices = collect(1.0:200.0)
 
-    # Warmup
+    # Warmup target function
     Backtest._calculate_ema(prices, 10)
 
-    # Expected: one Vector{Float64} allocation = header + data
+    # Budget: vector data + 512 bytes for container header + alignment + GC noise
     expected_data = sizeof(Float64) * length(prices)
-    vec_header = @allocated identity(Vector{Float64}(undef, 0))
-    budget = expected_data + vec_header + 64
+    budget = expected_data + 512
 
     # Define wrapper
     allocs_ema(prices) = @allocated Backtest._calculate_ema(prices, 10)
@@ -517,21 +516,30 @@ end
 
 **Why Min-of-N?** A single `@allocated` measurement can be inflated by tiered JIT recompilation, GC pauses, or runtime bookkeeping. Taking the minimum of N=3 runs filters this noise while preserving the true allocation floor. The minimum is the right statistic here — we care about the *inherent* allocations, not the worst-case runtime jitter.
 
+**Why fixed overhead constants instead of measuring `vec_header`?** Earlier versions computed the container header dynamically with `@allocated identity(Vector{T}(undef, 0))`. This gets DCE'd (Dead Code Eliminated) to 0 bytes on some platforms (confirmed on Windows Julia 1.12), making the budget too tight. Fixed constants (512, 1024, 1536 bytes) are large enough to absorb container headers (~80 bytes), alignment, and GC jitter, but small enough to catch real bugs like accidental data copies. For example, a 200-element `Float64` vector is 1600 bytes of data — a budget of 1600 + 512 = 2112 still catches a double-allocation (3200+ bytes).
+
 **What to test with allocation budgets:**
 
-| Function layer | Expected allocation | Buffer |
-|----------------|-------------------|--------|
-| `_calculate_ema` (single period) | `Vector{T}(undef, n)` | 64 bytes |
-| `_calculate_emas` (multi-period) | `Matrix{T}(undef, n, k)` | 64 bytes |
-| `_calculate_cusum` | `Vector{Int8}(undef, n)` | 64 bytes |
-| `calculate_indicator` (single) | `Vector{T}(undef, n)` | 64 bytes |
-| `calculate_indicator` (multi) | `Matrix{T}(undef, n, k)` | 64 bytes |
+| Function layer | Expected allocation | Overhead |
+|----------------|-------------------|----------|
+| `_calculate_ema` (single period) | `Vector{T}(undef, n)` | 512 bytes |
+| `_calculate_ema` (Float32) | `Vector{Float32}(undef, n)` | 512 bytes |
+| `_calculate_emas` (multi-period) | `Matrix{T}(undef, n, k)` | 512 bytes |
+| `_calculate_cusum` | `Vector{Int8}(undef, n)` | 512 bytes |
+| `calculate_indicator` (single) | `Vector{T}(undef, n)` | 512 bytes |
+| `calculate_indicator` (multi) | `Matrix{T}(undef, n, k)` | 1536 bytes |
 | EMA functor with PriceBars | Result vector + NamedTuple merge | 1024 bytes |
 | EMA functor chaining | Result vector + NamedTuple merge | 1024 bytes |
 | EMA functor multi-period | Result matrix + NamedTuple merge | 1024 bytes |
 | CUSUM functor with PriceBars | Result vector + NamedTuple merge | 1024 bytes |
 
-The NamedTuple merge overhead (1024 bytes) accounts for the `merge(input, indicator_result)` construction in the callable interface. This is higher than raw container tests because NamedTuple construction involves type computation at the compiler level.
+**Overhead constant rationale:**
+
+| Constant | Used for | Why |
+|----------|----------|-----|
+| 512 bytes | Internal functions, `calculate_indicator` single period | Container header is ~80 bytes; 512 gives comfortable margin for alignment and GC jitter |
+| 1536 bytes | `calculate_indicator` multi-period | Dispatches with Periods as a Tuple (not Vector), triggering a different specialization of `_calculate_emas` with more type-computation overhead |
+| 1024 bytes | Functor calls (PriceBars, chaining, multi-period) | Accounts for `merge(input, indicator_result)` NamedTuple construction overhead |
 
 **When NOT to use `@allocated`:**
 
