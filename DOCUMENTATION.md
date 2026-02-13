@@ -140,7 +140,90 @@ Follow the Julia convention: write one docstring for the *function* (generic), n
 
 ---
 
-## 4. Docstring Templates by Category
+## 4. Inline Code Comments
+
+Docstrings and inline comments serve different purposes. Do not conflate them.
+
+- **Docstrings** are the external-facing contract: what does this do, how do I call it, what comes back. They exist for *users* of the function.
+- **Inline comments** are internal-facing notes for *readers of the implementation*. They should be rare.
+
+### Philosophy: Code Speaks First
+
+Code should be readable on its own. Well-chosen names, clear control flow, and small functions eliminate most need for comments. A comment that restates what the code does is pure noise — it doubles the maintenance surface and goes stale faster than the code it describes.
+
+The only comments that earn their place explain **why** — decisions, constraints, or trade-offs that aren't evident from the code itself.
+
+### When Comments Are Justified
+
+| Situation | Example | Why it earns its place |
+|-----------|---------|----------------------|
+| **Performance trade-off** | Why a loop is manually unrolled instead of using the obvious approach | The "obvious" version was tried and was slower; without the comment, someone will "simplify" it back |
+| **Algorithm reference** | Which paper or formula a kernel implements | You can't derive the intent from arithmetic alone |
+| **Non-obvious precondition** | Why `p <= n` is assumed rather than checked | The caller already validated this; the comment prevents a redundant guard from being added |
+| **Workaround for a known issue** | Compiler bug, dependency quirk, or platform-specific behaviour | Without context, the workaround looks like bad code and gets "fixed" |
+| **Domain semantics** | Why `NaN` is used instead of `0.0` for warmup entries | The choice is meaningful (NaN propagates; zero silently corrupts downstream statistics) |
+
+### When Comments Are Noise
+
+| Pattern | Why it's noise |
+|---------|---------------|
+| `# Compute the SMA seed` above a function named `_sma_seed` | The name already says this |
+| `# Loop through prices` above `for i in 1:n` | The code is self-evident |
+| `# Return the result` above `return results` | Adds nothing |
+| `# Check if period is valid` above `_natural(period)` | The function name conveys the intent |
+| Commented-out code blocks | Use version control, not comments. Delete dead code |
+
+### Section Headers
+
+Section headers (ASCII dividers) are acceptable for organising long files into logical groups. Keep them lightweight:
+
+```julia
+# ── Barrier checking: recursive tuple unrolling ──
+```
+
+These help readers navigate a file without cluttering individual functions. Use the `# ── Description ──` format for consistency. Don't use heavy box-drawing styles — they draw attention disproportionate to their value.
+
+### Examples from This Codebase
+
+**Justified** — the field type `Function` doesn't convey *which* function:
+```julia
+struct Event{T<:Tuple} <: AbstractEvent
+    conditions::T
+    logic::Function # Stores bitwise operator (& / |)
+end
+```
+
+**Justified** — the dispatch pattern is non-obvious without naming the cases:
+```julia
+# Base case — no barriers left
+@inline function _check_barrier_recursive!(i, j, ::Tuple{}, ...)
+    return false
+end
+
+# Recursive case — check first barrier, then recurse on tail
+@inline function _check_barrier_recursive!(i, j, barriers::Tuple, ...)
+```
+
+**Justified** — explains *why* the fallback exists, not *what* it does:
+```julia
+# Fallback for non-symbols (numbers, strings, etc.)
+_replace_symbols(ctx, ex) = ex
+```
+
+**Would be noise** — the function name already says this:
+```julia
+# BAD
+# Calculate single EMA for one period
+function _single_ema!(dest, prices, p, n)
+```
+
+### The Rule
+
+If you're tempted to write a comment, first ask: can I make the code say this instead — through a better name, a clearer structure, or an extracted function? If yes, do that. If no, write the comment. Comments are a last resort, not a first instinct.
+
+---
+
+## 5. Docstring Templates by Category
 
 ### 4a. Module Docstring
 
@@ -569,7 +652,7 @@ end
 
 ---
 
-## 5. The `# Examples` Section
+## 6. The `# Examples` Section
 
 Examples are the most valuable part of a docstring. They serve as both documentation and executable tests.
 
@@ -708,7 +791,7 @@ This rewrites docstring output in source files to match actual output. Always re
 
 ---
 
-## 6. The `# Extended help` Convention
+## 7. The `# Extended help` Convention
 
 Julia's REPL supports two help levels: `?foo` (brief) and `??foo` (full). Everything above `# Extended help` appears for `?foo`. Everything including and below appears for `??foo`.
 
@@ -778,7 +861,7 @@ The expected return `E[r]` is estimated from a rolling window of
 
 ---
 
-## 7. Documenting for Extensibility
+## 8. Documenting for Extensibility
 
 ### The Interface Contract Pattern
 
@@ -855,7 +938,7 @@ Documented fields become implicit public API — changing them is a breaking cha
 
 ---
 
-## 8. Pipeline Data Flow Documentation
+## 9. Pipeline Data Flow Documentation
 
 The `>>` pipeline is the core user experience. Its documentation has special requirements because the implicit interface between stages is defined by `NamedTuple` key conventions, not by types.
 
@@ -888,11 +971,11 @@ Return the input `NamedTuple` merged with:
 
 ### Why This Matters
 
-In a pipeline architecture, the return structure of one stage is the input interface of the next. An undocumented `NamedTuple` return is an anti-pattern (see Section 11, Anti-Pattern 7). Every stage's data contract must be explicit.
+In a pipeline architecture, the return structure of one stage is the input interface of the next. An undocumented `NamedTuple` return is an anti-pattern (see Section 12, Anti-Pattern 7). Every stage's data contract must be explicit.
 
 ---
 
-## 9. Cross-References and Discoverability
+## 10. Cross-References and Discoverability
 
 ### `@ref` Links
 
@@ -930,7 +1013,7 @@ Before merging a PR that adds a new public name, verify:
 
 ---
 
-## 10. Writing Style
+## 11. Writing Style
 
 ### Imperative Mood
 
@@ -967,7 +1050,7 @@ Use consistent terminology across all docstrings:
 
 ---
 
-## 11. Anti-Patterns
+## 12. Anti-Patterns
 
 These are documentation mistakes to avoid. They are drawn from real Julia ecosystem patterns and adapted to this codebase.
 
@@ -1092,7 +1175,7 @@ Unlinked references become dead text in the rendered docs. Linked references bec
 
 ---
 
-## 12. DocStringExtensions.jl (Optional Tooling)
+## 13. DocStringExtensions.jl (Optional Tooling)
 
 [DocStringExtensions.jl](https://github.com/JuliaDocs/DocStringExtensions.jl) can auto-generate signature and field listings. It is **not currently a dependency** of this package. If adopted, use it as follows:
 
@@ -1148,7 +1231,7 @@ Do not adopt it prematurely — the manual style in Section 4 is sufficient and 
 
 ---
 
-## 13. Documenter.jl Site
+## 14. Documenter.jl Site
 
 This package does not currently have a `docs/` site. When one is created, follow this structure.
 
@@ -1301,7 +1384,7 @@ Prefer explicit `@docs` blocks — they make the page structure intentional and 
 
 ---
 
-## 14. CI Integration
+## 15. CI Integration
 
 ### Doctest Execution in Tests
 
@@ -1342,7 +1425,7 @@ The `strict = true` setting in `makedocs` ensures that missing docstrings, broke
 
 ---
 
-## 15. Priority Order
+## 16. Priority Order
 
 Complete each phase before moving to the next. Within a phase, order doesn't matter.
 
