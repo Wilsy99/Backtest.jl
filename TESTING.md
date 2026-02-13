@@ -477,7 +477,7 @@ end
 
 ### 6b. Allocation Budget Tests (`:allocation` tag)
 
-Non-kernel functions that allocate their result (vectors, matrices) must stay within a computed budget. These tests verify that no *unexpected* allocations sneak in — only the result container should be allocated.
+Non-kernel functions that allocate their result (vectors, matrices) must stay within a computed budget. These tests are a **quality gate for the entire compilation chain**, not just a check for array copies. While double allocation (accidental full-data copies) is the biggest regression they catch, it is not the only one. If you only cared about double allocations, the budget could be much looser (e.g., `1.5 * data_size`). The reason the budget is kept tight (e.g., `data_size + 512` bytes) is to catch several other subtle but high-impact performance bugs — see [What tight budgets catch](#what-tight-budgets-catch) below.
 
 **The Min-of-N measurement pattern:**
 
@@ -540,6 +540,46 @@ end
 | 512 bytes | Internal functions, `calculate_indicator` single period | Container header is ~80 bytes; 512 gives comfortable margin for alignment and GC jitter |
 | 1536 bytes | `calculate_indicator` multi-period | Dispatches with Periods as a Tuple (not Vector), triggering a different specialization of `_calculate_emas` with more type-computation overhead |
 | 1024 bytes | Functor calls (PriceBars, chaining, multi-period) | Accounts for `merge(input, indicator_result)` NamedTuple construction overhead |
+
+#### What tight budgets catch
+
+By keeping the budget at `data_size + constant`, you are saying: *"I expect the compiler to allocate exactly the space for the answer, and I am giving it a tiny bit of breathing room for its own internal bookkeeping. Anything else is a bug."* This makes the allocation test a safety net for the entire compilation chain, not just a guard against copying arrays.
+
+**1. Type instabilities (the "Any" leak)**
+
+If a function becomes type-unstable, Julia allocates "boxes" for variables on the heap because it cannot determine their size at compile time.
+
+- *The bug:* A code change makes the return type of a helper function ambiguous.
+- *The allocation:* Instead of just the result matrix, Julia allocates thousands of small 8-byte or 16-byte objects to store intermediate values.
+- *The test catch:* These small objects quickly add up to more than 512 bytes, failing the test even though no full-data copy occurred.
+
+**2. Accidental slicing vs. viewing**
+
+In Julia, `A[1:10]` creates a copy of the data, while `@views A[1:10]` creates a pointer.
+
+- *The bug:* A multi-period EMA path uses `prices[1:warmup]` instead of `view(prices, 1:warmup)`.
+- *The allocation:* A whole new temporary vector is created.
+- *The test catch:* Even a small slice often exceeds the 512-byte noise buffer, alerting you to unnecessary garbage for the GC.
+
+**3. Closure capturing (`Core.Box`)**
+
+If an inner function or lambda modifies a variable from the outer scope, Julia "boxes" that variable.
+
+- *The bug:* A kernel refactor introduces a helper closure that accidentally captures a loop counter.
+- *The allocation:* Every call to that closure triggers heap allocations.
+- *The test catch:* This is a classic "silent" performance killer in Julia that allocation tests are perfect at catching.
+
+**4. Splatting overheads**
+
+- *The bug:* A call site uses `f(args...)` where `args` is a very long tuple or a dynamically sized collection.
+- *The allocation:* The compiler gives up on optimizing the splat and allocates a temporary array to hold the arguments.
+- *The test catch:* This usually triggers a few hundred bytes of allocation — right at the limit of the 512-byte buffer.
+
+**5. String formatting in hot paths**
+
+- *The bug:* A `println("Processing index $i")` or logging statement is left inside a loop, even behind a debug flag.
+- *The allocation:* String interpolation (`$i`) allocates memory every time it is hit.
+- *The test catch:* Allocations scale with the number of price bars (`n`), making it obvious something is wrong.
 
 **When NOT to use `@allocated`:**
 
