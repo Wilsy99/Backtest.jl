@@ -1,98 +1,349 @@
 # Documentation Philosophy & Conventions for Backtest.jl
 
-> **Living document.** This describes the documentation *philosophy* and *conventions*, not a snapshot of what exists today. When you add a new module, type, or function, follow the patterns here. Sections marked with specific examples (EMA, PriceBars, etc.) are illustrative — apply the same patterns to every new component.
+> **Living document.** This describes the documentation *philosophy* and *conventions*, not a snapshot of what exists today. When you add a new module, type, or public function, follow the patterns here. Sections marked with specific examples (EMA, CUSUM, etc.) are illustrative — apply the same patterns to every new component.
 
-## 1. Core Mandate: Documentation as Interface Contract
+## 1. Core Mandate: Documentation as Contract
 
-Docstrings are not afterthoughts. In Julia, documentation *is* the interface. There are no header files, no `Interface` keyword, no enforced method signatures on abstract types. The docstring on an abstract type is the only place where the required method contract lives. The docstring on an exported function is the only guarantee users have about its behaviour.
+Docstrings are not afterthoughts or decorations. They are the **interface contract** between this package and its users. In Julia there are no header files, no `Interface` keyword, no enforced method signatures on abstract types. The docstring on an abstract type is the only place where the required method contract lives. The docstring on an exported function is the only guarantee users have about its behaviour.
 
-Every docstring should answer:
+Every exported docstring must answer three questions:
 
-- **What does this do?** One sentence, no jargon.
-- **What goes in?** Arguments, keyword arguments, their types, and what they *mean* (types alone don't convey semantics).
-- **What comes out?** Return type and structure — especially for `NamedTuple` returns that downstream pipeline stages depend on.
-- **What can go wrong?** Exceptions, warnings, and the conditions that trigger them.
-- **How do I use it?** A runnable example, ideally a doctest.
+1. **What does it do?** (one-line summary)
+2. **How do I call it?** (signature, arguments, keyword arguments)
+3. **What comes back?** (return type and shape — especially `NamedTuple` returns that downstream pipeline stages depend on)
 
----
-
-## 2. Format: Julia Markdown Docstrings
-
-We use Julia's built-in Markdown docstrings (`""" ... """`), following the conventions in the [Julia manual](https://docs.julialang.org/en/v1/manual/documentation/) and the [BlueStyle guide](https://github.com/JuliaDiff/BlueStyle).
-
-### Rules
-
-1. **Triple-quoted strings**: Always use `"""..."""`. Opening and closing `"""` go on their own lines.
-2. **No blank line** between the docstring and the object it documents. A blank line breaks the association silently.
-3. **92-character line width**: Same as code (matches `.JuliaFormatter.toml`).
-4. **Backticks for all identifiers**: Every Julia symbol in prose gets backticks — `` `EMA` ``, `` `calculate_indicator` ``, `` `Float64` ``. No exceptions.
-5. **4-space indented signature**: The first line after the opening `"""` is the function/type signature, indented by 4 spaces so it renders as a code block.
-6. **Imperative mood**: "Return the EMA values", not "Returns the EMA values". Matches Julia Base convention.
-7. **Cross-references**: Use `` [`OtherFunction`](@ref) `` when referring to other documented symbols. These become hyperlinks in Documenter.jl output.
-
-### Canonical Section Order
-
-Use `#` (H1) headers for sections inside docstrings. Not every docstring needs every section — include only what's relevant. But when present, they must appear in this order:
-
-```
-Signature (4-space indented)
-Brief description (one sentence)
-Extended description (optional paragraph)
-# Arguments
-# Keywords
-# Returns
-# Throws
-# Examples
-# Extended help
-# Implementation
-```
-
-| Section | When to include |
-|---------|-----------------|
-| Signature | Always, for exported symbols |
-| Brief description | Always |
-| `# Arguments` | When arguments aren't self-evident from the signature |
-| `# Keywords` | When keyword arguments exist |
-| `# Returns` | When return type/structure isn't obvious — especially for `NamedTuple` returns |
-| `# Throws` | When the function validates input and throws |
-| `# Examples` | Always, for exported symbols. Use `jldoctest` blocks |
-| `# Extended help` | When math background, algorithm details, or implementation theory would overwhelm the quick-help view |
-| `# Implementation` | When subtype authors need guidance on which methods to override |
+If a user has to read the source to understand an exported function, the docstring has failed.
 
 ---
 
-## 3. Docstring Templates by Category
+## 2. Format: Julia-Standard Markdown
 
-### 3a. Exported Functions
+All docstrings use Julia's triple-quoted string syntax placed immediately before the documented object. No blank lines between the docstring and the object it documents.
 
-Every exported function gets a full docstring. No exceptions.
+### Structure
+
+Every docstring follows this skeleton, omitting inapplicable sections:
 
 ```julia
 """
-    calculate_indicator(ind::EMA{Periods}, prices::AbstractVector{T}) where {Periods, T<:AbstractFloat}
+    function_name(arg1::Type1, arg2::Type2; kwarg1=default) -> ReturnType
 
-Compute Exponential Moving Average(s) for `prices` using the period(s)
-encoded in `ind`.
+One-line summary in imperative mood, ending with a period.
 
-Return a `Vector{T}` when `ind` has a single period, or a `Matrix{T}`
-(columns correspond to periods in declaration order) when `ind` has
-multiple periods. The first `period - 1` entries are `NaN` (warmup).
+Extended description if the one-liner is insufficient. Explain *why*
+this exists, not just *what* it does. Wrap lines at 92 characters.
 
 # Arguments
-- `ind::EMA{Periods}`: An EMA indicator. Periods are encoded as type
-  parameters — use `EMA(10)` for a single period or `EMA(10, 50)` for
-  multiple.
-- `prices::AbstractVector{T}`: Price series. Must be `AbstractFloat`
-  (`Float64`, `Float32`, etc.). Element type is preserved in the output.
+- `arg1::Type1`: description of the first argument.
+- `arg2::Type2`: description of the second argument.
+
+# Keywords
+- `kwarg1::Type=default`: description of the keyword argument.
 
 # Returns
-- `Vector{T}`: When `length(Periods) == 1`. Length equals `length(prices)`.
-- `Matrix{T}`: When `length(Periods) > 1`. Size is
-  `(length(prices), length(Periods))`.
+- `ReturnType`: description of what is returned.
 
 # Throws
-- `ArgumentError`: If any period is not a positive integer (enforced at
-  construction time by [`EMA`](@ref)).
+- `ArgumentError`: when this specific condition is violated.
+
+# Examples
+```jldoctest
+julia> function_name(x, y)
+expected_output
+```
+
+# See also
+- [`related_function`](@ref): brief description of the relationship.
+
+# Extended help
+
+Lengthy mathematical background, algorithm derivation, or performance
+notes that would clutter the main docstring. Visible via `??` in the
+REPL but hidden from `?`.
+"""
+```
+
+Not every docstring needs every section — include only what's relevant. But when present, sections must appear in this order.
+
+### Formatting Rules
+
+| Rule | Rationale |
+|------|-----------|
+| Wrap lines at **92 characters** | Standard across BlueStyle, SciML, and the Julia manual |
+| Use **imperative mood** ("Compute the index" not "Computes" or "Returns") | Matches the Julia standard library convention |
+| **Backtick** all Julia identifiers (`` `PriceBars` ``, `` `true` ``, `` `Float64` ``) | Renders as code in all output formats |
+| Indent the signature by **four spaces** | Julia convention; distinguishes the signature from prose |
+| Place `"""` on **their own lines** | Avoids ragged indentation in multi-line docstrings |
+| End the one-line summary with a **period** | Consistent punctuation |
+| **No blank line** between closing `"""` and the object | Julia parser requirement — a blank line breaks the association silently |
+
+### One-Line Docstrings
+
+For trivially simple functions or constants, a single-line docstring is acceptable:
+
+```julia
+"""Return the smoothing factor `α = 2 / (period + 1)` for an EMA with the given `period`."""
+_smoothing_factor(period::Int) = 2.0 / (period + 1)
+```
+
+Use one-liners only when the function has no keyword arguments, no noteworthy edge cases, and an obvious return type.
+
+---
+
+## 3. What to Document
+
+### Always Document (mandatory)
+
+| Target | Why |
+|--------|-----|
+| **Exported functions** (`calculate_indicator`, `get_data`) | Primary user-facing API |
+| **Exported types** (`PriceBars`, `EMA`, `CUSUM`, `Label`) | Users construct these directly |
+| **Exported abstract types** (`AbstractIndicator`, `AbstractBarrier`) | Users subtype these to extend the package |
+| **Exported macros** (`@Event`, `@UpperBarrier`, etc.) | Most fragile surface area; users need examples |
+| **The module itself** (`Backtest`) | Entry point; should list exports and show a quick-start example |
+
+### Document When Non-Trivial (recommended)
+
+| Target | When |
+|--------|------|
+| **Internal computation kernels** (`_ema_kernel_unrolled!`, `_calculate_cusum`) | When the algorithm is non-obvious or performance-critical |
+| **`@generated` functions** (`_indicator_result`) | Always — metaprogramming is never self-evident |
+| **Internal types used across modules** (`LabelResults`, `EventResult`) | When they appear in public return types |
+| **NamedTuple builders** (functions defining pipeline keys) | These are implicit interface contracts between stages |
+| **Index/alignment logic** (warmup lengths, temporal offsets) | Off-by-one bugs are the #1 source of backtesting errors |
+| **Constants and configuration** (`DEFAULT_SPAN`, thresholds) | When their value affects user-visible behaviour |
+| **Pipeline operator overloads** (`>>`) | Non-standard syntax that users encounter immediately |
+
+Use this decision tree for internal functions:
+
+| Criterion | Needs docstring? |
+|-----------|-----------------|
+| Contains non-trivial math or algorithms | **Yes** |
+| Defines `NamedTuple` keys consumed by downstream stages | **Yes** |
+| Has subtle correctness requirements (index arithmetic, warmup logic) | **Yes** |
+| Is a `@generated` function | **Yes** |
+| Is referenced in `TESTING.md` as a direct test target | **Yes** |
+| Is a simple validator (`_natural(x)`) | No — intent is obvious from name + `@test_throws` coverage |
+| Is glue code (thin delegation wrapper) | No — adds noise without value |
+
+### Skip (do not document)
+
+| Target | Why |
+|--------|-----|
+| **Simple validators** (`_natural(x)`) | Intent is obvious from name + `@test_throws` coverage |
+| **Glue code** (thin delegation wrappers) | Adds noise without value |
+| **Re-exports from dependencies** | Document at the source, not the passthrough |
+
+### Document the Function, Not Individual Methods
+
+Follow the Julia convention: write one docstring for the *function* (generic), not separate docstrings for each method. Only split into per-method docstrings when behaviour fundamentally diverges between methods (e.g., `calculate_indicator(::EMA, ...)` vs `calculate_indicator(::CUSUM, ...)` if their contracts differ).
+
+---
+
+## 4. Docstring Templates by Category
+
+### 4a. Module Docstring
+
+The module docstring is the first thing users see after `using Backtest; ?Backtest`. It must orient them immediately.
+
+```julia
+"""
+    Backtest
+
+A performance-oriented framework for financial event-driven backtesting
+using the triple-barrier method.
+
+Compose indicator, event detection, and labelling stages into pipelines
+using the `>>` operator:
+
+    bars >> EMA(10, 50) >> event >> label
+
+# Exports
+
+**Types**: [`PriceBars`](@ref), [`EMA`](@ref), [`CUSUM`](@ref),
+[`Event`](@ref), [`Label`](@ref), [`UpperBarrier`](@ref),
+[`LowerBarrier`](@ref), [`TimeBarrier`](@ref),
+[`ConditionBarrier`](@ref)
+
+**Functions**: [`calculate_indicator`](@ref), [`get_data`](@ref),
+[`calculate_side`](@ref), [`calculate_label`](@ref)
+
+**Macros**: [`@Event`](@ref), [`@UpperBarrier`](@ref),
+[`@LowerBarrier`](@ref), [`@TimeBarrier`](@ref),
+[`@ConditionBarrier`](@ref)
+
+**Directions**: [`LongOnly`](@ref), [`ShortOnly`](@ref),
+[`LongShort`](@ref)
+
+# Quick Start
+
+```julia
+using Backtest, Dates
+
+bars = get_data("AAPL"; start_date="2020-01-01", end_date="2023-12-31")
+job = bars >> EMA(10, 50) >> @Event(:ema_10 .> :ema_50) >> Label(
+    @UpperBarrier(:entry_price * 1.05),
+    @LowerBarrier(:entry_price * 0.95),
+    @TimeBarrier(20),
+)
+result = job()
+```
+"""
+module Backtest
+```
+
+### 4b. Abstract Type Docstring
+
+Abstract types define extension points. Their docstrings are the **most important** in the package — they are the only place the interface contract lives.
+
+```julia
+"""
+    AbstractIndicator
+
+Supertype for all technical indicators.
+
+# Interface
+
+Subtypes must implement:
+
+- `calculate_indicator(ind::MyIndicator, prices::AbstractVector{T}) where {T<:AbstractFloat}`:
+    compute the indicator values from a price vector. Return a `Vector{T}`
+    (single-output) or `Matrix{T}` (multi-output) with the same element
+    type as the input.
+- `_indicator_result(ind::MyIndicator, prices::AbstractVector{T}) -> NamedTuple`:
+    wrap the raw indicator output in a `NamedTuple` with descriptive keys
+    for pipeline composition (e.g., `(:ema_10,)`).
+
+# Implementation Notes
+
+- Indicators are callable: `ind(pricebars)` delegates to
+    `calculate_indicator` and merges the result into the pipeline
+    `NamedTuple`. Do **not** override the callable methods.
+- Preserve the input element type (`Float32` in → `Float32` out) to
+    support GPU workflows.
+- Use `NaN` padding for warmup periods, not zero-filling.
+
+# Naming Convention
+
+Indicator result keys must be lowercase, using the pattern
+`:indicatorname_parameter` (e.g., `:ema_10`, `:cusum`). These names
+become the field names that downstream [`Event`](@ref) conditions and
+[`@Event`](@ref) macro expressions reference.
+
+# Existing Subtypes
+
+- [`EMA`](@ref): Exponential Moving Average.
+- [`CUSUM`](@ref): Cumulative Sum filter for structural breaks.
+"""
+abstract type AbstractIndicator end
+```
+
+### 4c. Concrete Struct Docstring
+
+Document the purpose, fields, constructor constraints, and the callable interface.
+
+```julia
+"""
+    EMA{Periods} <: AbstractIndicator
+
+Exponential moving average indicator parameterised by one or more
+periods.
+
+Compute EMA values using the recursive formula
+`EMA[t] = α * price[t] + (1 - α) * EMA[t-1]` where
+`α = 2 / (period + 1)`. The first `period - 1` values are `NaN`
+(warmup). The value at index `period` is the simple moving average
+seed.
+
+# Type Parameters
+- `Periods::Tuple{Vararg{Int}}`: the EMA periods. Must be unique
+    positive integers.
+
+# Fields
+- `multi_thread::Bool`: enable multi-threaded computation for
+    multi-period EMAs.
+
+# Constructors
+    EMA(period::Int; multi_thread=false)
+    EMA(periods::Vararg{Int}; multi_thread=false)
+
+# Throws
+- `ArgumentError`: if any period is non-positive, or periods are not
+    unique.
+
+# Examples
+```jldoctest
+julia> using Backtest
+
+julia> ema = EMA(10);
+
+julia> prices = collect(1.0:20.0);
+
+julia> result = calculate_indicator(ema, prices);
+
+julia> length(result) == 20
+true
+
+julia> all(isnan, result[1:9])
+true
+```
+
+# See also
+- [`CUSUM`](@ref): cumulative sum indicator for structural breaks.
+- [`calculate_indicator`](@ref): the dispatch point for all indicators.
+
+# Extended help
+
+## Callable Interface
+
+`EMA` instances are callable. When called with [`PriceBars`](@ref)
+or a `NamedTuple` from a previous pipeline stage, they compute the
+EMA on `bars.close` and merge the result into the pipeline data:
+
+```julia
+bars = get_data("AAPL")
+result = EMA(10, 50)(bars)
+# result is a NamedTuple with fields :bars, :ema_10, :ema_50
+```
+
+The field names follow the pattern `:ema_<period>`.
+
+## Pipeline Composition
+
+Use `>>` to compose into a pipeline:
+
+```julia
+job = bars >> EMA(10, 50) >> evt >> lab
+result = job()
+```
+"""
+struct EMA{Periods} <: AbstractIndicator
+    # ...
+end
+```
+
+### 4d. Public Function Docstring
+
+```julia
+"""
+    calculate_indicator(ind::EMA{Periods}, prices::AbstractVector{T}) where {Periods, T<:AbstractFloat} -> Union{Vector{T}, Matrix{T}}
+
+Compute EMA values for `prices` at the periods specified in `ind`.
+
+Return a `Vector{T}` when `Periods` contains a single period, or a
+`Matrix{T}` of size `(length(prices), length(Periods))` for multiple
+periods. The element type of the output matches the input.
+
+# Arguments
+- `ind::EMA{Periods}`: the EMA indicator instance.
+- `prices::AbstractVector{T}`: price series. Must have at least
+    `maximum(Periods)` elements for meaningful output.
+
+# Returns
+- `Vector{T}`: when `length(Periods) == 1`. First `period - 1`
+    entries are `NaN`.
+- `Matrix{T}`: when `length(Periods) > 1`. Column `j` corresponds
+    to `Periods[j]`.
 
 # Examples
 ```jldoctest
@@ -102,12 +353,12 @@ julia> prices = Float64[10, 11, 12, 13, 14, 15];
 
 julia> ema = calculate_indicator(EMA(3), prices);
 
-julia> ema[3]
-11.0
-
-julia> ema[4]
-12.0
+julia> ema[3] ≈ 11.0
+true
 ```
+
+# See also
+- [`EMA`](@ref): constructor and type documentation.
 
 # Extended help
 
@@ -137,150 +388,44 @@ function calculate_indicator(
 end
 ```
 
-### 3b. Struct Types
+### 4e. Macro Docstring
 
-Document the type's purpose, its fields, its constructors, and how it fits into the type hierarchy.
-
-```julia
-"""
-    EMA{Periods} <: AbstractIndicator
-
-Exponential Moving Average indicator with compile-time period(s).
-
-Periods are stored as a type parameter (a `Tuple` of `Int`s), enabling
-`@generated` dispatch to produce specialised, zero-overhead code for
-each period combination.
-
-# Fields
-- `multi_thread::Bool`: Whether to parallelise multi-period computation
-  across threads. Ignored for single-period EMAs.
-
-# Constructors
-    EMA(period::Int; multi_thread=false)
-    EMA(periods::Vararg{Int}; multi_thread=false)
-
-# Throws
-- `ArgumentError`: If no periods are given, if periods are not unique,
-  or if any period is not a positive integer.
-
-# Examples
-```jldoctest
-julia> using Backtest
-
-julia> ema_single = EMA(10);
-
-julia> ema_multi = EMA(10, 20, 50);
-
-julia> ema_threaded = EMA(10, 50; multi_thread=true);
-```
-
-# Extended help
-
-## Callable Interface
-
-`EMA` instances are callable. When called with [`PriceBars`](@ref) or a
-`NamedTuple` from a previous pipeline stage, they compute the EMA on
-`bars.close` and merge the result into the pipeline data:
-
-```julia
-bars = get_data("AAPL")
-result = EMA(10, 50)(bars)
-# result is a NamedTuple with fields :bars, :ema_10, :ema_50
-```
-
-The field names follow the pattern `:ema_<period>`.
-
-## Pipeline Composition
-
-Use `>>` to compose into a pipeline:
-
-```julia
-job = bars >> EMA(10, 50) >> evt >> lab
-result = job()
-```
-"""
-struct EMA{Periods} <: AbstractIndicator
-    # ...
-end
-```
-
-### 3c. Abstract Types (Interface Contracts)
-
-Abstract type docstrings are the **most important** docstrings in the package. They define the interface contract that subtypes must fulfil. Since Julia has no formal interface mechanism, the docstring is the only enforceable specification.
-
-```julia
-"""
-    AbstractIndicator
-
-Abstract supertype for all technical indicators.
-
-# Interface
-
-Any concrete subtype `T <: AbstractIndicator` **must** implement:
-
-- [`calculate_indicator(ind::T, prices::AbstractVector{<:AbstractFloat})`](@ref):
-  Compute the indicator values from a price series. Return type should
-  be `AbstractVector` or `AbstractMatrix` of the same float type as
-  `prices`.
-
-Any concrete subtype `T <: AbstractIndicator` **must** implement
-(internal, for pipeline integration):
-
-- `_indicator_result(ind::T, prices::AbstractVector{<:AbstractFloat})`:
-  Return a `NamedTuple` whose keys are the indicator's column names
-  (e.g., `(:ema_10,)`) and values are the computed vectors/views.
-  This is what the callable interface (`ind(bars)`) uses internally.
-
-# Callable Interface (provided by default)
-
-The following methods are provided for all `AbstractIndicator` subtypes
-and should **not** be overridden:
-
-- `(ind::AbstractIndicator)(bars::PriceBars)`: Compute indicator on
-  `bars.close`, return `(; bars, indicator_columns...)`.
-- `(ind::AbstractIndicator)(d::NamedTuple)`: Compute indicator on
-  `d.bars.close`, merge result into `d`.
-
-# Naming Convention
-
-Indicator result keys must be lowercase, using the pattern
-`:indicatorname_parameter` (e.g., `:ema_10`, `:cusum`). These names
-become the field names that downstream [`Event`](@ref) conditions and
-[`@Event`](@ref) macro expressions reference.
-"""
-abstract type AbstractIndicator end
-```
-
-### 3d. Macros
-
-Macro docstrings must explain the surface syntax, show the expansion, and document keyword arguments.
+Macros are the most error-prone part of the public API. Docstrings must show both simple and complex expressions, and explain the symbol rewriting rules.
 
 ```julia
 """
     @Event expr [key=val ...]
 
-Construct an [`Event`](@ref) from a broadcast expression, with automatic
+Construct an [`Event`](@ref) using a DSL expression with automatic
 symbol rewriting.
 
-Symbols prefixed with `:` in the expression are rewritten to field
-accesses on the pipeline data. For example, `:ema_10` becomes
-`d.ema_10` in the generated closure.
+Symbols prefixed with `:` in `expr` are rewritten to access fields of
+the pipeline `NamedTuple`. For example, `:ema_10` becomes `d.ema_10`
+and `:close` becomes `d.bars.close`.
 
 # Arguments
-- `expr`: A broadcast expression using `:symbol` syntax to reference
-  pipeline fields. Multiple expressions create multiple conditions.
+- `expr`: a Julia expression using `:symbol` notation for pipeline
+    fields. Multiple expressions create multiple conditions.
 
 # Keywords
-- `match::Symbol=:all`: How to combine multiple conditions. `:all`
-  requires all conditions to be true (AND). `:any` requires at least
-  one (OR).
+- `match::Symbol=:all`: how to combine multiple conditions. `:all`
+    requires all conditions to be true (AND). `:any` requires at least
+    one (OR).
 
 # Examples
-```julia
-# Single condition — equivalent to Event(d -> d.ema_10 .> d.ema_50)
-evt = @Event :ema_10 .> :ema_50
 
-# Multiple conditions with OR logic
+Simple crossover:
+```julia
+evt = @Event :ema_10 .> :ema_50
+```
+
+Weighted average threshold:
+```julia
+evt = @Event (:ema_10 .* 0.5 .+ :ema_50 .* 0.5) .> 100.0
+```
+
+Multiple conditions with OR logic:
+```julia
 evt = @Event :ema_10 .> :ema_50 :close .> 100.0 match=:any
 ```
 
@@ -288,28 +433,98 @@ evt = @Event :ema_10 .> :ema_50 :close .> 100.0 match=:any
     Use dot-broadcasting operators (`.>`, `.&&`, `.*`, etc.) in the
     expression. A non-broadcasting operator will produce a scalar `Bool`
     instead of a vector, and the `Event` will emit a warning at runtime.
+
+# See also
+- [`Event`](@ref): the underlying type constructed by this macro.
+- [`@UpperBarrier`](@ref), [`@LowerBarrier`](@ref): barrier macros
+    using the same symbol rewriting rules.
 """
 macro Event(args...)
     # ...
 end
 ```
 
-### 3e. Constants and Simple Types
+### 4f. Internal Kernel Docstring
 
-Short docstrings are fine when there's nothing complex to explain. One line above the definition.
+Internal functions do not need the full template. Focus on the algorithm, mutation semantics, and performance contract.
 
 ```julia
-"Market direction: only long (buy) positions are allowed."
-struct LongOnly <: AbstractDirection end
+"""
+    _ema_kernel_unrolled!(dest, prices, period, n, α, β) -> Nothing
 
-"Market direction: only short (sell) positions are allowed."
-struct ShortOnly <: AbstractDirection end
+Fill `dest[period+1:n]` with EMA values using 4-wide loop unrolling
+for instruction-level parallelism.
 
-"Market direction: both long and short positions are allowed."
-struct LongShort <: AbstractDirection end
+Mutate `dest` in-place. Assume `dest[period]` is already set to the
+SMA seed. This function is the SIMD hot path — it must remain
+zero-allocation and type-stable.
+
+`α` is the smoothing factor `2/(period+1)` and `β = 1 - α`.
+"""
+function _ema_kernel_unrolled!(dest, prices, period, n, α, β)
 ```
 
-For the core data container:
+```julia
+"""
+    _indicator_result(ind::EMA{Periods}, prices) -> NamedTuple
+
+`@generated` function that returns a `NamedTuple` with keys derived
+from the period values (e.g., `(:ema_10, :ema_50)`). Single-period
+EMAs return vectors as values; multi-period EMAs return column views
+into the result matrix.
+
+This is the bridge between [`calculate_indicator`](@ref) (which returns
+raw arrays) and the callable/pipeline interface (which needs named
+fields for downstream access).
+"""
+@generated function _indicator_result(ind::EMA{Periods}, prices) where {Periods}
+```
+
+### 4g. Pipeline Operator Docstring
+
+```julia
+"""
+    data >> stage -> Job
+    job >> stage -> Job
+    stage >> stage -> ComposedFunction
+
+Compose pipeline stages using the `>>` operator.
+
+When the left operand is data (e.g., [`PriceBars`](@ref)), create a
+[`Job`](@ref) that can be executed with `job()`. When the left operand
+is already a `Job`, append the stage. When both operands are pipeline
+stages, create a composed function.
+
+# Examples
+```julia
+job = bars >> EMA(10, 50) >> @Event(:ema_10 .> :ema_50) >> Label!(...)
+result = job()
+```
+
+# See also
+- [`PriceBars`](@ref): typical first stage of a pipeline.
+- [`EMA`](@ref), [`Event`](@ref), [`Label`](@ref): common stages.
+"""
+```
+
+### 4h. Direction/Enum-Like Type Docstrings
+
+Small marker types get brief individual docstrings with cross-references.
+
+```julia
+"""
+    LongOnly <: AbstractDirection
+
+Restrict event detection to long (buy) signals only.
+
+# See also
+- [`ShortOnly`](@ref): restrict to short signals.
+- [`LongShort`](@ref): allow both directions.
+"""
+struct LongOnly <: AbstractDirection end
+```
+
+### 4i. Core Data Container
 
 ```julia
 """
@@ -327,7 +542,8 @@ This is the entry point for all pipelines. Construct directly or via
 - `close::V`: Closing prices.
 - `volume::V`: Trading volumes.
 - `timestamp::Vector{DateTime}`: Bar timestamps.
-- `bartype::B`: Bar type indicator ([`TimeBar`](@ref), `DollarBar`, etc.).
+- `bartype::B`: Bar type indicator ([`TimeBar`](@ref), `DollarBar`,
+    etc.).
 
 # Examples
 ```jldoctest
@@ -341,109 +557,105 @@ julia> bars = PriceBars(
 julia> length(bars)
 1
 ```
+
+# See also
+- [`get_data`](@ref): fetch historical data from YFinance.
+- [`TimeBar`](@ref): the default bar type.
 """
 struct PriceBars{B<:AbstractBarType,T<:AbstractFloat,V<:AbstractVector{T}}
     # ...
 end
 ```
 
-### 3f. Internal Functions
-
-Internal functions (not exported, prefixed with `_`) do not require full docstrings but **must** have a docstring when they meet any of these criteria:
-
-| Criterion | Rationale |
-|-----------|-----------|
-| Contains non-trivial math or algorithms | Future maintainers need to understand the formula |
-| Defines the NamedTuple keys consumed by downstream stages | These are implicit interface contracts |
-| Has subtle correctness requirements (index arithmetic, warmup logic) | Off-by-one bugs are the #1 source of backtesting errors |
-| Is a `@generated` function | The metaprogramming is not self-evident |
-| Is referenced in `TESTING.md` as a test target | If it's worth testing directly, it's worth documenting |
-
-Internal docstrings can be shorter — skip `# Examples` unless the function has tricky usage. Always include the signature and a brief description.
-
-```julia
-"""
-    _sma_seed(prices::AbstractVector{T}, p::Int) where {T<:AbstractFloat} -> T
-
-Compute the Simple Moving Average of the first `p` elements of `prices`.
-Used to seed the EMA recurrence. Assumes `p <= length(prices)`.
-"""
-@inline function _sma_seed(prices::AbstractVector{T}, p::Int) where {T<:AbstractFloat}
-    # ...
-end
-```
-
-```julia
-"""
-    _ema_kernel_unrolled!(ema, prices, p, n, α, β) -> Nothing
-
-In-place EMA computation using 4-wide loop unrolling for
-instruction-level parallelism. Processes elements `p+1` through `n`.
-
-Assumes `ema[p]` is already set to the SMA seed. Mutates `ema`
-in-place. Zero allocations.
-"""
-@inline function _ema_kernel_unrolled!(
-    ema::AbstractVector{T}, prices::AbstractVector{T}, p::Int, n::Int, α::T, β::T
-) where {T<:AbstractFloat}
-    # ...
-end
-```
-
-```julia
-"""
-    _indicator_result(ind::EMA{Periods}, prices) -> NamedTuple
-
-`@generated` function that returns a `NamedTuple` with keys derived
-from the period values (e.g., `(:ema_10, :ema_50)`). Single-period
-EMAs return vectors as values; multi-period EMAs return column views
-into the result matrix.
-
-This is the bridge between [`calculate_indicator`](@ref) (which
-returns raw arrays) and the callable/pipeline interface (which
-needs named fields for downstream access).
-"""
-@generated function _indicator_result(ind::EMA{Periods}, prices) where {Periods}
-    # ...
-end
-```
-
 ---
 
-## 4. Doctests
+## 5. The `# Examples` Section
 
-Doctests are fenced code blocks tagged with `jldoctest` that [Documenter.jl](https://documenter.juliadocs.org/stable/man/doctests/) can execute and verify. They serve two purposes: demonstrating usage and preventing documentation rot.
+Examples are the most valuable part of a docstring. They serve as both documentation and executable tests.
 
-### 4a. Format
+### Use `jldoctest` Blocks for Testable Examples
 
-Use REPL-style doctests (lines prefixed with `julia>`):
+Prefer `` ```jldoctest `` over `` ```julia `` whenever the output is deterministic.
 
-````julia
+```julia
 """
-    EMA(period::Int; multi_thread=false)
-
-Construct a single-period EMA indicator.
-
 # Examples
 ```jldoctest
 julia> using Backtest
 
-julia> ema = EMA(10);
+julia> prices = Float64[10, 11, 12, 13, 14, 15];
 
-julia> typeof(ema)
-EMA{(10,)}
+julia> ema = calculate_indicator(EMA(3), prices);
+
+julia> ema[3] ≈ 11.0
+true
+```
+"""
+```
+
+### Use `` ```julia `` for Non-Deterministic Examples
+
+Network calls (`get_data`), file I/O, or anything involving randomness should use untested code blocks:
+
+```julia
+"""
+# Examples
+```julia
+# Requires network access
+df = get_data("AAPL"; start_date="2020-01-01")
+```
+"""
+```
+
+### Doctest Rules
+
+| Rule | Rationale |
+|------|-----------|
+| **No `rand()` without a seeded RNG** | Output varies across sessions |
+| **Self-contained** | Users copy-paste and run; don't reference undefined variables |
+| **Always include `using Backtest`** | Each doctest runs in an isolated module — no implicit imports |
+| **Whitespace-exact** | Array output must match character-for-character |
+| **Use `≈` for floating-point** | Avoid fragile exact-equality on floats |
+| **Use `[...]` for long error traces** | Match the `ERROR:` line, truncate the rest |
+| **Semicolons to suppress output** | Use on setup lines to keep focus on demonstrated behaviour |
+
+### Named Doctests for Multi-Step Examples
+
+When an example spans setup and verification across multiple docstrings, use a shared label:
+
+````julia
+"""
+```jldoctest pipeline_example
+julia> using Backtest, Dates
+
+julia> prices = Float64[10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
+
+julia> result = calculate_indicator(EMA(3), prices);
+
+julia> length(result) == length(prices)
+true
 ```
 """
 ````
 
-### 4b. Rules
+### Setup Blocks
 
-1. **Every exported function and type** must have at least one `jldoctest` block.
-2. **Always include `using Backtest`** at the top of the doctest. Each doctest runs in an isolated module — there's no implicit import.
-3. **Semicolons to suppress output** when output isn't the point of the example. Use them on setup lines to keep focus on the demonstrated behaviour.
-4. **Deterministic output only**. No `rand()`, no timestamps from `now()`, no memory addresses.
-5. **Named doctests** for multi-block examples that share state. Give them a name matching the component: `` ```jldoctest ema_pipeline ``.
-6. **Filter non-deterministic output** with the `filter` keyword when unavoidable:
+For examples that require package imports, use the `setup` keyword:
+
+````julia
+"""
+```jldoctest; setup = :(using Backtest)
+julia> ema = EMA(10);
+
+julia> ema isa AbstractIndicator
+true
+```
+"""
+````
+
+### Filter Non-Deterministic Output
+
+When output contains unavoidable non-deterministic content, use the `filter` keyword:
 
 ````julia
 """
@@ -454,18 +666,16 @@ julia> @time calculate_indicator(EMA(10), randn(1000))
 """
 ````
 
-### 4c. What Not to Doctest
+### What Not to Doctest
 
 | Scenario | Why | Alternative |
 |----------|-----|-------------|
-| Functions that hit the network (`get_data`) | Non-deterministic, slow, requires API access | Use a plain `julia` block (not `jldoctest`) with a comment: `# requires network` |
-| Output with platform-dependent formatting | `Int` is `Int64` on 64-bit, `Int32` on 32-bit | Use explicit types in the example or use a filter |
+| Functions that hit the network (`get_data`) | Non-deterministic, slow, requires API access | Use a plain `julia` block with a comment: `# requires network` |
+| Output with platform-dependent formatting | `Int` is `Int64` on 64-bit, `Int32` on 32-bit | Use explicit types or a filter |
 | Very large output (matrices, DataFrames) | Brittle to formatting changes, hard to read | Show only a slice or assert a property instead |
-| Pipeline results with many fields | NamedTuple printing is verbose and order-sensitive | Show individual field access instead: `result.ema_10[1:3]` |
+| Pipeline results with many fields | NamedTuple printing is verbose and order-sensitive | Show individual field access: `result.ema_10[1:3]` |
 
-### 4d. Running Doctests
-
-Doctests can be executed in two ways:
+### Running Doctests
 
 **Via Documenter (when docs infrastructure is set up):**
 
@@ -498,24 +708,26 @@ This rewrites docstring output in source files to match actual output. Always re
 
 ---
 
-## 5. The `# Extended help` Convention
+## 6. The `# Extended help` Convention
 
 Julia's REPL supports two help levels: `?foo` (brief) and `??foo` (full). Everything above `# Extended help` appears for `?foo`. Everything including and below appears for `??foo`.
 
-Use this to keep the quick-help view concise while providing depth for users who want it.
+Use this to keep the quick-help view concise while providing depth for users who want it. The first screen of `?foo` should answer "what does this do and how do I call it?" in under 30 lines.
 
-### When to Use Extended Help
+### What Goes Where
 
 | Content | Goes in... |
 |---------|-----------|
 | One-sentence summary | Brief section (above `# Extended help`) |
 | Argument/keyword docs | Brief section |
 | A short example | Brief section |
+| `# See also` | Brief section |
 | Mathematical derivation | `# Extended help` |
 | Algorithm complexity analysis | `# Extended help` |
 | Performance tuning guidance (threading, SIMD) | `# Extended help` |
 | Comparison with alternative approaches | `# Extended help` |
 | Historical context or references to papers | `# Extended help` |
+| Callable interface / pipeline composition details | `# Extended help` |
 
 ### Example
 
@@ -524,8 +736,7 @@ Use this to keep the quick-help view concise while providing depth for users who
     CUSUM(threshold; span=100)
 
 Cumulative Sum (CUSUM) filter for detecting structural breaks in a
-price series. Return a `NamedTuple` with positive and negative CUSUM
-series.
+price series.
 
 # Examples
 ```jldoctest
@@ -536,6 +747,10 @@ julia> cusum = CUSUM(1.0);
 julia> typeof(cusum)
 CUSUM
 ```
+
+# See also
+- [`EMA`](@ref): a smoothing indicator (contrast with CUSUM's
+    change-detection approach).
 
 # Extended help
 
@@ -563,219 +778,125 @@ The expected return `E[r]` is estimated from a rolling window of
 
 ---
 
-## 6. Module-Level Documentation
+## 7. Documenting for Extensibility
 
-The top-level `Backtest` module and each submodule (`Indicator`, etc.) should have a module docstring placed directly above the `module` keyword.
+### The Interface Contract Pattern
+
+Abstract types in this package define extension points. Their docstrings must spell out exactly what a subtype must implement — this is the *interface contract*. See the `AbstractIndicator` example in Section 4b.
+
+For every abstract type, document:
+1. **Required methods** with full signatures and return type expectations.
+2. **Provided methods** (defaults) that subtypes should *not* override.
+3. **Optional methods** with useful fallbacks.
+4. **Existing subtypes** as a `# See also` list.
 
 ```julia
 """
-    Backtest
+    AbstractBarrier
 
-High-performance backtesting framework for quantitative trading strategies.
+Supertype for all barrier types used in the triple-barrier labelling
+method.
 
-Provides a composable pipeline architecture where data flows through
-indicators, event detectors, and labelling stages using the `>>`
-operator.
+# Interface
 
-# Quick Start
+Subtypes must implement:
 
-```julia
-using Backtest, Dates
+- A constructor accepting a condition function and a label value.
+- Integration with `_check_barrier_recursive!` via the barrier
+    dispatch mechanism.
 
-bars = get_data("AAPL"; start_date="2020-01-01")
-job = bars >> EMA(10, 50) >> @Event(:ema_10 .> :ema_50) >> Label!(...)
-result = job()
-```
+Subtypes may optionally implement:
 
-# Exports
+- Custom `show` methods for REPL display.
 
-## Data
-- [`PriceBars`](@ref), [`TimeBar`](@ref)
-- [`get_data`](@ref)
+# Existing Subtypes
 
-## Indicators
-- [`AbstractIndicator`](@ref), [`EMA`](@ref), [`CUSUM`](@ref)
-- [`calculate_indicator`](@ref)
-
-## Events
-- [`AbstractEvent`](@ref), [`Event`](@ref), [`@Event`](@ref)
-
-## Labels
-- [`AbstractLabel`](@ref), [`Label`](@ref), [`Label!`](@ref)
-- [`calculate_label`](@ref)
-- [`AbstractBarrier`](@ref), [`UpperBarrier`](@ref),
-  [`LowerBarrier`](@ref), [`TimeBarrier`](@ref),
-  [`ConditionBarrier`](@ref)
-- [`@UpperBarrier`](@ref), [`@LowerBarrier`](@ref),
-  [`@TimeBarrier`](@ref), [`@ConditionBarrier`](@ref)
-
-## Sides
-- [`AbstractSide`](@ref), [`Crossover`](@ref), [`calculate_side`](@ref)
-
-## Directions
-- [`LongOnly`](@ref), [`ShortOnly`](@ref), [`LongShort`](@ref)
+- [`UpperBarrier`](@ref): triggered when price crosses above a threshold.
+- [`LowerBarrier`](@ref): triggered when price crosses below a threshold.
+- [`TimeBarrier`](@ref): triggered after a fixed number of bars.
+- [`ConditionBarrier`](@ref): triggered by an arbitrary boolean condition.
 """
-module Backtest
-    # ...
-end
+abstract type AbstractBarrier end
 ```
 
----
+### Field Documentation
 
-## 7. Documenter.jl Setup
-
-When the package is ready for hosted documentation, use [Documenter.jl](https://documenter.juliadocs.org/stable/) to build HTML from docstrings and Markdown pages.
-
-### Target Directory Structure
-
-```
-docs/
-├── Project.toml          # docs-specific dependencies
-├── make.jl               # Build script
-└── src/
-    ├── index.md          # Landing page (overview, installation, quick start)
-    ├── guide.md          # Tutorial-style walkthrough
-    ├── pipeline.md       # Pipeline architecture (>>) explained
-    ├── indicators.md     # Indicator module docs
-    ├── events.md         # Event detection docs
-    ├── labels.md         # Labelling docs
-    └── api.md            # Full API reference (@autodocs)
-```
-
-### `docs/make.jl`
+For structs with more than two or three fields, document fields individually using inline strings. Julia's help system (`?Label`) displays these automatically.
 
 ```julia
-using Documenter
-using Backtest
-
-makedocs(
-    sitename = "Backtest.jl",
-    modules = [Backtest],
-    format = Documenter.HTML(
-        prettyurls = get(ENV, "CI", nothing) == "true",
-    ),
-    pages = [
-        "Home" => "index.md",
-        "Guide" => "guide.md",
-        "Pipeline Architecture" => "pipeline.md",
-        "Indicators" => "indicators.md",
-        "Events" => "events.md",
-        "Labels" => "labels.md",
-        "API Reference" => "api.md",
-    ],
-    checkdocs = :exports,   # Warn if any exported symbol lacks a docstring
-    doctest = true,         # Run all jldoctest blocks
-    strict = true,          # Treat warnings as errors in CI
-)
-
-deploydocs(
-    repo = "github.com/Wilsy99/Backtest.jl.git",
-    devbranch = "main",
-)
-```
-
-### `docs/Project.toml`
-
-```toml
-[deps]
-Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
-Backtest = "..."  # UUID from Project.toml
-```
-
-### Key `makedocs` Options
-
-| Option | Value | Why |
-|--------|-------|-----|
-| `modules = [Backtest]` | Required | Enables docstring coverage checking — warns about any exported symbol whose docstring isn't included in a `@docs` or `@autodocs` block |
-| `checkdocs = :exports` | Required | Only checks exported symbols. Use `:all` to also check internal docstrings |
-| `doctest = true` | Required | Runs all `jldoctest` blocks during the doc build. Use `:only` to run doctests without building HTML |
-| `strict = true` | Required for CI | Fails the build on any warning (missing docstrings, broken cross-refs, failed doctests) |
-
-### API Reference Page (`docs/src/api.md`)
-
-````markdown
-# API Reference
-
-```@meta
-CurrentModule = Backtest
-DocTestSetup = quote
-    using Backtest
-    using Dates
+struct Label{B<:Tuple,E<:AbstractExecutionBasis,NT<:NamedTuple} <: AbstractLabel
+    "Tuple of barrier instances applied during labelling."
+    barriers::B
+    "Determines which price is used as the trade entry price."
+    entry_basis::E
+    "Drop events whose barriers are not resolved by end of data."
+    drop_unfinished::Bool
+    "Additional arguments forwarded to barrier evaluation."
+    barrier_args::NT
 end
 ```
 
-## Data Types
+This is complementary to the `# Fields` section in the type docstring — inline strings document individual fields, while `# Fields` provides the user-facing overview. Use inline strings for structs with 3+ fields; for simpler structs, the `# Fields` section alone is sufficient.
 
-```@docs
-PriceBars
-TimeBar
+### Accessor Functions Over Fields
+
+When a field's name or type may change, document an accessor function instead:
+
+```julia
+"""
+    barriers(label::Label) -> Tuple
+
+Return the barriers associated with `label`.
+"""
+barriers(label::Label) = label.barriers
 ```
 
-## Indicators
-
-```@docs
-AbstractIndicator
-EMA
-CUSUM
-calculate_indicator
-```
-
-## Events
-
-```@docs
-AbstractEvent
-Event
-@Event
-```
-
-## Labels
-
-```@docs
-AbstractLabel
-Label
-Label!
-calculate_label
-AbstractBarrier
-UpperBarrier
-LowerBarrier
-TimeBarrier
-ConditionBarrier
-@UpperBarrier
-@LowerBarrier
-@TimeBarrier
-@ConditionBarrier
-```
-
-## Sides
-
-```@docs
-AbstractSide
-Crossover
-calculate_side
-```
-
-## Directions
-
-```@docs
-LongOnly
-ShortOnly
-LongShort
-```
-
-## Data Loading
-
-```@docs
-get_data
-```
-````
-
-Use `@autodocs` only when you want to include *everything* from a module without listing individual symbols. Prefer explicit `@docs` blocks — they make the page structure intentional and catch renamed/removed symbols at build time.
+Documented fields become implicit public API — changing them is a breaking change. Accessor functions provide a stable interface that decouples documentation from implementation.
 
 ---
 
-## 8. Cross-References
+## 8. Pipeline Data Flow Documentation
 
-Use `` [`SymbolName`](@ref) `` to create hyperlinks between docstrings and documentation pages. Documenter resolves these at build time and warns (errors in strict mode) if the target doesn't exist.
+The `>>` pipeline is the core user experience. Its documentation has special requirements because the implicit interface between stages is defined by `NamedTuple` key conventions, not by types.
+
+### Document the Data Flow
+
+Every callable stage (indicators, events, labels) must document:
+
+1. **What it expects in the input `NamedTuple`** (required keys).
+2. **What it adds to the output `NamedTuple`** (new keys and their types).
+3. **What it passes through unchanged** (merged keys from upstream).
+
+Include this as a `# Pipeline Data Flow` section in the callable's docstring (or in `# Extended help` if the docstring is already long):
+
+```julia
+"""
+# Pipeline Data Flow
+
+## Input
+Expects a `NamedTuple` with at least:
+- `bars::PriceBars`: The price data.
+- Additional keys as referenced by condition expressions
+  (e.g., `:ema_10`, `:ema_50`).
+
+## Output
+Return the input `NamedTuple` merged with:
+- `event_indices::Vector{Int}`: Indices where all (or any) conditions
+  are satisfied.
+"""
+```
+
+### Why This Matters
+
+In a pipeline architecture, the return structure of one stage is the input interface of the next. An undocumented `NamedTuple` return is an anti-pattern (see Section 11, Anti-Pattern 7). Every stage's data contract must be explicit.
+
+---
+
+## 9. Cross-References and Discoverability
+
+### `@ref` Links
+
+Use `` [`Name`](@ref) `` to create clickable cross-references in Documenter.jl output. These are validated at build time — broken references become errors in strict mode.
 
 ### Rules
 
@@ -784,25 +905,69 @@ Use `` [`SymbolName`](@ref) `` to create hyperlinks between docstrings and docum
 3. **Link from `# Throws` sections**: `` [`ArgumentError`](@ref Base.ArgumentError) `` links to Base Julia docs.
 4. **Link abstract types from concrete types**: Every concrete type's docstring should link to its parent abstract type.
 
-### Example
+### `# See also` Section Convention
+
+Place `# See also` after `# Examples` and before `# Extended help`. Always alphabetical. One line per reference with a brief relationship description:
 
 ```julia
 """
-    Crossover <: AbstractSide
-
-Determine trade side based on indicator crossover signals.
-
-See [`AbstractSide`](@ref) for the interface contract.
-Uses [`calculate_side`](@ref) as the public computation entry point.
+# See also
+- [`calculate_indicator`](@ref): the dispatch point for all indicators.
+- [`CUSUM`](@ref): an alternative indicator for structural break detection.
+- [`EMA`](@ref): constructor and type-parameter documentation.
 """
-struct Crossover <: AbstractSide
-    # ...
-end
 ```
+
+### Discoverability Checklist
+
+Before merging a PR that adds a new public name, verify:
+
+- [ ] The name has a docstring.
+- [ ] The docstring has at least one example.
+- [ ] Related functions reference each other via `# See also`.
+- [ ] The module docstring lists the new export.
+- [ ] `Docs.undocumented_names(Backtest)` does not include the new name (Julia 1.11+).
 
 ---
 
-## 9. Anti-Patterns
+## 10. Writing Style
+
+### Imperative Mood
+
+Julia convention uses imperative mood for function summaries:
+
+| Do | Don't |
+|----|-------|
+| "Compute the EMA for the given prices." | "Computes the EMA..." |
+| "Return a `NamedTuple` of indicator results." | "Returns a NamedTuple..." |
+| "Throw an `ArgumentError` if periods are empty." | "Throws an ArgumentError..." |
+
+### Precision Over Brevity
+
+Be specific about types, shapes, and edge-case behaviour. Vague docstrings are worse than no docstrings — they create false confidence.
+
+| Vague | Precise |
+|-------|---------|
+| "Returns the EMA values." | "Return a `Vector{T}` of length `n` where the first `period - 1` entries are `NaN`." |
+| "Takes a price array." | "`prices::AbstractVector{T}` where `T<:AbstractFloat`." |
+| "May throw an error." | "Throw `ArgumentError` if any period is non-positive or periods are not unique." |
+
+### Backtesting Domain Language
+
+Use consistent terminology across all docstrings:
+
+| Term | Meaning | Don't Say |
+|------|---------|-----------|
+| **warmup period** | The first `period - 1` entries filled with `NaN` | "burn-in", "padding" |
+| **pipeline stage** | A callable composed via `>>` | "step", "phase" |
+| **barrier** | A condition that terminates a label window | "stop", "limit" |
+| **entry basis** | The price used as trade entry (`NextOpen`, `CurrentClose`) | "fill price", "execution price" |
+| **event** | A detected signal in the data (indices where conditions hold) | "trigger", "signal" |
+| **label** | The outcome classification (`Int8(-1)`, `Int8(0)`, `Int8(1)`) | "class", "target" |
+
+---
+
+## 11. Anti-Patterns
 
 These are documentation mistakes to avoid. They are drawn from real Julia ecosystem patterns and adapted to this codebase.
 
@@ -814,18 +979,28 @@ export calculate_indicator
 calculate_indicator(ind::EMA, prices) = ...
 ```
 
-**Rule**: Every symbol in the `export` list gets a docstring. The `checkdocs = :exports` option in `makedocs` enforces this at build time.
+**Rule**: Every symbol in the `export` list gets a docstring. The `checkdocs = :exports` option in `makedocs` and `Docs.undocumented_names` enforce this mechanically.
 
 ### Anti-Pattern 2: Relying on Type Signatures as Documentation
 
 ```julia
-# BAD — types tell you what, not why
+# BAD — types tell you what kind of value, not what it represents
 function _single_ema!(
     dest::AbstractVector{T}, prices::AbstractVector{T}, p::Int, n::Int
 ) where {T<:AbstractFloat}
 ```
 
-Types answer "what kind of value?" but not "what does this value represent?" or "what are the preconditions?". `p::Int` could be a period, a price index, or a count. Document it.
+`p::Int` could be a period, a price index, or a count. Types answer "what kind of value?" but not "what does this value represent?" or "what are the preconditions?".
+
+```julia
+# GOOD
+"""
+    _single_ema!(dest, prices, p, n)
+
+Compute a single EMA of period `p` over `prices[1:n]`, writing
+results into `dest`. Assume `length(dest) >= n` and `p <= n`.
+"""
+```
 
 ### Anti-Pattern 3: Blank Line Between Docstring and Definition
 
@@ -893,7 +1068,7 @@ Use `# Extended help` to separate the quick reference from the deep dive. The fi
 function (ind::EMA{Periods})(bars::PriceBars)
     return merge((bars=bars,), _indicator_result(ind, bars.close))
 end
-# What keys? What types? What order? ¯\_(ツ)_/¯
+# What keys? What types? What order?
 ```
 
 In a pipeline architecture, the return structure of one stage is the input interface of the next. Document every `NamedTuple` return — its keys, their types, and what they represent. This is especially critical for `_indicator_result` and the `Event` callable.
@@ -903,16 +1078,13 @@ In a pipeline architecture, the return structure of one stage is the input inter
 ```julia
 # BAD — mentions PriceBars but doesn't link to it
 """
-    get_data(tickers; start_date, end_date, timeframe) -> DataFrame
-
 Fetch historical OHLCV data. See PriceBars for the data container.
 """
-```
 
-```julia
 # GOOD
 """
-See [`PriceBars`](@ref) for the data container.
+Fetch historical OHLCV data. See [`PriceBars`](@ref) for the data
+container.
 """
 ```
 
@@ -920,137 +1092,310 @@ Unlinked references become dead text in the rendered docs. Linked references bec
 
 ---
 
-## 10. Pipeline-Specific Documentation Requirements
+## 12. DocStringExtensions.jl (Optional Tooling)
 
-The `>>` pipeline is the core user experience. Its documentation has special requirements because the implicit interface between stages is defined by `NamedTuple` key conventions, not by types.
+[DocStringExtensions.jl](https://github.com/JuliaDocs/DocStringExtensions.jl) can auto-generate signature and field listings. It is **not currently a dependency** of this package. If adopted, use it as follows:
 
-### Document the Data Flow
-
-Every callable stage (indicators, events, labels) must document:
-
-1. **What it expects in the input `NamedTuple`** (required keys).
-2. **What it adds to the output `NamedTuple`** (new keys and their types).
-3. **What it passes through unchanged** (merged keys from upstream).
-
-Example for `Event`:
+### Templates (module-level)
 
 ```julia
-"""
-# Pipeline Data Flow
+using DocStringExtensions
 
-## Input
-Expects a `NamedTuple` with at least:
-- `bars::PriceBars`: The price data.
-- Additional keys as referenced by condition expressions
-  (e.g., `:ema_10`, `:ema_50`).
+@template (FUNCTIONS, METHODS, MACROS) =
+    """
+    $(TYPEDSIGNATURES)
 
-## Output
-Returns the input `NamedTuple` merged with:
-- `event_indices::Vector{Int}`: Indices where all (or any) conditions
-  are satisfied.
-"""
+    $(DOCSTRING)
+    """
+
+@template TYPES =
+    """
+    $(TYPEDEF)
+
+    $(DOCSTRING)
+
+    # Fields
+    $(TYPEDFIELDS)
+    """
 ```
 
-### Document the `>>` Operator
-
-The `>>` operator itself and the `Job` type need docstrings explaining composition semantics:
+With templates active, individual docstrings contain only the descriptive body:
 
 ```julia
 """
-    data >> stage -> Job
-    job >> stage -> Job
-    stage >> stage -> ComposedFunction
+Compute EMA values for `prices` at the periods specified in `ind`.
 
-Compose pipeline stages using the `>>` operator.
-
-When the left operand is data (e.g., [`PriceBars`](@ref)), creates a
-[`Job`](@ref) that can be executed with `job()`. When the left operand
-is already a `Job`, appends the stage. When both operands are stages,
-creates a composed function.
+Return a `Vector{T}` for single-period or `Matrix{T}` for multi-period.
 
 # Examples
-```julia
-job = bars >> EMA(10, 50) >> @Event(:ema_10 .> :ema_50) >> Label!(...)
-result = job()
+```jldoctest
+julia> using Backtest
+
+julia> calculate_indicator(EMA(3), Float64[10,11,12,13,14,15])[3] ≈ 11.0
+true
 ```
 """
+function calculate_indicator(ind::EMA{Periods}, prices::AbstractVector{T}) where {Periods,T}
 ```
 
----
+### When to Adopt
 
-## 11. Decision Matrix: What Needs a Docstring?
+Adopt DocStringExtensions when:
+- The package has 20+ documented functions and signature drift becomes a maintenance burden.
+- A `docs/` site is being built with Documenter.jl.
 
-| Symbol kind | Exported? | Needs docstring? | Minimum content |
-|-------------|-----------|-----------------|-----------------|
-| Function | Yes | **Always** | Signature, brief, arguments, returns, example |
-| Macro | Yes | **Always** | Signature, brief, syntax explanation, example |
-| Struct | Yes | **Always** | Signature, brief, fields, constructors, example |
-| Abstract type | Yes | **Always** | Signature, brief, **full interface contract**, example implementation |
-| Constant | Yes | **Always** | One-line description |
-| Direction type (`LongOnly`, etc.) | Yes | **Always** | One-line description |
-| Internal function (`_foo`) | No | **If non-trivial** | Signature, brief, preconditions |
-| Internal helper (`_natural`, etc.) | No | **Only if complex** | Signature, brief |
-| `@generated` function | No | **Always** | Signature, brief, what the generated code does |
-| Module | — | **Always** | Brief, exports overview, quick start |
+Do not adopt it prematurely — the manual style in Section 4 is sufficient and more explicit.
 
 ---
 
-## 12. Priority Order
+## 13. Documenter.jl Site
 
-This is a phased approach. Complete each phase before moving to the next.
+This package does not currently have a `docs/` site. When one is created, follow this structure.
 
-### Phase 1: Interface Contracts (do once, unblocks contributors)
+### Directory Layout
+
+```
+docs/
+├── Project.toml          # docs-specific dependencies
+├── make.jl               # Build script
+└── src/
+    ├── index.md          # Landing page / quick-start
+    ├── tutorial.md       # The "90% use case" walkthrough
+    ├── indicators.md     # Indicator guide + API
+    ├── events.md         # Event detection guide + API
+    ├── labels.md         # Triple-barrier labelling guide + API
+    ├── pipelines.md      # Pipeline composition guide
+    ├── extending.md      # How to add custom indicators/barriers
+    └── api.md            # Full API reference
+```
+
+### `docs/make.jl`
+
+```julia
+using Documenter
+using Backtest
+
+makedocs(
+    sitename = "Backtest.jl",
+    modules  = [Backtest],
+    format   = Documenter.HTML(
+        prettyurls = get(ENV, "CI", nothing) == "true",
+    ),
+    pages = [
+        "Home"     => "index.md",
+        "Tutorial" => "tutorial.md",
+        "Guides" => [
+            "Indicators" => "indicators.md",
+            "Events"     => "events.md",
+            "Labels"     => "labels.md",
+            "Pipelines"  => "pipelines.md",
+            "Extending"  => "extending.md",
+        ],
+        "API Reference" => "api.md",
+    ],
+    checkdocs = :exports,   # Warn about undocumented exports
+    doctest   = true,       # Run all jldoctest blocks
+    strict    = true,       # Treat warnings as errors in CI
+)
+
+deploydocs(
+    repo = "github.com/Wilsy99/Backtest.jl.git",
+    devbranch = "main",
+)
+```
+
+### Key `makedocs` Options
+
+| Option | Value | Why |
+|--------|-------|-----|
+| `modules = [Backtest]` | Required | Enables docstring coverage checking — warns about any exported symbol whose docstring isn't in a `@docs`/`@autodocs` block |
+| `checkdocs = :exports` | Required | Only checks exported symbols. Use `:all` to also check internals |
+| `doctest = true` | Required | Runs all `jldoctest` blocks during the doc build. Use `:only` to run doctests without building HTML |
+| `strict = true` | Required for CI | Fails the build on any warning (missing docstrings, broken cross-refs, failed doctests) |
+
+### API Reference Page (`docs/src/api.md`)
+
+````markdown
+# API Reference
+
+```@meta
+CurrentModule = Backtest
+DocTestSetup = quote
+    using Backtest
+    using Dates
+end
+```
+
+## Module
+
+```@docs
+Backtest
+```
+
+## Data Types
+
+```@docs
+PriceBars
+TimeBar
+```
+
+## Indicators
+
+```@docs
+AbstractIndicator
+EMA
+CUSUM
+calculate_indicator
+```
+
+## Events
+
+```@docs
+AbstractEvent
+Event
+@Event
+```
+
+## Labels
+
+```@docs
+AbstractLabel
+Label
+Label!
+calculate_label
+AbstractBarrier
+UpperBarrier
+LowerBarrier
+TimeBarrier
+ConditionBarrier
+@UpperBarrier
+@LowerBarrier
+@TimeBarrier
+@ConditionBarrier
+```
+
+## Sides
+
+```@docs
+AbstractSide
+Crossover
+calculate_side
+```
+
+## Directions
+
+```@docs
+LongOnly
+ShortOnly
+LongShort
+```
+
+## Data Loading
+
+```@docs
+get_data
+```
+````
+
+Prefer explicit `@docs` blocks — they make the page structure intentional and catch renamed/removed symbols at build time. Use `@autodocs` only when you want to include *everything* from a module without listing individual symbols.
+
+---
+
+## 14. CI Integration
+
+### Doctest Execution in Tests
+
+Add a doctest runner to the test suite so that stale examples break CI, not just the docs build:
+
+```julia
+@testitem "Doctests" tags=[:unit] begin
+    using Documenter, Backtest
+    doctest(Backtest)
+end
+```
+
+### Documentation Coverage Check
+
+On Julia 1.11+, use `Docs.undocumented_names` in CI to enforce that every export has a docstring:
+
+```julia
+@testitem "Documentation Coverage" tags=[:unit] begin
+    using Backtest, Test
+    undocumented = Docs.undocumented_names(Backtest)
+    @test isempty(undocumented) ||
+        error("Undocumented exports: $(join(undocumented, ", "))")
+end
+```
+
+### Documentation Build in CI
+
+When a `docs/` site exists, add a workflow step:
+
+```yaml
+- name: Build documentation
+  run: julia --project=docs docs/make.jl
+  env:
+    DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}
+```
+
+The `strict = true` setting in `makedocs` ensures that missing docstrings, broken cross-references, and failed doctests all fail the CI build.
+
+---
+
+## 15. Priority Order
+
+Complete each phase before moving to the next. Within a phase, order doesn't matter.
+
+### Phase 1: Exported Types and Functions (do first)
 
 | What | Why |
 |------|-----|
-| Abstract type docstrings (`AbstractIndicator`, `AbstractSide`, `AbstractEvent`, `AbstractBarrier`, `AbstractLabel`) | These define the rules. Without them, nobody knows how to add a new indicator or barrier type |
-| Module docstring for `Backtest` | Entry point for `?Backtest` in the REPL |
-| `PriceBars` docstring | Core data type that everything depends on |
+| Module docstring for `Backtest` | First thing users see after `using Backtest; ?Backtest` |
+| All exported types (`PriceBars`, `EMA`, `CUSUM`, `Event`, `Label`, barriers, directions) | Users construct these directly |
+| All exported functions (`calculate_indicator`, `get_data`, `calculate_side`, `calculate_label`) | Primary API surface |
+| All exported macros (`@Event`, `@UpperBarrier`, `@LowerBarrier`, `@TimeBarrier`, `@ConditionBarrier`) | Fragile surface area; examples prevent misuse |
 
-### Phase 2: Public API (do for every exported symbol)
-
-| What | Why |
-|------|-----|
-| Exported function docstrings (`calculate_indicator`, `calculate_side`, `calculate_label`, `get_data`) | Users call these directly |
-| Exported type docstrings (`EMA`, `CUSUM`, `Crossover`, `Event`, `Label`, `Label!`, barrier types) | Users construct these directly |
-| Exported macro docstrings (`@Event`, `@UpperBarrier`, `@LowerBarrier`, `@TimeBarrier`, `@ConditionBarrier`) | DSL surface — most error-prone to use without docs |
-| Direction/execution basis types (`LongOnly`, `ShortOnly`, `LongShort`, `CurrentOpen`, etc.) | Small types, one-line docstrings, but must exist |
-
-### Phase 3: Doctests (do for every exported symbol)
+### Phase 2: Abstract Types and Extension Points (do for every interface)
 
 | What | Why |
 |------|-----|
-| Add `jldoctest` blocks to all Phase 2 docstrings | Prevents documentation rot, serves as executable examples |
-| Add `doctest(Backtest)` to test suite | CI enforcement |
+| `AbstractIndicator`, `AbstractBarrier`, `AbstractSide`, `AbstractEvent`, `AbstractLabel` | Define the extension contract for contributors |
+| Pipeline operator (`>>`) and `Job` type | Core composition mechanism; non-obvious syntax |
+
+### Phase 3: Examples and Doctests (do for every documented name)
+
+| What | Why |
+|------|-----|
+| Add `jldoctest` blocks to all Phase 1–2 docstrings | Executable examples catch documentation rot |
+| Add `julia` blocks for I/O-dependent examples (`get_data`) | Users need copy-pasteable examples even if untestable |
+| Run `doctest(Backtest)` in CI | Prevents stale examples from accumulating |
 
 ### Phase 4: Internal Documentation (do for non-trivial internals)
 
 | What | Why |
 |------|-----|
-| `@generated` functions (`_indicator_result`) | Metaprogramming is not self-documenting |
-| Computation kernels (`_ema_kernel_unrolled!`, `_calculate_cusum`, `_sma_seed`) | Math-heavy code with subtle preconditions |
-| Pipeline data flow (what each `NamedTuple` contains at each stage) | The implicit interface that makes or breaks correctness |
-| Macro internals (`_replace_symbols`, `_build_macro_components`) | AST manipulation context |
+| `@generated` functions (`_indicator_result`) | Metaprogramming is never self-documenting |
+| Computation kernels (`_ema_kernel_unrolled!`, `_calculate_cusum`, `_sma_seed`) | Complex algorithms that future contributors must understand |
+| Pipeline NamedTuple builders | Define the inter-stage data contract |
+| Symbol rewriting internals (`_replace_symbols`, `_build_macro_components`) | Fragile macro plumbing |
 
-### Phase 5: Documenter.jl Infrastructure (do once)
+### Phase 5: Documenter.jl Site (do when the API stabilises)
 
 | What | Why |
 |------|-----|
-| Create `docs/` directory with `make.jl`, `Project.toml` | Enables hosted documentation |
-| Write `index.md` (installation, quick start) | First thing new users see |
-| Write `guide.md` (tutorial walkthrough) | Onboarding experience |
-| Write `api.md` (full `@docs` listing) | Comprehensive reference |
-| CI workflow for doc deployment | Automated, always up-to-date |
+| `docs/` directory structure | Generates a browsable HTML site |
+| Tutorial page ("the 90% use case") | Onboards new users faster than API reference alone |
+| `checkdocs = :exports` and `strict = true` in CI | Enforces documentation coverage mechanically |
 
 ### Phase 6: Narrative Documentation (ongoing)
 
 | What | Why |
 |------|-----|
-| Pipeline architecture guide (`pipeline.md`) | Explains the `>>` mental model |
+| Pipeline architecture guide (`pipelines.md`) | Explains the `>>` mental model |
 | Per-module guides (indicators, events, labels) | Deep dives with worked examples |
+| Extending guide (how to add a new indicator/barrier) | Unblocks external contributors |
 | Performance guide | Threading, SIMD, allocation guidance |
-| Contributing guide (how to add a new indicator/barrier) | Unblocks external contributors |
 
 ### When Adding a New Component
 
-Follow the same phase order: write the abstract type's interface contract first, then the concrete type's full docstring with constructors and examples, then add `jldoctest` blocks, then document non-trivial internals, then add the symbol to `api.md`. This applies to every new indicator, side, event, label, barrier, or future module.
+Follow the same phase order: write the exported type docstring first (with fields, constructors, and examples), then the public function docstrings (with arguments, returns, throws), then the abstract type interface contract if it's a new extension point, then add `jldoctest` blocks, then document internal kernels if they exist. This applies to every new indicator, side, event, label, barrier, or future module.
