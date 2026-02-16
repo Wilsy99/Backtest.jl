@@ -9,13 +9,13 @@ using Combinatorics
 include("types.jl")
 include("utility.jl")
 include("data.jl")
-include("indicator/indicator.jl")
+include("feature/feature.jl")
 include("side/side.jl")
 include("event.jl")
 include("label/label.jl")
 
 export PriceBars, TimeBar
-export AbstractIndicator, EMA, CUSUM, calculate_indicator
+export AbstractFeature, EMA, CUSUM, calculate_feature
 export AbstractDirection, LongOnly, ShortOnly, LongShort
 export AbstractSide, Crossover, calculate_side
 export AbstractEvent, Event, @Event

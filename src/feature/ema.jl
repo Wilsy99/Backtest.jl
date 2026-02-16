@@ -1,4 +1,4 @@
-struct EMA{Periods} <: AbstractIndicator
+struct EMA{Periods} <: AbstractFeature
     multi_thread::Bool
     function EMA{Periods}(; multi_thread::Bool=false) where {Periods}
         isempty(Periods) && throw(ArgumentError("At least one period is required"))
@@ -11,30 +11,30 @@ end
 EMA(p::Int; multi_thread::Bool=false) = EMA{(p,)}(; multi_thread)
 EMA(ps::Vararg{Int}; multi_thread::Bool=false) = EMA{ps}(; multi_thread)
 
-function calculate_indicator(
-    ind::EMA{Periods}, prices::AbstractVector{T}
+function calculate_feature(
+    feat::EMA{Periods}, prices::AbstractVector{T}
 ) where {Periods,T<:AbstractFloat}
     if length(Periods) == 1
         return _calculate_ema(prices, Periods[1])
     else
-        return _calculate_emas(prices, Periods, ind.multi_thread)
+        return _calculate_emas(prices, Periods, feat.multi_thread)
     end
 end
 
-@generated function _indicator_result(
-    ind::EMA{Periods}, prices::AbstractVector{T}
+@generated function _feature_result(
+    feat::EMA{Periods}, prices::AbstractVector{T}
 ) where {Periods,T<:AbstractFloat}
     names = Tuple(Symbol(:ema_, p) for p in Periods)
     n = length(Periods)
     if n == 1
         quote
-            vals = calculate_indicator(ind, prices)
+            vals = calculate_feature(feat, prices)
             NamedTuple{$names}((vals,))
         end
     else
         col_exprs = [:(vals[:, $i]) for i in 1:n]
         quote
-            vals = calculate_indicator(ind, prices)
+            vals = calculate_feature(feat, prices)
             @views NamedTuple{$names}(($(col_exprs...),))
         end
     end

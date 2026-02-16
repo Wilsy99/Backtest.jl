@@ -2,12 +2,12 @@
 # Phase 2 — Core Correctness
 # ─────────────────────────────────────────────────────────────────────────────
 
-@testitem "EMA: Hand-Calculated Reference (period=3)" tags = [:indicator, :ema, :reference] begin
+@testitem "EMA: Hand-Calculated Reference (period=3)" tags = [:feature, :ema, :reference] begin
     using Backtest, Test
 
     # α = 2/(3+1) = 0.5, SMA seed = (10+11+12)/3 = 11.0
     prices = Float64[10, 11, 12, 13, 14, 15]
-    ema = calculate_indicator(EMA(3), prices)
+    ema = calculate_feature(EMA(3), prices)
 
     @test length(ema) == 6
     @test all(isnan, ema[1:2])
@@ -17,12 +17,12 @@
     @test ema[6] ≈ 14.0                # 0.5×15 + 0.5×13.0
 end
 
-@testitem "EMA: Hand-Calculated Reference (period=5)" tags = [:indicator, :ema, :reference] begin
+@testitem "EMA: Hand-Calculated Reference (period=5)" tags = [:feature, :ema, :reference] begin
     using Backtest, Test
 
     # α = 2/(5+1) = 1/3, β = 2/3, SMA seed = (2+4+6+8+10)/5 = 6.0
     prices = Float64[2, 4, 6, 8, 10, 12, 14, 16, 18, 20]
-    ema = calculate_indicator(EMA(5), prices)
+    ema = calculate_feature(EMA(5), prices)
 
     @test length(ema) == 10
     @test all(isnan, ema[1:4])
@@ -34,7 +34,7 @@ end
     @test ema[10] ≈ 16.0               # 1/3×20 + 2/3×14
 end
 
-@testitem "EMA: SMA Seed Correctness" tags = [:indicator, :ema, :unit] begin
+@testitem "EMA: SMA Seed Correctness" tags = [:feature, :ema, :unit] begin
     using Backtest, Test
 
     prices = Float64[10, 20, 30, 40, 50]
@@ -50,7 +50,7 @@ end
     @test result ≈ 2.0f0
 end
 
-@testitem "EMA: Mathematical Properties" tags = [:indicator, :ema, :property] setup = [
+@testitem "EMA: Mathematical Properties" tags = [:feature, :ema, :property] setup = [
     TestData
 ] begin
     using Backtest, Test, Statistics
@@ -58,7 +58,7 @@ end
     prices = TestData.make_trending_prices(:up; n=200, start=50.0, step=0.5)
 
     # ── Output length ──
-    ema = calculate_indicator(EMA(10), prices)
+    ema = calculate_feature(EMA(10), prices)
     @test length(ema) == length(prices)
 
     # ── Boundedness: EMA cannot exceed input range ──
@@ -68,22 +68,22 @@ end
 
     # ── Convergence: constant input → EMA equals that constant ──
     flat = TestData.make_flat_prices(; price=42.0, n=200)
-    ema_flat = calculate_indicator(EMA(10), flat)
+    ema_flat = calculate_feature(EMA(10), flat)
     @test all(ema_flat[10:end] .≈ 42.0)
 
     # ── Smoothness: longer period → lower variance of differences ──
     sine_prices = [100.0 + 10.0 * sin(2π * i / 20) for i in 1:200]
-    ema_short = calculate_indicator(EMA(5), sine_prices)
-    ema_long = calculate_indicator(EMA(20), sine_prices)
+    ema_short = calculate_feature(EMA(5), sine_prices)
+    ema_long = calculate_feature(EMA(20), sine_prices)
     @test var(diff(ema_long[21:end])) < var(diff(ema_short[21:end]))
 
     # ── Directionality: monotone increasing input → monotone increasing EMA ──
-    ema_up = calculate_indicator(EMA(5), prices)
+    ema_up = calculate_feature(EMA(5), prices)
     @test all(diff(ema_up[6:end]) .> 0)
 
     # Also for decreasing
     prices_down = TestData.make_trending_prices(:down; n=200, start=200.0, step=0.5)
-    ema_down = calculate_indicator(EMA(5), prices_down)
+    ema_down = calculate_feature(EMA(5), prices_down)
     @test all(diff(ema_down[6:end]) .< 0)
 
     # ── Lag: on a rising linear trend, EMA lags below price ──
@@ -93,95 +93,95 @@ end
     @test all(ema_down[11:end] .> prices_down[11:end])
 end
 
-@testitem "EMA: Type Stability" tags = [:indicator, :ema, :stability] begin
+@testitem "EMA: Type Stability" tags = [:feature, :ema, :stability] begin
     using Backtest, Test
 
     prices64 = Float64.(1:50)
     prices32 = Float32.(1:50)
 
     # Public API — single period
-    @test @inferred(calculate_indicator(EMA(5), prices64)) isa Vector{Float64}
-    @test @inferred(calculate_indicator(EMA(5), prices32)) isa Vector{Float32}
+    @test @inferred(calculate_feature(EMA(5), prices64)) isa Vector{Float64}
+    @test @inferred(calculate_feature(EMA(5), prices32)) isa Vector{Float32}
 
     # Public API — multi-period
-    @test @inferred(calculate_indicator(EMA(5, 10), prices64)) isa Matrix{Float64}
-    @test @inferred(calculate_indicator(EMA(5, 10), prices32)) isa Matrix{Float32}
+    @test @inferred(calculate_feature(EMA(5, 10), prices64)) isa Matrix{Float64}
+    @test @inferred(calculate_feature(EMA(5, 10), prices32)) isa Matrix{Float32}
 
     # Internal: named result builder
-    @test @inferred(Backtest._indicator_result(EMA(5), prices64)) isa NamedTuple
-    @test @inferred(Backtest._indicator_result(EMA(5, 10), prices64)) isa NamedTuple
+    @test @inferred(Backtest._feature_result(EMA(5), prices64)) isa NamedTuple
+    @test @inferred(Backtest._feature_result(EMA(5, 10), prices64)) isa NamedTuple
 end
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Phase 3 — Robustness: Edge Cases
 # ─────────────────────────────────────────────────────────────────────────────
 
-@testitem "EMA: Edge Case — Period of 1" tags = [:indicator, :ema, :edge] begin
+@testitem "EMA: Edge Case — Period of 1" tags = [:feature, :ema, :edge] begin
     using Backtest, Test
 
     # α = 2/(1+1) = 1.0, β = 0.0  →  EMA should equal input exactly
     prices = Float64[5, 10, 15, 20, 25]
-    ema = calculate_indicator(EMA(1), prices)
+    ema = calculate_feature(EMA(1), prices)
 
     @test length(ema) == 5
     @test ema ≈ prices
     @test !any(isnan, ema)              # no NaN warmup for period=1
 end
 
-@testitem "EMA: Edge Case — Input Length < Period" tags = [:indicator, :ema, :edge] begin
+@testitem "EMA: Edge Case — Input Length < Period" tags = [:feature, :ema, :edge] begin
     using Backtest, Test
 
     prices = Float64[1, 2, 3]
-    ema = calculate_indicator(EMA(5), prices)
+    ema = calculate_feature(EMA(5), prices)
 
     @test length(ema) == 3
     @test all(isnan, ema)
 end
 
-@testitem "EMA: Edge Case — Input Length == Period" tags = [:indicator, :ema, :edge] begin
+@testitem "EMA: Edge Case — Input Length == Period" tags = [:feature, :ema, :edge] begin
     using Backtest, Test
 
     # Exactly one valid value (the SMA seed), rest are NaN warmup
     prices = Float64[10, 20, 30]
-    ema = calculate_indicator(EMA(3), prices)
+    ema = calculate_feature(EMA(3), prices)
 
     @test length(ema) == 3
     @test all(isnan, ema[1:2])
     @test ema[3] ≈ 20.0                # SMA of [10, 20, 30]
 end
 
-@testitem "EMA: Edge Case — Single Element" tags = [:indicator, :ema, :edge] begin
+@testitem "EMA: Edge Case — Single Element" tags = [:feature, :ema, :edge] begin
     using Backtest, Test
 
     # period=1 with single element → valid
     prices = Float64[42.0]
-    ema = calculate_indicator(EMA(1), prices)
+    ema = calculate_feature(EMA(1), prices)
     @test length(ema) == 1
     @test ema[1] ≈ 42.0
 
     # period > 1 with single element → all NaN
-    ema2 = calculate_indicator(EMA(2), Float64[42.0])
+    ema2 = calculate_feature(EMA(2), Float64[42.0])
     @test length(ema2) == 1
     @test isnan(ema2[1])
 end
 
-@testitem "EMA: Edge Case — Flat Prices" tags = [:indicator, :ema, :edge] setup = [TestData] begin
+@testitem "EMA: Edge Case — Flat Prices" tags = [:feature, :ema, :edge] setup = [TestData] begin
     using Backtest, Test
 
     flat = TestData.make_flat_prices(; price=100.0, n=200)
-    ema = calculate_indicator(EMA(10), flat)
+    ema = calculate_feature(EMA(10), flat)
 
     @test all(isnan, ema[1:9])
     @test all(ema[10:end] .≈ 100.0)
 end
 
-@testitem "EMA: Edge Case — Step Function" tags = [:indicator, :ema, :edge] setup = [
+@testitem "EMA: Edge Case — Step Function" tags = [:feature, :ema, :edge] setup = [
     TestData
 ] begin
     using Backtest, Test
 
     prices = TestData.make_step_prices(; n=200, low=100.0, high=200.0, step_at=101)
-    ema = calculate_indicator(EMA(10), prices)
+    ema = calculate_feature(EMA(10), prices)
 
     valid = filter(!isnan, ema)
 
@@ -199,38 +199,38 @@ end
     @test ema[end] > 199.0
 end
 
-@testitem "EMA: Edge Case — Very Large Prices" tags = [:indicator, :ema, :edge] begin
+@testitem "EMA: Edge Case — Very Large Prices" tags = [:feature, :ema, :edge] begin
     using Backtest, Test
 
     prices = fill(50_000.0, 200)
-    ema = calculate_indicator(EMA(10), prices)
+    ema = calculate_feature(EMA(10), prices)
 
     @test all(ema[10:end] .≈ 50_000.0)
     @test all(isfinite, filter(!isnan, ema))
 end
 
-@testitem "EMA: Edge Case — Very Small Prices" tags = [:indicator, :ema, :edge] begin
+@testitem "EMA: Edge Case — Very Small Prices" tags = [:feature, :ema, :edge] begin
     using Backtest, Test
 
     prices = fill(0.001, 200)
-    ema = calculate_indicator(EMA(10), prices)
+    ema = calculate_feature(EMA(10), prices)
 
     @test all(ema[10:end] .≈ 0.001)
     @test all(isfinite, filter(!isnan, ema))
 end
 
-@testitem "EMA: Float32 Type Preservation" tags = [:indicator, :ema, :edge] begin
+@testitem "EMA: Float32 Type Preservation" tags = [:feature, :ema, :edge] begin
     using Backtest, Test
 
     prices32 = Float32.(1:100)
 
     # Single period
-    ema = calculate_indicator(EMA(5), prices32)
+    ema = calculate_feature(EMA(5), prices32)
     @test eltype(ema) == Float32
     @test length(ema) == 100
 
     # Multi-period
-    result = calculate_indicator(EMA(5, 10), prices32)
+    result = calculate_feature(EMA(5, 10), prices32)
     @test eltype(result) == Float32
     @test size(result) == (100, 2)
 end
@@ -240,16 +240,16 @@ end
 # ─────────────────────────────────────────────────────────────────────────────
 
 @testitem "EMA: Multi-Period Matches Individual Calculations" tags = [
-    :indicator, :ema, :unit
+    :feature, :ema, :unit
 ] begin
     using Backtest, Test
 
     prices = Float64.(1:100)
-    multi = calculate_indicator(EMA(5, 10, 20), prices)
+    multi = calculate_feature(EMA(5, 10, 20), prices)
 
-    ema5 = calculate_indicator(EMA(5), prices)
-    ema10 = calculate_indicator(EMA(10), prices)
-    ema20 = calculate_indicator(EMA(20), prices)
+    ema5 = calculate_feature(EMA(5), prices)
+    ema10 = calculate_feature(EMA(10), prices)
+    ema20 = calculate_feature(EMA(20), prices)
 
     @test size(multi) == (100, 3)
     @test isequal(multi[:, 1], ema5)
@@ -257,25 +257,25 @@ end
     @test isequal(multi[:, 3], ema20)
 end
 
-@testitem "EMA: Named Result Builder (_indicator_result)" tags = [:indicator, :ema, :unit] begin
+@testitem "EMA: Named Result Builder (_feature_result)" tags = [:feature, :ema, :unit] begin
     using Backtest, Test
 
     prices = Float64.(1:50)
 
     # Single period → NamedTuple with :ema_10
-    nt = Backtest._indicator_result(EMA(10), prices)
+    nt = Backtest._feature_result(EMA(10), prices)
     @test nt isa NamedTuple
     @test haskey(nt, :ema_10)
-    @test isequal(nt.ema_10, calculate_indicator(EMA(10), prices))
+    @test isequal(nt.ema_10, calculate_feature(EMA(10), prices))
 
     # Multi-period → NamedTuple with :ema_5 and :ema_20
-    nt2 = Backtest._indicator_result(EMA(5, 20), prices)
+    nt2 = Backtest._feature_result(EMA(5, 20), prices)
     @test haskey(nt2, :ema_5)
     @test haskey(nt2, :ema_20)
     @test length(keys(nt2)) == 2
 end
 
-@testitem "EMA: Callable Interface with PriceBars" tags = [:indicator, :ema, :unit] setup = [
+@testitem "EMA: Callable Interface with PriceBars" tags = [:feature, :ema, :unit] setup = [
     TestData
 ] begin
     using Backtest, Test
@@ -298,7 +298,7 @@ end
 end
 
 @testitem "EMA: Callable Interface with NamedTuple (chaining)" tags = [
-    :indicator, :ema, :unit
+    :feature, :ema, :unit
 ] setup = [TestData] begin
     using Backtest, Test
 
@@ -318,7 +318,7 @@ end
 # Phase 3 — Robustness: Constructor & Error Paths
 # ─────────────────────────────────────────────────────────────────────────────
 
-@testitem "EMA: Constructor Validation" tags = [:indicator, :ema, :edge] begin
+@testitem "EMA: Constructor Validation" tags = [:feature, :ema, :edge] begin
     using Backtest, Test
 
     # Invalid: period must be a positive integer
@@ -340,7 +340,7 @@ end
 # Phase 3 — Robustness: Performance
 # ─────────────────────────────────────────────────────────────────────────────
 
-@testitem "EMA: Zero Allocations in Kernel" tags = [:indicator, :ema, :stability] begin
+@testitem "EMA: Zero Allocations in Kernel" tags = [:feature, :ema, :stability] begin
     using Backtest, Test
 
     prices = collect(1.0:200.0)
@@ -373,7 +373,7 @@ end
 end
 
 @testitem "EMA: Allocation — _calculate_emas (multi-period)" tags = [
-    :indicator, :ema, :allocation
+    :feature, :ema, :allocation
 ] begin
     using Backtest, Test
 
@@ -398,7 +398,7 @@ end
     @test actual > 0  # sanity: must allocate the result matrix
 end
 
-@testitem "EMA: Kernel Unrolled Covers All Remainders" tags = [:indicator, :ema, :unit] begin
+@testitem "EMA: Kernel Unrolled Covers All Remainders" tags = [:feature, :ema, :unit] begin
     using Backtest, Test
 
     # The kernel processes 4 elements at a time starting from index p+1.
@@ -411,7 +411,7 @@ end
 
     for n in 6:9   # (n-2) mod 4 = 0,1,2,3
         prices = Float64.(1:n)
-        ema = calculate_indicator(EMA(period), prices)
+        ema = calculate_feature(EMA(period), prices)
 
         @test length(ema) == n
         @test isnan(ema[1])
@@ -435,16 +435,16 @@ end
 # Phase 4 — Deep Analysis
 # ─────────────────────────────────────────────────────────────────────────────
 
-@testitem "EMA: Static Analysis (JET.jl)" tags = [:indicator, :ema, :stability] begin
+@testitem "EMA: Static Analysis (JET.jl)" tags = [:feature, :ema, :stability] begin
     using Backtest, Test, JET
 
     prices = collect(1.0:100.0)
 
     # Optimisation issues (type instability inside the body)
-    @test_opt target_modules = (Backtest,) calculate_indicator(EMA(10), prices)
+    @test_opt target_modules = (Backtest,) calculate_feature(EMA(10), prices)
 
     # Method errors (calling a function that doesn't exist for those types)
-    @test_call target_modules = (Backtest,) calculate_indicator(EMA(10), prices)
+    @test_call target_modules = (Backtest,) calculate_feature(EMA(10), prices)
 end
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -469,10 +469,10 @@ end
 # alignment, and GC jitter, but small enough to catch real bugs):
 #
 #   512 bytes  — internal functions (_calculate_ema, _calculate_emas)
-#                 and calculate_indicator single period (thin wrapper).
+#                 and calculate_feature single period (thin wrapper).
 #                 Container header is ~80 bytes; 512 gives comfortable margin.
 #
-#   1536 bytes — calculate_indicator multi-period.
+#   1536 bytes — calculate_feature multi-period.
 #                 Higher because it dispatches with Periods as a Tuple (not Vector),
 #                 triggering a different specialization of _calculate_emas.
 #                 The tuple-based dispatch path has more type-computation overhead.
@@ -487,7 +487,7 @@ end
 # ─────────────────────────────────────────────────────────────────────────────
 
 @testitem "EMA: Allocation — _calculate_ema (single period)" tags = [
-    :indicator, :ema, :allocation
+    :feature, :ema, :allocation
 ] begin
     using Backtest, Test
 
@@ -510,7 +510,7 @@ end
     @test actual > 0  # sanity: must allocate the result vector
 end
 
-@testitem "EMA: Allocation — _calculate_ema Float32" tags = [:indicator, :ema, :allocation] begin
+@testitem "EMA: Allocation — _calculate_ema Float32" tags = [:feature, :ema, :allocation] begin
     using Backtest, Test
 
     prices = collect(Float32.(1:200))
@@ -531,128 +531,128 @@ end
     @test actual <= budget
 end
 
-@testitem "EMA: Allocation — calculate_indicator single period" tags = [
-    :indicator, :ema, :allocation
+@testitem "EMA: Allocation — calculate_feature single period" tags = [
+    :feature, :ema, :allocation
 ] begin
     using Backtest, Test
 
     prices = collect(1.0:200.0)
-    ind = EMA(10)
+    feat = EMA(10)
 
     # Warmup target function
-    calculate_indicator(ind, prices)
+    calculate_feature(feat, prices)
 
     # Budget: vector data + 512 bytes overhead (thin wrapper over _calculate_ema)
     expected_data = sizeof(Float64) * length(prices)
     budget = expected_data + 512
 
     # Define wrapper
-    allocs_calc(ind, prices) = @allocated calculate_indicator(ind, prices)
+    allocs_calc(feat, prices) = @allocated calculate_feature(feat, prices)
 
     # Run 3 times, take minimum
-    actual = minimum([@allocated(allocs_calc(ind, prices)) for _ in 1:3])
+    actual = minimum([@allocated(allocs_calc(feat, prices)) for _ in 1:3])
 
     @test actual <= budget
 end
 
-@testitem "EMA: Allocation — calculate_indicator multi-period" tags = [
-    :indicator, :ema, :allocation
+@testitem "EMA: Allocation — calculate_feature multi-period" tags = [
+    :feature, :ema, :allocation
 ] begin
     using Backtest, Test
 
     prices = collect(1.0:200.0)
-    ind = EMA(5, 10, 20)
+    feat = EMA(5, 10, 20)
     n_periods = 3
 
     # Warmup target function
-    calculate_indicator(ind, prices)
+    calculate_feature(feat, prices)
 
     # Budget: matrix data + 1536 bytes overhead
     expected_data = sizeof(Float64) * length(prices) * n_periods
     budget = expected_data + 1536
 
     # Define wrapper
-    allocs_calc(ind, prices) = @allocated calculate_indicator(ind, prices)
+    allocs_calc(feat, prices) = @allocated calculate_feature(feat, prices)
 
     # Run 3 times, take minimum
-    actual = minimum([@allocated(allocs_calc(ind, prices)) for _ in 1:3])
+    actual = minimum([@allocated(allocs_calc(feat, prices)) for _ in 1:3])
 
     @test actual <= budget
 end
 
 @testitem "EMA: Allocation — EMA functor with PriceBars" tags = [
-    :indicator, :ema, :allocation
+    :feature, :ema, :allocation
 ] setup = [TestData] begin
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=200)
-    ind = EMA(10)
+    feat = EMA(10)
 
     # Warmup target function
-    ind(bars)
+    feat(bars)
 
     # Budget: result vector + 1024 bytes for NamedTuple construction + merge
     expected_data = sizeof(Float64) * 200
     budget = expected_data + 1024
 
     # Define wrapper
-    allocs_functor(ind, bars) = @allocated ind(bars)
+    allocs_functor(feat, bars) = @allocated feat(bars)
 
     # Run 3 times, take minimum
-    actual = minimum([@allocated(allocs_functor(ind, bars)) for _ in 1:3])
+    actual = minimum([@allocated(allocs_functor(feat, bars)) for _ in 1:3])
 
     @test actual <= budget
     @test actual > 0  # must allocate result vector at minimum
 end
 
 @testitem "EMA: Allocation — EMA functor with NamedTuple (chaining)" tags = [
-    :indicator, :ema, :allocation
+    :feature, :ema, :allocation
 ] setup = [TestData] begin
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=200)
-    ind1 = EMA(10)
-    ind2 = EMA(20)
+    feat1 = EMA(10)
+    feat2 = EMA(20)
 
     # Build input NamedTuple from first call
-    step1 = ind1(bars)
+    step1 = feat1(bars)
 
     # Warmup target function
-    ind2(step1)
+    feat2(step1)
 
     # Budget: result vector + 1024 bytes for NamedTuple merge
     expected_data = sizeof(Float64) * 200
     budget = expected_data + 1024
 
     # Define wrapper
-    allocs_chain(ind2, step1) = @allocated ind2(step1)
+    allocs_chain(feat2, step1) = @allocated feat2(step1)
 
     # Run 3 times, take minimum
-    actual = minimum([@allocated(allocs_chain(ind2, step1)) for _ in 1:3])
+    actual = minimum([@allocated(allocs_chain(feat2, step1)) for _ in 1:3])
 
     @test actual <= budget
 end
 
 @testitem "EMA: Allocation — EMA functor multi-period with PriceBars" tags = [
-    :indicator, :ema, :allocation
+    :feature, :ema, :allocation
 ] setup = [TestData] begin
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=200)
-    ind = EMA(5, 10, 20)
+    feat = EMA(5, 10, 20)
 
     # Warmup target function
-    ind(bars)
+    feat(bars)
 
     # Budget: matrix data + 1024 bytes for NamedTuple with views + merge
     expected_data = sizeof(Float64) * 200 * 3
     budget = expected_data + 1024
 
     # Define wrapper
-    allocs_functor(ind, bars) = @allocated ind(bars)
+    allocs_functor(feat, bars) = @allocated feat(bars)
 
     # Run 3 times, take minimum
-    actual = minimum([@allocated(allocs_functor(ind, bars)) for _ in 1:3])
+    actual = minimum([@allocated(allocs_functor(feat, bars)) for _ in 1:3])
 
     @test actual <= budget
 end
