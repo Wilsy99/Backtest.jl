@@ -33,7 +33,9 @@ function Label!(
     return Label!(barriers, entry_basis, drop_unfinished, barrier_args)
 end
 
-struct LabelResults{D<:TimeType,T<:AbstractFloat}
+struct LabelResults{I<:Int,D<:TimeType,T<:AbstractFloat}
+    i₀::Vector{I}
+    i₁::Vector{I}
     t₀::Vector{D}
     t₁::Vector{D}
     label::Vector{Int8}
@@ -41,18 +43,28 @@ struct LabelResults{D<:TimeType,T<:AbstractFloat}
     log_ret::Vector{T}
 
     function LabelResults(
+        i₀::Vector{I},
+        i₁::Vector{I},
         t₀::Vector{D},
         t₁::Vector{D},
         labels::Vector{Int8},
         rets::Vector{T},
         log_rets::Vector{T};
         drop_unfinished::Bool=true,
-    ) where {D<:TimeType,T<:AbstractFloat}
+    ) where {I<:Int,D<:TimeType,T<:AbstractFloat}
         if drop_unfinished
             mask = labels .!= Int8(-99)
-            return new{D,T}(t₀[mask], t₁[mask], labels[mask], rets[mask], log_rets[mask])
+            return new{I,D,T}(
+                i₀[mask],
+                i₁[mask],
+                t₀[mask],
+                t₁[mask],
+                labels[mask],
+                rets[mask],
+                log_rets[mask],
+            )
         else
-            return new{D,T}(t₀, t₁, labels, rets, log_rets)
+            return new{I,D,T}(i₀, i₁, t₀, t₁, labels, rets, log_rets)
         end
     end
 end
@@ -118,6 +130,8 @@ function calculate_label(
 
     full_args = merge(barrier_args, (; bars=price_bars))
 
+    i₀ = zeros(Int, n_events)
+    i₁ = zeros(Int, n_events)
     entry_timestamps = Vector{D}(undef, n_events)
     exit_timestamps = Vector{D}(undef, n_events)
     labels = fill(Int8(-99), n_events)
@@ -133,6 +147,7 @@ function calculate_label(
             continue
         end
 
+        i₀[i] = entry_idx
         entry_ts = price_bars.timestamp[entry_idx]
         entry_price = _get_price(entry_basis, zero(T), entry_idx, full_args)
         entry_timestamps[i] = entry_ts
@@ -149,6 +164,7 @@ function calculate_label(
                 entry_price,
                 full_args,
                 n_prices,
+                i₁,
                 exit_timestamps,
                 labels,
                 rets,
@@ -162,7 +178,7 @@ function calculate_label(
     end
 
     return LabelResults(
-        entry_timestamps, exit_timestamps, labels, rets, log_rets; drop_unfinished
+        i₀, i₁, entry_timestamps, exit_timestamps, labels, rets, log_rets; drop_unfinished
     )
 end
 
@@ -181,7 +197,6 @@ end
 
 # ── Barrier checking: recursive tuple unrolling ──
 
-# Entry point — computes open_price once
 @inline function _check_and_process_barriers!(
     i,
     j,
@@ -191,6 +206,7 @@ end
     entry_price,
     full_args,
     n_prices,
+    i₁,
     exit_timestamps,
     labels,
     rets,
@@ -207,6 +223,7 @@ end
         entry_price,
         full_args,
         n_prices,
+        i₁,
         exit_timestamps,
         labels,
         rets,
@@ -214,7 +231,6 @@ end
     )
 end
 
-# Base case — no barriers left
 @inline function _check_barrier_recursive!(
     i,
     j,
@@ -225,6 +241,7 @@ end
     entry_price,
     full_args,
     n_prices,
+    i₁,
     exit_timestamps,
     labels,
     rets,
@@ -233,7 +250,6 @@ end
     return false
 end
 
-# Recursive case — check first barrier, then recurse on tail
 @inline function _check_barrier_recursive!(
     i,
     j,
@@ -244,6 +260,7 @@ end
     entry_price,
     full_args,
     n_prices,
+    i₁,
     exit_timestamps,
     labels,
     rets,
@@ -261,6 +278,7 @@ end
             entry_price,
             full_args,
             n_prices,
+            i₁,
             exit_timestamps,
             labels,
             rets,
@@ -278,6 +296,7 @@ end
             entry_price,
             full_args,
             n_prices,
+            i₁,
             exit_timestamps,
             labels,
             rets,
@@ -296,6 +315,7 @@ end
         entry_price,
         full_args,
         n_prices,
+        i₁,
         exit_timestamps,
         labels,
         rets,
@@ -313,6 +333,7 @@ end
     entry_price,
     full_args,
     n_prices,
+    i₁,
     exit_timestamps,
     labels,
     rets,
@@ -326,6 +347,7 @@ end
     T = eltype(rets)
     exit_price = _get_price(barrier.exit_basis, level, exit_idx, full_args)
 
+    i₁[i] = exit_idx
     exit_timestamps[i] = full_args.bars.timestamp[exit_idx]
     labels[i] = barrier.label
 

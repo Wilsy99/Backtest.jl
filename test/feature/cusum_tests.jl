@@ -296,9 +296,7 @@ end
 # Phase 3 — Robustness: Interface
 # ─────────────────────────────────────────────────────────────────────────────
 
-@testitem "CUSUM: Named Result Builder (_feature_result)" tags = [
-    :feature, :cusum, :unit
-] begin
+@testitem "CUSUM: Named Result Builder (_feature_result)" tags = [:feature, :cusum, :unit] begin
     using Backtest, Test
 
     prices = collect(100.0:300.0)
