@@ -96,9 +96,9 @@ Use one-liners only when the function has no keyword arguments, no noteworthy ed
 
 | Target | Why |
 |--------|-----|
-| **Exported functions** (`calculate_indicator`, `get_data`) | Primary user-facing API |
+| **Exported functions** (`calculate_feature`, `get_data`) | Primary user-facing API |
 | **Exported types** (`PriceBars`, `EMA`, `CUSUM`, `Label`) | Users construct these directly |
-| **Exported abstract types** (`AbstractIndicator`, `AbstractBarrier`) | Users subtype these to extend the package |
+| **Exported abstract types** (`AbstractFeature`, `AbstractBarrier`) | Users subtype these to extend the package |
 | **Exported macros** (`@Event`, `@UpperBarrier`, etc.) | Most fragile surface area; users need examples |
 | **The module itself** (`Backtest`) | Entry point; should list exports and show a quick-start example |
 
@@ -107,7 +107,7 @@ Use one-liners only when the function has no keyword arguments, no noteworthy ed
 | Target | When |
 |--------|------|
 | **Internal computation kernels** (`_ema_kernel_unrolled!`, `_calculate_cusum`) | When the algorithm is non-obvious or performance-critical |
-| **`@generated` functions** (`_indicator_result`) | Always — metaprogramming is never self-evident |
+| **`@generated` functions** (`_feature_result`) | Always — metaprogramming is never self-evident |
 | **Internal types used across modules** (`LabelResults`, `EventResult`) | When they appear in public return types |
 | **NamedTuple builders** (functions defining pipeline keys) | These are implicit interface contracts between stages |
 | **Index/alignment logic** (warmup lengths, temporal offsets) | Off-by-one bugs are the #1 source of backtesting errors |
@@ -136,7 +136,7 @@ Use this decision tree for internal functions:
 
 ### Document the Function, Not Individual Methods
 
-Follow the Julia convention: write one docstring for the *function* (generic), not separate docstrings for each method. Only split into per-method docstrings when behaviour fundamentally diverges between methods (e.g., `calculate_indicator(::EMA, ...)` vs `calculate_indicator(::CUSUM, ...)` if their contracts differ).
+Follow the Julia convention: write one docstring for the *function* (generic), not separate docstrings for each method. Only split into per-method docstrings when behaviour fundamentally diverges between methods (e.g., `calculate_feature(::EMA, ...)` vs `calculate_feature(::CUSUM, ...)` if their contracts differ).
 
 ---
 
@@ -225,7 +225,7 @@ The module docstring is the first thing users see after `using Backtest; ?Backte
 A performance-oriented framework for financial event-driven backtesting
 using the triple-barrier method.
 
-Compose indicator, event detection, and labelling stages into pipelines
+Compose feature, event detection, and labelling stages into pipelines
 using the `>>` operator:
 
     bars >> EMA(10, 50) >> event >> label
@@ -237,7 +237,7 @@ using the `>>` operator:
 [`LowerBarrier`](@ref), [`TimeBarrier`](@ref),
 [`ConditionBarrier`](@ref)
 
-**Functions**: [`calculate_indicator`](@ref), [`get_data`](@ref),
+**Functions**: [`calculate_feature`](@ref), [`get_data`](@ref),
 [`calculate_side`](@ref), [`calculate_label`](@ref)
 
 **Macros**: [`@Event`](@ref), [`@UpperBarrier`](@ref),
@@ -270,26 +270,26 @@ Abstract types define extension points. Their docstrings are the **most importan
 
 ```julia
 """
-    AbstractIndicator
+    AbstractFeature
 
-Supertype for all technical indicators.
+Supertype for all technical features.
 
 # Interface
 
 Subtypes must implement:
 
-- `calculate_indicator(ind::MyIndicator, prices::AbstractVector{T}) where {T<:AbstractFloat}`:
-    compute the indicator values from a price vector. Return a `Vector{T}`
+- `calculate_feature(feat::MyFeature, prices::AbstractVector{T}) where {T<:AbstractFloat}`:
+    compute the feature values from a price vector. Return a `Vector{T}`
     (single-output) or `Matrix{T}` (multi-output) with the same element
     type as the input.
-- `_indicator_result(ind::MyIndicator, prices::AbstractVector{T}) -> NamedTuple`:
-    wrap the raw indicator output in a `NamedTuple` with descriptive keys
+- `_feature_result(feat::MyFeature, prices::AbstractVector{T}) -> NamedTuple`:
+    wrap the raw feature output in a `NamedTuple` with descriptive keys
     for pipeline composition (e.g., `(:ema_10,)`).
 
 # Implementation Notes
 
-- Indicators are callable: `ind(pricebars)` delegates to
-    `calculate_indicator` and merges the result into the pipeline
+- Features are callable: `feat(pricebars)` delegates to
+    `calculate_feature` and merges the result into the pipeline
     `NamedTuple`. Do **not** override the callable methods.
 - Preserve the input element type (`Float32` in → `Float32` out) to
     support GPU workflows.
@@ -297,8 +297,8 @@ Subtypes must implement:
 
 # Naming Convention
 
-Indicator result keys must be lowercase, using the pattern
-`:indicatorname_parameter` (e.g., `:ema_10`, `:cusum`). These names
+Feature result keys must be lowercase, using the pattern
+`:featurename_parameter` (e.g., `:ema_10`, `:cusum`). These names
 become the field names that downstream [`Event`](@ref) conditions and
 [`@Event`](@ref) macro expressions reference.
 
@@ -307,7 +307,8 @@ become the field names that downstream [`Event`](@ref) conditions and
 - [`EMA`](@ref): Exponential Moving Average.
 - [`CUSUM`](@ref): Cumulative Sum filter for structural breaks.
 """
-abstract type AbstractIndicator end
+abstract type AbstractFeature end
+
 ```
 
 ### 4c. Concrete Struct Docstring
@@ -316,9 +317,9 @@ Document the purpose, fields, constructor constraints, and the callable interfac
 
 ```julia
 """
-    EMA{Periods} <: AbstractIndicator
+    EMA{Periods} <: AbstractFeature
 
-Exponential moving average indicator parameterised by one or more
+Exponential moving average feature parameterised by one or more
 periods.
 
 Compute EMA values using the recursive formula
@@ -351,7 +352,7 @@ julia> ema = EMA(10);
 
 julia> prices = collect(1.0:20.0);
 
-julia> result = calculate_indicator(ema, prices);
+julia> result = calculate_feature(ema, prices);
 
 julia> length(result) == 20
 true
@@ -361,8 +362,8 @@ true
 ```
 
 # See also
-- [`CUSUM`](@ref): cumulative sum indicator for structural breaks.
-- [`calculate_indicator`](@ref): the dispatch point for all indicators.
+- [`CUSUM`](@ref): cumulative sum feature for structural breaks.
+- [`calculate_feature`](@ref): the dispatch point for all features.
 
 # Extended help
 
@@ -389,7 +390,7 @@ job = bars >> EMA(10, 50) >> evt >> lab
 result = job()
 ```
 """
-struct EMA{Periods} <: AbstractIndicator
+struct EMA{Periods} <: AbstractFeature
     # ...
 end
 ```
@@ -398,16 +399,16 @@ end
 
 ```julia
 """
-    calculate_indicator(ind::EMA{Periods}, prices::AbstractVector{T}) where {Periods, T<:AbstractFloat} -> Union{Vector{T}, Matrix{T}}
+    calculate_feature(feat::EMA{Periods}, prices::AbstractVector{T}) where {Periods, T<:AbstractFloat} -> Union{Vector{T}, Matrix{T}}
 
-Compute EMA values for `prices` at the periods specified in `ind`.
+Compute EMA values for `prices` at the periods specified in `feat`.
 
 Return a `Vector{T}` when `Periods` contains a single period, or a
 `Matrix{T}` of size `(length(prices), length(Periods))` for multiple
 periods. The element type of the output matches the input.
 
 # Arguments
-- `ind::EMA{Periods}`: the EMA indicator instance.
+- `feat::EMA{Periods}`: the EMA feature instance.
 - `prices::AbstractVector{T}`: price series. Must have at least
     `maximum(Periods)` elements for meaningful output.
 
@@ -423,7 +424,7 @@ julia> using Backtest
 
 julia> prices = Float64[10, 11, 12, 13, 14, 15];
 
-julia> ema = calculate_indicator(EMA(3), prices);
+julia> ema = calculate_feature(EMA(3), prices);
 
 julia> ema[3] ≈ 11.0
 true
@@ -435,6 +436,7 @@ true
 # Extended help
 
 ## Algorithm
+
 
 The EMA is seeded with the Simple Moving Average (SMA) of the first
 `period` values. Subsequent values use the recurrence:
@@ -453,8 +455,8 @@ When `EMA` is constructed with `multi_thread=true` and has multiple
 periods, each period's computation runs on a separate thread via
 `Threads.@threads`. Single-period computation is always single-threaded.
 """
-function calculate_indicator(
-    ind::EMA{Periods}, prices::AbstractVector{T}
+function calculate_feature(
+    feat::EMA{Periods}, prices::AbstractVector{T}
 ) where {Periods,T<:AbstractFloat}
     # ...
 end
@@ -538,18 +540,18 @@ function _ema_kernel_unrolled!(dest, prices, period, n, α, β)
 
 ```julia
 """
-    _indicator_result(ind::EMA{Periods}, prices) -> NamedTuple
+    _feature_result(feat::EMA{Periods}, prices) -> NamedTuple
 
 `@generated` function that returns a `NamedTuple` with keys derived
 from the period values (e.g., `(:ema_10, :ema_50)`). Single-period
 EMAs return vectors as values; multi-period EMAs return column views
 into the result matrix.
 
-This is the bridge between [`calculate_indicator`](@ref) (which returns
+This is the bridge between [`calculate_feature`](@ref) (which returns
 raw arrays) and the callable/pipeline interface (which needs named
 fields for downstream access).
 """
-@generated function _indicator_result(ind::EMA{Periods}, prices) where {Periods}
+@generated function _feature_result(feat::EMA{Periods}, prices) where {Periods}
 ```
 
 ### 4g. Pipeline Operator Docstring
@@ -614,7 +616,7 @@ This is the entry point for all pipelines. Construct directly or via
 - `close::V`: Closing prices.
 - `volume::V`: Trading volumes.
 - `timestamp::Vector{DateTime}`: Bar timestamps.
-- `bartype::B`: Bar type indicator ([`TimeBar`](@ref), `DollarBar`,
+- `bartype::B`: Bar type ([`TimeBar`](@ref), `DollarBar`,
     etc.).
 
 # Examples
@@ -657,7 +659,7 @@ julia> using Backtest
 
 julia> prices = Float64[10, 11, 12, 13, 14, 15];
 
-julia> ema = calculate_indicator(EMA(3), prices);
+julia> ema = calculate_feature(EMA(3), prices);
 
 julia> ema[3] ≈ 11.0
 true
@@ -702,7 +704,7 @@ julia> using Backtest, Dates
 
 julia> prices = Float64[10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
 
-julia> result = calculate_indicator(EMA(3), prices);
+julia> result = calculate_feature(EMA(3), prices);
 
 julia> length(result) == length(prices)
 true
@@ -719,7 +721,8 @@ For examples that require package imports, use the `setup` keyword:
 ```jldoctest; setup = :(using Backtest)
 julia> ema = EMA(10);
 
-julia> ema isa AbstractIndicator
+julia> ema isa AbstractFeature
+
 true
 ```
 """
@@ -732,7 +735,7 @@ When output contains unavoidable non-deterministic content, use the `filter` key
 ````julia
 """
 ```jldoctest; filter = r"[0-9\\.]+ seconds"
-julia> @time calculate_indicator(EMA(10), randn(1000))
+julia> @time calculate_feature(EMA(10), randn(1000))
   0.000042 seconds (1 allocation: 7.875 KiB)
 ```
 """
@@ -821,7 +824,7 @@ CUSUM
 ```
 
 # See also
-- [`EMA`](@ref): a smoothing indicator (contrast with CUSUM's
+- [`EMA`](@ref): a smoothing feature (contrast with CUSUM's
     change-detection approach).
 
 # Extended help
@@ -854,7 +857,7 @@ The expected return `E[r]` is estimated from a rolling window of
 
 ### The Interface Contract Pattern
 
-Abstract types in this package define extension points. Their docstrings must spell out exactly what a subtype must implement — this is the *interface contract*. See the `AbstractIndicator` example in Section 4b.
+Abstract types in this package define extension points. Their docstrings must spell out exactly what a subtype must implement — this is the *interface contract*. See the `AbstractFeature` example in Section 4b.
 
 For every abstract type, document:
 1. **Required methods** with full signatures and return type expectations.
@@ -933,7 +936,7 @@ The `>>` pipeline is the core user experience. Its documentation has special req
 
 ### Document the Data Flow
 
-Every callable stage (indicators, events, labels) must document:
+Every callable stage (features, events, labels) must document:
 
 1. **What it expects in the input `NamedTuple`** (required keys).
 2. **What it adds to the output `NamedTuple`** (new keys and their types).
@@ -973,7 +976,7 @@ Use `` [`Name`](@ref) `` to create clickable cross-references in Documenter.jl o
 ### Rules
 
 1. **Always cross-reference** when mentioning another exported symbol in a docstring. Write `` [`Event`](@ref) ``, not `` `Event` ``.
-2. **Qualify ambiguous references**: If `calculate_indicator` is documented for multiple types, use `` [`calculate_indicator(::EMA, ::AbstractVector)`](@ref) ``.
+2. **Qualify ambiguous references**: If `calculate_feature` is documented for multiple types, use `` [`calculate_feature(::EMA, ::AbstractVector)`](@ref) ``.
 3. **Link from `# Throws` sections**: `` [`ArgumentError`](@ref Base.ArgumentError) `` links to Base Julia docs.
 4. **Link abstract types from concrete types**: Every concrete type's docstring should link to its parent abstract type.
 
@@ -984,8 +987,8 @@ Place `# See also` after `# Examples` and before `# Extended help`. Always alpha
 ```julia
 """
 # See also
-- [`calculate_indicator`](@ref): the dispatch point for all indicators.
-- [`CUSUM`](@ref): an alternative indicator for structural break detection.
+- [`calculate_feature`](@ref): the dispatch point for all features.
+- [`CUSUM`](@ref): an alternative feature for structural break detection.
 - [`EMA`](@ref): constructor and type-parameter documentation.
 """
 ```
@@ -1011,7 +1014,7 @@ Julia convention uses imperative mood for function summaries:
 | Do | Don't |
 |----|-------|
 | "Compute the EMA for the given prices." | "Computes the EMA..." |
-| "Return a `NamedTuple` of indicator results." | "Returns a NamedTuple..." |
+| "Return a `NamedTuple` of feature results." | "Returns a NamedTuple..." |
 | "Throw an `ArgumentError` if periods are empty." | "Throws an ArgumentError..." |
 
 ### Precision Over Brevity
@@ -1047,8 +1050,8 @@ These are documentation mistakes to avoid. They are drawn from real Julia ecosys
 
 ```julia
 # BAD — exported with no documentation
-export calculate_indicator
-calculate_indicator(ind::EMA, prices) = ...
+export calculate_feature
+calculate_feature(feat::EMA, prices) = ...
 ```
 
 **Rule**: Every symbol in the `export` list gets a docstring. The `checkdocs = :exports` option in `makedocs` and `Docs.undocumented_names` enforce this mechanically.
@@ -1081,10 +1084,10 @@ results into `dest`. Assume `length(dest) >= n` and `p <= n`.
 """
     EMA(period::Int)
 
-Construct an EMA indicator.
+Construct an EMA feature.
 """
 
-struct EMA{Periods} <: AbstractIndicator  # ← docstring not attached!
+struct EMA{Periods} <: AbstractFeature  # ← docstring not attached!
 ```
 
 This is the most insidious bug because it produces no error or warning. The docstring becomes a free-floating string expression that Julia silently discards.
@@ -1110,7 +1113,7 @@ Document the *function* (or *type*), not individual methods. List all constructo
 # Examples
 ```julia
 ema = EMA(10)
-result = calculate_indicator(ema, prices)  # what is prices?
+result = calculate_feature(ema, prices)  # what is prices?
 ```
 """
 ````
@@ -1120,9 +1123,9 @@ Use `jldoctest` blocks with complete, self-contained examples. If the example ca
 ### Anti-Pattern 6: Wall of Text in Quick Help
 
 ```julia
-# BAD — user types ?calculate_indicator and gets 80 lines
+# BAD — user types ?calculate_feature and gets 80 lines
 """
-    calculate_indicator(ind, prices)
+    calculate_feature(ind, prices)
 
 [... 20 lines of description ...]
 [... 15 lines of mathematical derivation ...]
@@ -1137,13 +1140,13 @@ Use `# Extended help` to separate the quick reference from the deep dive. The fi
 
 ```julia
 # BAD — downstream pipeline stages depend on these keys
-function (ind::EMA{Periods})(bars::PriceBars)
-    return merge((bars=bars,), _indicator_result(ind, bars.close))
+function (feat::EMA{Periods})(bars::PriceBars)
+    return merge((bars=bars,), _feature_result(feat, bars.close))
 end
 # What keys? What types? What order?
 ```
 
-In a pipeline architecture, the return structure of one stage is the input interface of the next. Document every `NamedTuple` return — its keys, their types, and what they represent. This is especially critical for `_indicator_result` and the `Event` callable.
+In a pipeline architecture, the return structure of one stage is the input interface of the next. Document every `NamedTuple` return — its keys, their types, and what they represent. This is especially critical for `_feature_result` and the `Event` callable.
 
 ### Anti-Pattern 8: Forgetting `@ref` Cross-References
 
@@ -1203,11 +1206,11 @@ Return a `Vector{T}` for single-period or `Matrix{T}` for multi-period.
 ```jldoctest
 julia> using Backtest
 
-julia> calculate_indicator(EMA(3), Float64[10,11,12,13,14,15])[3] ≈ 11.0
+julia> calculate_feature(EMA(3), Float64[10,11,12,13,14,15])[3] ≈ 11.0
 true
 ```
 """
-function calculate_indicator(ind::EMA{Periods}, prices::AbstractVector{T}) where {Periods,T}
+function calculate_feature(feat::EMA{Periods}, prices::AbstractVector{T}) where {Periods,T}
 ```
 
 ### When to Adopt
@@ -1233,11 +1236,11 @@ docs/
 └── src/
     ├── index.md          # Landing page / quick-start
     ├── tutorial.md       # The "90% use case" walkthrough
-    ├── indicators.md     # Indicator guide + API
+    ├── features.md       # Feature guide + API
     ├── events.md         # Event detection guide + API
     ├── labels.md         # Triple-barrier labelling guide + API
     ├── pipelines.md      # Pipeline composition guide
-    ├── extending.md      # How to add custom indicators/barriers
+    ├── extending.md      # How to add custom features/barriers
     └── api.md            # Full API reference
 ```
 
@@ -1257,7 +1260,7 @@ makedocs(
         "Home"     => "index.md",
         "Tutorial" => "tutorial.md",
         "Guides" => [
-            "Indicators" => "indicators.md",
+            "Features" => "features.md",
             "Events"     => "events.md",
             "Labels"     => "labels.md",
             "Pipelines"  => "pipelines.md",
@@ -1311,13 +1314,13 @@ PriceBars
 TimeBar
 ```
 
-## Indicators
+## Features
 
 ```@docs
-AbstractIndicator
+AbstractFeature
 EMA
 CUSUM
-calculate_indicator
+calculate_feature
 ```
 
 ## Events
@@ -1424,14 +1427,14 @@ Complete each phase before moving to the next. Within a phase, order doesn't mat
 |------|-----|
 | Module docstring for `Backtest` | First thing users see after `using Backtest; ?Backtest` |
 | All exported types (`PriceBars`, `EMA`, `CUSUM`, `Event`, `Label`, barriers, directions) | Users construct these directly |
-| All exported functions (`calculate_indicator`, `get_data`, `calculate_side`, `calculate_label`) | Primary API surface |
+| All exported functions (`calculate_feature`, `get_data`, `calculate_side`, `calculate_label`) | Primary API surface |
 | All exported macros (`@Event`, `@UpperBarrier`, `@LowerBarrier`, `@TimeBarrier`, `@ConditionBarrier`) | Fragile surface area; examples prevent misuse |
 
 ### Phase 2: Abstract Types and Extension Points (do for every interface)
 
 | What | Why |
 |------|-----|
-| `AbstractIndicator`, `AbstractBarrier`, `AbstractSide`, `AbstractEvent`, `AbstractLabel` | Define the extension contract for contributors |
+| `AbstractFeature`, `AbstractBarrier`, `AbstractSide`, `AbstractEvent`, `AbstractLabel` | Define the extension contract for contributors |
 | Pipeline operator (`>>`) and `Job` type | Core composition mechanism; non-obvious syntax |
 
 ### Phase 3: Examples and Doctests (do for every documented name)
@@ -1446,7 +1449,7 @@ Complete each phase before moving to the next. Within a phase, order doesn't mat
 
 | What | Why |
 |------|-----|
-| `@generated` functions (`_indicator_result`) | Metaprogramming is never self-documenting |
+| `@generated` functions (`_feature_result`) | Metaprogramming is never self-documenting |
 | Computation kernels (`_ema_kernel_unrolled!`, `_calculate_cusum`, `_sma_seed`) | Complex algorithms that future contributors must understand |
 | Pipeline NamedTuple builders | Define the inter-stage data contract |
 | Symbol rewriting internals (`_replace_symbols`, `_build_macro_components`) | Fragile macro plumbing |
@@ -1464,10 +1467,10 @@ Complete each phase before moving to the next. Within a phase, order doesn't mat
 | What | Why |
 |------|-----|
 | Pipeline architecture guide (`pipelines.md`) | Explains the `>>` mental model |
-| Per-module guides (indicators, events, labels) | Deep dives with worked examples |
-| Extending guide (how to add a new indicator/barrier) | Unblocks external contributors |
+| Per-module guides (features, events, labels) | Deep dives with worked examples |
+| Extending guide (how to add a new feature/barrier) | Unblocks external contributors |
 | Performance guide | Threading, SIMD, allocation guidance |
 
 ### When Adding a New Component
 
-Follow the same phase order: write the exported type docstring first (with fields, constructors, and examples), then the public function docstrings (with arguments, returns, throws), then the abstract type interface contract if it's a new extension point, then add `jldoctest` blocks, then document internal kernels if they exist. This applies to every new indicator, side, event, label, barrier, or future module.
+Follow the same phase order: write the exported type docstring first (with fields, constructors, and examples), then the public function docstrings (with arguments, returns, throws), then the abstract type interface contract if it's a new extension point, then add `jldoctest` blocks, then document internal kernels if they exist. This applies to every new feature, side, event, label, barrier, or future module.

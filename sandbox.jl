@@ -61,7 +61,7 @@ strat(bars::PriceBars) =
 
 @benchmark $strat(big_bars)()
 
-inds = EMA(10, 20) >> CUSUM(1)
+feats = EMA(10, 20) >> CUSUM(1)
 side = Crossover(:ema_10, :ema_20; wait_for_cross=false, direction=LongOnly())
 event = Event(d -> d.cusum .!= 0 .&& d.side .!= 0)
 label = Label(
@@ -72,18 +72,18 @@ label = Label(
     entry_basis=NextOpen(),
 )
 
-bars |> inds |> side |> event |> label
+bars |> feats |> side |> event |> label
 
-benchmark_strat = big_bars >> inds >> side >> event >> label
+benchmark_strat = big_bars >> feats >> side >> event >> label
 
 @btime $benchmark_strat()
 @code_warntype benchmark_strat()
 
 @chain data begin
     @transform(
-        :ema_10 = calculate_indicator(EMA(10), :close),
-        :ema_20 = calculate_indicator(EMA(20), :close),
-        :cusum = calculate_indicator(CUSUM(1), :close)
+        :ema_10 = calculate_feature(EMA(10), :close),
+        :ema_20 = calculate_feature(EMA(20), :close),
+        :cusum = calculate_feature(CUSUM(1), :close)
     )
     @transform(:side = calculate_side(Crossover(), :ema_10, :ema_20))
     @transform(:event = Int8.(:cusum .≠ 0 .&& :side .≠ 0))

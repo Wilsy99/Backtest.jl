@@ -1,4 +1,4 @@
-struct CUSUM{T<:AbstractFloat} <: AbstractIndicator
+struct CUSUM{T<:AbstractFloat} <: AbstractFeature
     multiplier::T
     span::Int
     expected_value::T
@@ -13,12 +13,12 @@ function CUSUM(multiplier::Real; span=100, expected_value=0.0)
     return CUSUM{T}(multiplier, span, expected_value)
 end
 
-function calculate_indicator(ind::CUSUM, prices::AbstractVector{T}) where {T<:AbstractFloat}
-    return _calculate_cusum(prices, ind.multiplier, ind.span, ind.expected_value)
+function calculate_feature(feat::CUSUM, prices::AbstractVector{T}) where {T<:AbstractFloat}
+    return _calculate_cusum(prices, feat.multiplier, feat.span, feat.expected_value)
 end
 
-function _indicator_result(ind::CUSUM, prices::AbstractVector{T}) where {T<:AbstractFloat}
-    vals = calculate_indicator(ind, prices)
+function _feature_result(feat::CUSUM, prices::AbstractVector{T}) where {T<:AbstractFloat}
+    vals = calculate_feature(feat, prices)
     return (cusum=vals,)
 end
 

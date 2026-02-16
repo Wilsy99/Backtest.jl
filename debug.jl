@@ -73,16 +73,16 @@ println(
 println("  overhead 200:  $(a_small - z_small) bytes")
 println("  overhead 2000: $(a_large - z_large) bytes")
 
-# ─── 5. calculate_indicator wrapper overhead ────────────────────────────────
-ind = CUSUM(1.0)
-alloc_calc(ind, p) = @allocated calculate_indicator(ind, p)
-calculate_indicator(ind, prices_small)
-alloc_calc(ind, prices_small)
-a_calc = alloc_calc(ind, prices_small)
+# ─── 5. calculate_feature wrapper overhead ────────────────────────────────
+feat = CUSUM(1.0)
+alloc_calc(feat, p) = @allocated calculate_feature(feat, p)
+calculate_feature(feat, prices_small)
+alloc_calc(feat, prices_small)
+a_calc = alloc_calc(feat, prices_small)
 
-println("\n=== 5. calculate_indicator vs _calculate_cusum (n=200) ===")
+println("\n=== 5. calculate_feature vs _calculate_cusum (n=200) ===")
 println("  _calculate_cusum:   $a_small bytes")
-println("  calculate_indicator: $a_calc bytes")
+println("  calculate_feature: $a_calc bytes")
 println("  wrapper overhead:    $(a_calc - a_small) bytes (should be 0)")
 
 # ─── 6. Functor / NamedTuple merge overhead ─────────────────────────────────
@@ -99,10 +99,10 @@ bars = let n = 200
     PriceBars(op, hi, lo, cl, vol, ts, TimeBar())
 end
 
-alloc_functor(ind, b) = @allocated ind(b)
-ind(bars)
-alloc_functor(ind, bars)
-a_func = alloc_functor(ind, bars)
+alloc_functor(feat, b) = @allocated feat(b)
+feat(bars)
+alloc_functor(feat, bars)
+a_func = alloc_functor(feat, bars)
 
 println("\n=== 6. Functor with PriceBars (n=200) ===")
 println("  functor:            $a_func bytes")

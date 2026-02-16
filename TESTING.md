@@ -1,6 +1,6 @@
 # Testing Philosophy & Framework for Backtest.jl
 
-> **Living document.** This describes the testing *philosophy* and *conventions*, not a snapshot of what exists today. When you add a new module, indicator, or pipeline stage, follow the patterns here. Sections marked with specific examples (EMA, CUSUM, etc.) are illustrative — apply the same patterns to every new component.
+> **Living document.** This describes the testing *philosophy* and *conventions*, not a snapshot of what exists today. When you add a new module, feature, or pipeline stage, follow the patterns here. Sections marked with specific examples (EMA, CUSUM, etc.) are illustrative — apply the same patterns to every new component.
 
 ## 1. Core Mandate: Adversarial QA
 
@@ -10,7 +10,7 @@ Every test should target one of these failure modes:
 
 - **Type instabilities**: Code that defeats SIMD/unrolling optimizations.
 - **Numerical edge cases**: NaN, Inf, 0.0, negative prices, Bitcoin-scale values, sub-penny values.
-- **Boundary conditions**: Empty arrays, single elements, input shorter than indicator period, period of 1.
+- **Boundary conditions**: Empty arrays, single elements, input shorter than feature period, period of 1.
 - **Logic gaps**: Assumptions about sorted data, positive prices, non-overlapping time windows, warmup lengths.
 - **Interface mismatches**: Field naming between pipeline stages (`:ema10` vs `:ema_10`), type expectations across `>>` composition.
 - **Macro hygiene**: Symbol rewriting in `@Event`, `@UpperBarrier`, etc. producing incorrect expressions.
@@ -25,18 +25,18 @@ We use [TestItems.jl](https://github.com/JuliaTesting/TestItems.jl), not `includ
 
 - **Isolation**: Each `@testitem` runs in its own module. No leaked state between test files.
 - **Parallelism**: Items run concurrently with `--threads=auto` for free.
-- **Selective execution**: Tags let you run subsets (`julia --tag=indicator`).
+- **Selective execution**: Tags let you run subsets (`julia --tag=feature`).
 
 ### Format
 
 Every test file is a collection of `@testitem` blocks:
 
 ```julia
-@testitem "EMA: Reference Values" tags=[:indicator, :ema, :unit] begin
+@testitem "EMA: Reference Values" tags=[:feature, :ema, :unit] begin
     using Backtest, Test
 
     prices = Float64[10, 11, 12, 13, 14, 15]
-    ema = calculate_indicator(EMA(3), prices)
+    ema = calculate_feature(EMA(3), prices)
 
     @test ema[3] ≈ 11.0
     @test ema[4] ≈ 12.0
@@ -67,15 +67,15 @@ Every `@testitem` gets **at least one category tag** and **at least one componen
 | `:edge` | Boundary conditions, numerical extremes |
 | `:macro` | DSL macro tests |
 
-**Component tags** grow organically with the package. Don't predefine a full taxonomy — add a component tag when you write the first test for that component. Use lowercase, singular, matching the module or type name (e.g., `:ema`, `:cusum`, `:crossover`, `:pipeline`). For modules with multiple implementations, use a finer-grained tag per type (e.g., `:ema` and `:cusum` both fall under the broader `:indicator` tag).
+**Component tags** grow organically with the package. Don't predefine a full taxonomy — add a component tag when you write the first test for that component. Use lowercase, singular, matching the module or type name (e.g., `:ema`, `:cusum`, `:crossover`, `:pipeline`). For modules with multiple implementations, use a finer-grained tag per type (e.g., `:ema` and `:cusum` both fall under the broader `:feature` tag).
 
 The current component tags in use are:
 
 | Tag | Meaning |
 |-----|---------|
-| `:indicator` | Indicator module |
-| `:ema` | EMA indicator |
-| `:cusum` | CUSUM indicator |
+| `:feature` | Feature module |
+| `:ema` | EMA feature |
+| `:cusum` | CUSUM feature |
 
 When you add a new module or type, register a new component tag by adding a row to the table above and using it in your `@testitem` blocks.
 
@@ -173,19 +173,19 @@ Enable `ambiguities=true` once the initial noise is resolved.
 Your `@simd`, `@inbounds`, and unrolled kernels are worthless if the compiler can't infer types. This is non-negotiable for a performance-oriented package.
 
 ```julia
-@testitem "EMA: Type Stability" tags=[:indicator, :ema, :stability] begin
+@testitem "EMA: Type Stability" tags=[:feature, :ema, :stability] begin
     using Backtest, Test
 
     prices64 = Float64.(1:50)
     prices32 = Float32.(1:50)
 
     # Public API
-    @test @inferred(calculate_indicator(EMA(5), prices64)) isa Vector{Float64}
-    @test @inferred(calculate_indicator(EMA(5), prices32)) isa Vector{Float32}
+    @test @inferred(calculate_feature(EMA(5), prices64)) isa Vector{Float64}
+    @test @inferred(calculate_feature(EMA(5), prices32)) isa Vector{Float32}
 
     # Internal kernels (these drive the SIMD loops)
-    @test @inferred(Backtest._indicator_result(EMA(5), prices64)) isa NamedTuple
-    @test @inferred(Backtest._indicator_result(CUSUM(1.0), prices64)) isa NamedTuple
+    @test @inferred(Backtest._feature_result(EMA(5), prices64)) isa NamedTuple
+    @test @inferred(Backtest._feature_result(CUSUM(1.0), prices64)) isa NamedTuple
 end
 ```
 
@@ -194,16 +194,16 @@ end
 JET traces the call graph and finds method errors, unreachable code, and optimisation failures that `@inferred` misses (e.g., an `Any`-typed intermediate inside a function whose return type is still concrete).
 
 ```julia
-@testitem "EMA: Static Analysis" tags=[:indicator, :ema, :stability] begin
+@testitem "EMA: Static Analysis" tags=[:feature, :ema, :stability] begin
     using Backtest, Test, JET
 
     prices = collect(1.0:100.0)
 
     # Check for optimisation issues (type instability inside the body)
-    @test_opt target_modules=(Backtest,) calculate_indicator(EMA(10), prices)
+    @test_opt target_modules=(Backtest,) calculate_feature(EMA(10), prices)
 
     # Check for method errors (calling a function that doesn't exist for those types)
-    @test_call target_modules=(Backtest,) calculate_indicator(EMA(10), prices)
+    @test_call target_modules=(Backtest,) calculate_feature(EMA(10), prices)
 end
 ```
 
@@ -214,7 +214,7 @@ end
 Don't just check `ema[5] == 97.123`. Check properties that must hold for *any* valid input.
 
 ```julia
-@testitem "EMA: Mathematical Properties" tags=[:indicator, :ema, :property] begin
+@testitem "EMA: Mathematical Properties" tags=[:feature, :ema, :property] begin
     using Backtest, Test
 
     # ... setup fixtures ...
@@ -224,7 +224,7 @@ Don't just check `ema[5] == 97.123`. Check properties that must hold for *any* v
     @test maximum(valid_ema) <= maximum(prices) + eps()
 
     # Convergence: constant input → EMA equals that constant
-    @test all(calculate_indicator(EMA(10), fill(42.0, 200))[10:end] .≈ 42.0)
+    @test all(calculate_feature(EMA(10), fill(42.0, 200))[10:end] .≈ 42.0)
 
     # Smoothness: longer period → lower variance of differences
     @test var(diff(ema_long)) < var(diff(ema_short))
@@ -248,12 +248,12 @@ Beyond the four layers, every component needs these specific categories.
 Pin at least one test against hand-calculated expected output. Property tests catch many bugs, but they *cannot* catch a wrong smoothing factor or off-by-one in the SMA seed.
 
 ```julia
-@testitem "EMA: Hand-Calculated Reference" tags=[:indicator, :ema, :reference] begin
+@testitem "EMA: Hand-Calculated Reference" tags=[:feature, :ema, :reference] begin
     using Backtest, Test
 
     # α = 2/(3+1) = 0.5, SMA seed = (10+11+12)/3 = 11.0
     prices = Float64[10, 11, 12, 13, 14, 15]
-    ema = calculate_indicator(EMA(3), prices)
+    ema = calculate_feature(EMA(3), prices)
 
     @test all(isnan, ema[1:2])
     @test ema[3] ≈ 11.0
@@ -278,7 +278,7 @@ These are non-negotiable for financial data:
 | Very large prices (50,000+) | Overflow in squared terms |
 | Very small prices (0.001) | Underflow, loss of precision |
 | Float32 input | Type preservation for GPU compatibility |
-| Negative prices (for log-based indicators) | `DomainError` from `log(-x)` |
+| Negative prices (for log-based features) | `DomainError` from `log(-x)` |
 
 ### C. Integration Tests (pipeline stages composed)
 
@@ -414,7 +414,7 @@ end
 Use `@test_throws` for invalid construction and `@test_logs` for expected warnings.
 
 ```julia
-@testitem "CUSUM: Error and Warning Paths" tags=[:indicator, :cusum, :edge] begin
+@testitem "CUSUM: Error and Warning Paths" tags=[:feature, :cusum, :edge] begin
     using Backtest, Test
 
     # Constructor validation
@@ -423,10 +423,10 @@ Use `@test_throws` for invalid construction and `@test_logs` for expected warnin
     @test_throws ArgumentError CUSUM(1.0; span=0)
 
     # Warmup warning when data is too short
-    @test_logs (:warn,) calculate_indicator(CUSUM(1.0), fill(100.0, 50))
+    @test_logs (:warn,) calculate_feature(CUSUM(1.0), fill(100.0, 50))
 
     # DomainError from log(-x) — note: log(0.0) returns -Inf, doesn't throw
-    @test_throws DomainError calculate_indicator(
+    @test_throws DomainError calculate_feature(
         CUSUM(1.0), vcat(fill(100.0, 50), [-1.0], fill(100.0, 250))
     )
 end
@@ -443,7 +443,7 @@ This is a performance-oriented package — SIMD kernels, unrolled loops, and `@i
 Computation kernels must not allocate on the hot path. Use `@allocated` to enforce this in tests.
 
 ```julia
-@testitem "EMA: Zero Allocations in Kernel" tags=[:indicator, :ema, :stability] begin
+@testitem "EMA: Zero Allocations in Kernel" tags=[:feature, :ema, :stability] begin
     using Backtest, Test
 
     prices = collect(1.0:200.0)
@@ -489,7 +489,7 @@ Non-kernel functions that allocate their result (vectors, matrices) must stay wi
 6. **Sanity check** — `actual > 0` (the function *must* allocate its result).
 
 ```julia
-@testitem "EMA: Allocation — _calculate_ema (single period)" tags=[:indicator, :ema, :allocation] begin
+@testitem "EMA: Allocation — _calculate_ema (single period)" tags=[:feature, :ema, :allocation] begin
     using Backtest, Test
 
     prices = collect(1.0:200.0)
@@ -526,8 +526,8 @@ end
 | `_calculate_ema` (Float32) | `Vector{Float32}(undef, n)` | 512 bytes |
 | `_calculate_emas` (multi-period) | `Matrix{T}(undef, n, k)` | 512 bytes |
 | `_calculate_cusum` | `Vector{Int8}(undef, n)` | 512 bytes |
-| `calculate_indicator` (single) | `Vector{T}(undef, n)` | 512 bytes |
-| `calculate_indicator` (multi) | `Matrix{T}(undef, n, k)` | 1536 bytes |
+| `calculate_feature` (single) | `Vector{T}(undef, n)` | 512 bytes |
+| `calculate_feature` (multi) | `Matrix{T}(undef, n, k)` | 1536 bytes |
 | EMA functor with PriceBars | Result vector + NamedTuple merge | 1024 bytes |
 | EMA functor chaining | Result vector + NamedTuple merge | 1024 bytes |
 | EMA functor multi-period | Result matrix + NamedTuple merge | 1024 bytes |
@@ -537,9 +537,9 @@ end
 
 | Constant | Used for | Why |
 |----------|----------|-----|
-| 512 bytes | Internal functions, `calculate_indicator` single period | Container header is ~80 bytes; 512 gives comfortable margin for alignment and GC jitter |
-| 1536 bytes | `calculate_indicator` multi-period | Dispatches with Periods as a Tuple (not Vector), triggering a different specialization of `_calculate_emas` with more type-computation overhead |
-| 1024 bytes | Functor calls (PriceBars, chaining, multi-period) | Accounts for `merge(input, indicator_result)` NamedTuple construction overhead |
+| 512 bytes | Internal functions, `calculate_feature` single period | Container header is ~80 bytes; 512 gives comfortable margin for alignment and GC jitter |
+| 1536 bytes | `calculate_feature` multi-period | Dispatches with Periods as a Tuple (not Vector), triggering a different specialization of `_calculate_emas` with more type-computation overhead |
+| 1024 bytes | Functor calls (PriceBars, chaining, multi-period) | Accounts for `merge(input, feature_result)` NamedTuple construction overhead |
 
 **When NOT to use `@allocated`:**
 
@@ -662,10 +662,10 @@ test/
 ├── setup_testdata.jl
 ├── aqua_test.jl
 ├── type_tests.jl
-├── indicator/
+├── feature/
 │   ├── ema_tests.jl
 │   ├── cusum_tests.jl
-│   └── indicator_interface_tests.jl
+│   └── feature_interface_tests.jl
 ├── side/
 │   └── crossover_tests.jl
 ├── event/
@@ -719,10 +719,10 @@ This is a phased approach. Complete each phase before moving to the next. Within
 | What | Why |
 |------|-----|
 | Internal function budgets (`_calculate_ema`, `_calculate_emas`, `_calculate_cusum`) | Verifies internal functions allocate only the result container |
-| `calculate_indicator` budget (single + multi) | Verifies public API doesn't add hidden allocations on top of internals |
+| `calculate_feature` budget (single + multi) | Verifies public API doesn't add hidden allocations on top of internals |
 | Functor budget (PriceBars, chaining, multi-period) | Verifies callable interface overhead stays bounded |
 | Float32 allocation parity | Ensures type-generic paths don't introduce extra allocations |
 
 ### When adding a new component
 
-Follow the same phase order: write a reference test first, then `@inferred`, then properties, then edge cases, then hook it into an integration test, then zero-allocation kernel tests, then allocation budgets for every public-facing function layer. This applies to every new indicator, side, event, label, or future module.
+Follow the same phase order: write a reference test first, then `@inferred`, then properties, then edge cases, then hook it into an integration test, then zero-allocation kernel tests, then allocation budgets for every public-facing function layer. This applies to every new feature, side, event, label, or future module.
