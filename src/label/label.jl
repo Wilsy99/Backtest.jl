@@ -33,40 +33,13 @@ function Label!(
     return Label!(barriers, entry_basis, drop_unfinished, barrier_args)
 end
 
-struct LabelResults{I<:Int,D<:TimeType,T<:AbstractFloat}
-    i₀::Vector{I}
-    i₁::Vector{I}
-    t₀::Vector{D}
-    t₁::Vector{D}
+struct LabelResults{I<:Int,T<:AbstractFloat}
+    entry_idx::Vector{I}
+    exit_idx::Vector{I}
     label::Vector{Int8}
+    weight::Vector{T}
     ret::Vector{T}
     log_ret::Vector{T}
-
-    function LabelResults(
-        i₀::Vector{I},
-        i₁::Vector{I},
-        t₀::Vector{D},
-        t₁::Vector{D},
-        labels::Vector{Int8},
-        rets::Vector{T},
-        log_rets::Vector{T};
-        drop_unfinished::Bool=true,
-    ) where {I<:Int,D<:TimeType,T<:AbstractFloat}
-        if drop_unfinished
-            mask = labels .!= Int8(-99)
-            return new{I,D,T}(
-                i₀[mask],
-                i₁[mask],
-                t₀[mask],
-                t₁[mask],
-                labels[mask],
-                rets[mask],
-                log_rets[mask],
-            )
-        else
-            return new{I,D,T}(i₀, i₁, t₀, t₁, labels, rets, log_rets)
-        end
-    end
 end
 
 function (lab::Label)(d::NamedTuple)
@@ -122,35 +95,30 @@ function calculate_label(
 )
     _warn_barrier_ordering(barriers)
 
-    D = eltype(price_bars.timestamp)
     T = eltype(price_bars.close)
-
     n_events = length(event_indices)
     n_prices = length(price_bars)
 
     full_args = merge(barrier_args, (; bars=price_bars))
 
-    i₀ = zeros(Int, n_events)
-    i₁ = zeros(Int, n_events)
-    entry_timestamps = Vector{D}(undef, n_events)
-    exit_timestamps = Vector{D}(undef, n_events)
+    entry_indices = zeros(Int, n_events)
+    exit_indices = zeros(Int, n_events)
     labels = fill(Int8(-99), n_events)
     rets = Vector{T}(undef, n_events)
     log_rets = Vector{T}(undef, n_events)
 
     entry_adj = _get_idx_adj(entry_basis)
 
-    @inbounds @threads for i in 1:n_events
+    @inbounds Base.Threads.@threads for i in 1:n_events
         entry_idx = event_indices[i] + entry_adj
 
         if entry_idx < 1 || entry_idx > n_prices
             continue
         end
 
-        i₀[i] = entry_idx
+        entry_indices[i] = entry_idx
         entry_ts = price_bars.timestamp[entry_idx]
         entry_price = _get_price(entry_basis, zero(T), entry_idx, full_args)
-        entry_timestamps[i] = entry_ts
 
         for j in (entry_idx + 1):n_prices
             loop_args = (; full_args..., idx=j, entry_price=entry_price, entry_ts=entry_ts)
@@ -164,21 +132,49 @@ function calculate_label(
                 entry_price,
                 full_args,
                 n_prices,
-                i₁,
-                exit_timestamps,
+                exit_indices,
                 labels,
                 rets,
                 log_rets,
             )
-
             if hit
                 break
             end
         end
     end
 
+    # Filter unfinished trades BEFORE calculating weights
+    if drop_unfinished
+        mask = labels .!= Int8(-99)
+        final_entry_indices = entry_indices[mask]
+        final_exit_indices = exit_indices[mask]
+        final_labels = labels[mask]
+        final_rets = rets[mask]
+        final_log_rets = log_rets[mask]
+    else
+        final_entry_indices = entry_indices
+        final_exit_indices = exit_indices
+        final_labels = labels
+        final_rets = rets
+        final_log_rets = log_rets
+    end
+
+    weights = _normalised_weights(
+        length(final_entry_indices),
+        n_prices,
+        final_entry_indices,
+        final_exit_indices,
+        final_rets,
+        T,
+    )
+
     return LabelResults(
-        i₀, i₁, entry_timestamps, exit_timestamps, labels, rets, log_rets; drop_unfinished
+        final_entry_indices,
+        final_exit_indices,
+        final_labels,
+        weights,
+        final_rets,
+        final_log_rets,
     )
 end
 
@@ -195,8 +191,6 @@ function _warn_barrier_ordering(barriers::Tuple)
     end
 end
 
-# ── Barrier checking: recursive tuple unrolling ──
-
 @inline function _check_and_process_barriers!(
     i,
     j,
@@ -206,8 +200,7 @@ end
     entry_price,
     full_args,
     n_prices,
-    i₁,
-    exit_timestamps,
+    exit_indices,
     labels,
     rets,
     log_rets,
@@ -223,8 +216,7 @@ end
         entry_price,
         full_args,
         n_prices,
-        i₁,
-        exit_timestamps,
+        exit_indices,
         labels,
         rets,
         log_rets,
@@ -241,8 +233,7 @@ end
     entry_price,
     full_args,
     n_prices,
-    i₁,
-    exit_timestamps,
+    exit_indices,
     labels,
     rets,
     log_rets,
@@ -260,8 +251,7 @@ end
     entry_price,
     full_args,
     n_prices,
-    i₁,
-    exit_timestamps,
+    exit_indices,
     labels,
     rets,
     log_rets,
@@ -278,8 +268,7 @@ end
             entry_price,
             full_args,
             n_prices,
-            i₁,
-            exit_timestamps,
+            exit_indices,
             labels,
             rets,
             log_rets,
@@ -296,8 +285,7 @@ end
             entry_price,
             full_args,
             n_prices,
-            i₁,
-            exit_timestamps,
+            exit_indices,
             labels,
             rets,
             log_rets,
@@ -315,15 +303,12 @@ end
         entry_price,
         full_args,
         n_prices,
-        i₁,
-        exit_timestamps,
+        exit_indices,
         labels,
         rets,
         log_rets,
     )
 end
-
-# ── Exit recording ──
 
 @inline function _record_exit!(
     i,
@@ -333,8 +318,7 @@ end
     entry_price,
     full_args,
     n_prices,
-    i₁,
-    exit_timestamps,
+    exit_indices,
     labels,
     rets,
     log_rets,
@@ -347,8 +331,7 @@ end
     T = eltype(rets)
     exit_price = _get_price(barrier.exit_basis, level, exit_idx, full_args)
 
-    i₁[i] = exit_idx
-    exit_timestamps[i] = full_args.bars.timestamp[exit_idx]
+    exit_indices[i] = exit_idx
     labels[i] = barrier.label
 
     raw_ret = (exit_price / entry_price) - one(T)
@@ -356,4 +339,78 @@ end
     log_rets[i] = log1p(raw_ret)
 
     return true
+end
+
+# ── Weight Calculation ──
+
+@inline function _normalised_weights(
+    n_labels, n_prices, entry_indices, exit_indices, rets, ::Type{T}
+)
+    weights = Vector{T}(undef, n_labels)
+
+    if n_labels == 0
+        return weights
+    end
+
+    cum_inv_concurs = _cumulative_inverse_concurrency(
+        n_prices, entry_indices, exit_indices, T
+    )
+
+    sum_of_weights = zero(T)
+    @inbounds for i in eachindex(entry_indices)
+        entry_idx = entry_indices[i]
+        exit_idx = exit_indices[i]
+        ret = rets[i]
+
+        cum_inv_concur = cum_inv_concurs[exit_idx + 1] - cum_inv_concurs[entry_idx]
+        duration = (exit_idx - entry_idx) + 1
+
+        weight = (cum_inv_concur / duration) * abs(ret)
+        sum_of_weights += weight
+        weights[i] = weight
+    end
+
+    if sum_of_weights > 0
+        weights .*= (n_labels / sum_of_weights)
+    else
+        fill!(weights, one(T))
+    end
+
+    return weights
+end
+
+@inline function _cumulative_inverse_concurrency(
+    n_prices, entry_indices, exit_indices, ::Type{T}
+) where {T}
+    concur_deltas = zeros(Int32, n_prices + 1)
+
+    @inbounds for i in eachindex(entry_indices)
+        entry_idx = entry_indices[i]
+        exit_idx = exit_indices[i]
+
+        if entry_idx > 0 && exit_idx > 0
+            concur_deltas[entry_idx] += 1
+            if exit_idx < n_prices
+                concur_deltas[exit_idx + 1] -= 1
+            end
+        end
+    end
+
+    cum_inv_concurs = Vector{T}(undef, n_prices + 1)
+    cum_inv_concurs[1] = zero(T)
+
+    concur = 0
+    cum_inv_concur = zero(T)
+
+    @inbounds for i in 1:n_prices
+        concur += concur_deltas[i]
+
+        if concur > 0
+            cum_inv_concur += one(T) / concur
+        end
+
+        cum_inv_concurs[i + 1] = cum_inv_concur
+    end
+
+    return cum_inv_concurs
 end

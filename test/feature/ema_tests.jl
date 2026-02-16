@@ -1,6 +1,4 @@
-# ─────────────────────────────────────────────────────────────────────────────
-# Phase 2 — Core Correctness
-# ─────────────────────────────────────────────────────────────────────────────
+# ── Phase 2: Core Correctness ──
 
 @testitem "EMA: Hand-Calculated Reference (period=3)" tags = [:feature, :ema, :reference] begin
     using Backtest, Test
@@ -26,11 +24,11 @@ end
 
     @test length(ema) == 10
     @test all(isnan, ema[1:4])
-    @test ema[5] ≈ 6.0                # SMA seed
-    @test ema[6] ≈ 8.0                # 1/3×12 + 2/3×6
-    @test ema[7] ≈ 10.0               # 1/3×14 + 2/3×8
-    @test ema[8] ≈ 12.0               # 1/3×16 + 2/3×10
-    @test ema[9] ≈ 14.0               # 1/3×18 + 2/3×12
+    @test ema[5] ≈ 6.0                 # SMA seed
+    @test ema[6] ≈ 8.0                 # 1/3×12 + 2/3×6
+    @test ema[7] ≈ 10.0                # 1/3×14 + 2/3×8
+    @test ema[8] ≈ 12.0                # 1/3×16 + 2/3×10
+    @test ema[9] ≈ 14.0                # 1/3×18 + 2/3×12
     @test ema[10] ≈ 16.0               # 1/3×20 + 2/3×14
 end
 
@@ -39,11 +37,10 @@ end
 
     prices = Float64[10, 20, 30, 40, 50]
 
-    @test Backtest._sma_seed(prices, 3) ≈ 20.0      # (10+20+30)/3
-    @test Backtest._sma_seed(prices, 5) ≈ 30.0      # (10+20+30+40+50)/5
-    @test Backtest._sma_seed(prices, 1) ≈ 10.0      # just prices[1]
+    @test Backtest._sma_seed(prices, 3) ≈ 20.0
+    @test Backtest._sma_seed(prices, 5) ≈ 30.0
+    @test Backtest._sma_seed(prices, 1) ≈ 10.0
 
-    # Float32 type preservation
     prices32 = Float32[1, 2, 3]
     result = Backtest._sma_seed(prices32, 3)
     @test result isa Float32
@@ -57,39 +54,30 @@ end
 
     prices = TestData.make_trending_prices(:up; n=200, start=50.0, step=0.5)
 
-    # ── Output length ──
     ema = calculate_feature(EMA(10), prices)
     @test length(ema) == length(prices)
 
-    # ── Boundedness: EMA cannot exceed input range ──
     valid = filter(!isnan, ema)
     @test minimum(valid) >= minimum(prices) - eps()
     @test maximum(valid) <= maximum(prices) + eps()
 
-    # ── Convergence: constant input → EMA equals that constant ──
     flat = TestData.make_flat_prices(; price=42.0, n=200)
     ema_flat = calculate_feature(EMA(10), flat)
     @test all(ema_flat[10:end] .≈ 42.0)
 
-    # ── Smoothness: longer period → lower variance of differences ──
     sine_prices = [100.0 + 10.0 * sin(2π * i / 20) for i in 1:200]
     ema_short = calculate_feature(EMA(5), sine_prices)
     ema_long = calculate_feature(EMA(20), sine_prices)
     @test var(diff(ema_long[21:end])) < var(diff(ema_short[21:end]))
 
-    # ── Directionality: monotone increasing input → monotone increasing EMA ──
     ema_up = calculate_feature(EMA(5), prices)
     @test all(diff(ema_up[6:end]) .> 0)
 
-    # Also for decreasing
     prices_down = TestData.make_trending_prices(:down; n=200, start=200.0, step=0.5)
     ema_down = calculate_feature(EMA(5), prices_down)
     @test all(diff(ema_down[6:end]) .< 0)
 
-    # ── Lag: on a rising linear trend, EMA lags below price ──
     @test all(ema_up[11:end] .< prices[11:end])
-
-    # On a falling trend, EMA lags above price
     @test all(ema_down[11:end] .> prices_down[11:end])
 end
 
@@ -99,33 +87,28 @@ end
     prices64 = Float64.(1:50)
     prices32 = Float32.(1:50)
 
-    # Public API — single period
     @test @inferred(calculate_feature(EMA(5), prices64)) isa Vector{Float64}
     @test @inferred(calculate_feature(EMA(5), prices32)) isa Vector{Float32}
 
-    # Public API — multi-period
     @test @inferred(calculate_feature(EMA(5, 10), prices64)) isa Matrix{Float64}
     @test @inferred(calculate_feature(EMA(5, 10), prices32)) isa Matrix{Float32}
 
-    # Internal: named result builder
     @test @inferred(Backtest._feature_result(EMA(5), prices64)) isa NamedTuple
     @test @inferred(Backtest._feature_result(EMA(5, 10), prices64)) isa NamedTuple
 end
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Phase 3 — Robustness: Edge Cases
-# ─────────────────────────────────────────────────────────────────────────────
+# ── Phase 3: Robustness — Edge Cases ──
 
 @testitem "EMA: Edge Case — Period of 1" tags = [:feature, :ema, :edge] begin
     using Backtest, Test
 
-    # α = 2/(1+1) = 1.0, β = 0.0  →  EMA should equal input exactly
+    # α = 1.0, β = 0.0 → EMA equals input exactly
     prices = Float64[5, 10, 15, 20, 25]
     ema = calculate_feature(EMA(1), prices)
 
     @test length(ema) == 5
     @test ema ≈ prices
-    @test !any(isnan, ema)              # no NaN warmup for period=1
+    @test !any(isnan, ema)
 end
 
 @testitem "EMA: Edge Case — Input Length < Period" tags = [:feature, :ema, :edge] begin
@@ -141,25 +124,22 @@ end
 @testitem "EMA: Edge Case — Input Length == Period" tags = [:feature, :ema, :edge] begin
     using Backtest, Test
 
-    # Exactly one valid value (the SMA seed), rest are NaN warmup
     prices = Float64[10, 20, 30]
     ema = calculate_feature(EMA(3), prices)
 
     @test length(ema) == 3
     @test all(isnan, ema[1:2])
-    @test ema[3] ≈ 20.0                # SMA of [10, 20, 30]
+    @test ema[3] ≈ 20.0
 end
 
 @testitem "EMA: Edge Case — Single Element" tags = [:feature, :ema, :edge] begin
     using Backtest, Test
 
-    # period=1 with single element → valid
     prices = Float64[42.0]
     ema = calculate_feature(EMA(1), prices)
     @test length(ema) == 1
     @test ema[1] ≈ 42.0
 
-    # period > 1 with single element → all NaN
     ema2 = calculate_feature(EMA(2), Float64[42.0])
     @test length(ema2) == 1
     @test isnan(ema2[1])
@@ -175,9 +155,7 @@ end
     @test all(ema[10:end] .≈ 100.0)
 end
 
-@testitem "EMA: Edge Case — Step Function" tags = [:feature, :ema, :edge] setup = [
-    TestData
-] begin
+@testitem "EMA: Edge Case — Step Function" tags = [:feature, :ema, :edge] setup = [TestData] begin
     using Backtest, Test
 
     prices = TestData.make_step_prices(; n=200, low=100.0, high=200.0, step_at=101)
@@ -185,17 +163,10 @@ end
 
     valid = filter(!isnan, ema)
 
-    # Boundedness
     @test minimum(valid) >= 100.0 - eps()
     @test maximum(valid) <= 200.0 + eps()
-
-    # Before step (after warmup), EMA converges to the low level
     @test all(ema[50:100] .≈ 100.0)
-
-    # After step, EMA must be rising toward 200
     @test all(diff(ema[101:120]) .> 0)
-
-    # Eventually converges near 200 (check last values)
     @test ema[end] > 199.0
 end
 
@@ -224,24 +195,18 @@ end
 
     prices32 = Float32.(1:100)
 
-    # Single period
     ema = calculate_feature(EMA(5), prices32)
     @test eltype(ema) == Float32
     @test length(ema) == 100
 
-    # Multi-period
     result = calculate_feature(EMA(5, 10), prices32)
     @test eltype(result) == Float32
     @test size(result) == (100, 2)
 end
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Phase 3 — Robustness: Multi-Period & Interface
-# ─────────────────────────────────────────────────────────────────────────────
+# ── Phase 3: Robustness — Multi-Period & Interface ──
 
-@testitem "EMA: Multi-Period Matches Individual Calculations" tags = [
-    :feature, :ema, :unit
-] begin
+@testitem "EMA: Multi-Period Matches Individual Calculations" tags = [:feature, :ema, :unit] begin
     using Backtest, Test
 
     prices = Float64.(1:100)
@@ -262,13 +227,11 @@ end
 
     prices = Float64.(1:50)
 
-    # Single period → NamedTuple with :ema_10
     nt = Backtest._feature_result(EMA(10), prices)
     @test nt isa NamedTuple
     @test haskey(nt, :ema_10)
     @test isequal(nt.ema_10, calculate_feature(EMA(10), prices))
 
-    # Multi-period → NamedTuple with :ema_5 and :ema_20
     nt2 = Backtest._feature_result(EMA(5, 20), prices)
     @test haskey(nt2, :ema_5)
     @test haskey(nt2, :ema_20)
@@ -282,7 +245,6 @@ end
 
     bars = TestData.make_pricebars(; n=100)
 
-    # Single period
     result = EMA(10)(bars)
     @test result isa NamedTuple
     @test haskey(result, :bars)
@@ -290,7 +252,6 @@ end
     @test result.bars === bars
     @test length(result.ema_10) == 100
 
-    # Multi-period
     result2 = EMA(10, 20)(bars)
     @test haskey(result2, :bars)
     @test haskey(result2, :ema_10)
@@ -304,41 +265,33 @@ end
 
     bars = TestData.make_pricebars(; n=100)
 
-    # Chain: EMA(10) then EMA(20) — simulates pipeline composition
     step1 = EMA(10)(bars)
     step2 = EMA(20)(step1)
 
     @test haskey(step2, :bars)
-    @test haskey(step2, :ema_10)         # preserved from step1
-    @test haskey(step2, :ema_20)         # added by step2
-    @test step2.bars === bars            # original data preserved
+    @test haskey(step2, :ema_10)
+    @test haskey(step2, :ema_20)
+    @test step2.bars === bars
 end
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Phase 3 — Robustness: Constructor & Error Paths
-# ─────────────────────────────────────────────────────────────────────────────
+# ── Phase 3: Robustness — Constructor & Error Paths ──
 
 @testitem "EMA: Constructor Validation" tags = [:feature, :ema, :edge] begin
     using Backtest, Test
 
-    # Invalid: period must be a positive integer
     @test_throws ArgumentError EMA(0)
     @test_throws ArgumentError EMA(-1)
     @test_throws ArgumentError EMA(-10)
 
-    # Invalid: duplicate periods
     @test_throws ArgumentError EMA(3, 3)
     @test_throws ArgumentError EMA(5, 10, 5)
 
-    # Valid constructions
     @test EMA(1) isa EMA
     @test EMA(100) isa EMA
     @test EMA(1, 2, 3) isa EMA
 end
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Phase 3 — Robustness: Performance
-# ─────────────────────────────────────────────────────────────────────────────
+# ── Phase 3: Robustness — Performance ──
 
 @testitem "EMA: Zero Allocations in Kernel" tags = [:feature, :ema, :stability] begin
     using Backtest, Test
@@ -351,21 +304,16 @@ end
     β = 1.0 - α
     dest[p] = Backtest._sma_seed(prices, p)
 
-    # Warmup call (JIT compilation)
     Backtest._ema_kernel_unrolled!(dest, prices, p, n, α, β)
 
-    # Measurement — must be zero allocations
-    # Pass inputs as argument — closures that capture outer-scope variables
-    # allocate due to Core.Box wrapping (Julia boxing for potential reassignment).
+    # Wrapper avoids Core.Box allocation from captured variables
     allocs(dest, prices, p, n, α, β) =
         @allocated Backtest._ema_kernel_unrolled!(dest, prices, p, n, α, β)
 
-    # Run 3 times, take minimum to avoid compilation/GC noise
     actual_kernel = minimum([@allocated(allocs(dest, prices, p, n, α, β)) for _ in 1:3])
     @test actual_kernel == 0
 
-    # Also test _sma_seed
-    Backtest._sma_seed(prices, 10)   # warmup
+    Backtest._sma_seed(prices, 10)
     allocs_seed(prices) = @allocated Backtest._sma_seed(prices, 10)
 
     actual_seed = minimum([@allocated(allocs_seed(prices)) for _ in 1:3])
@@ -380,36 +328,27 @@ end
     prices = collect(1.0:200.0)
     periods = [5, 10, 20]
 
-    # Warmup target function
     Backtest._calculate_emas(prices, periods)
 
-    # Budget: matrix data + 512 bytes for container header + alignment + GC noise
-    # Still catches double-allocation: 4800 + 512 = 5312 << 9600 (2× data)
     expected_data = sizeof(Float64) * length(prices) * length(periods)
     budget = expected_data + 512
 
-    # Define wrapper, warmup wrapper, then measure
     allocs_emas(prices, periods) = @allocated Backtest._calculate_emas(prices, periods)
 
-    # Run 3 times, take minimum
     actual = minimum([@allocated(allocs_emas(prices, periods)) for _ in 1:3])
 
     @test actual <= budget
-    @test actual > 0  # sanity: must allocate the result matrix
+    @test actual > 0
 end
 
 @testitem "EMA: Kernel Unrolled Covers All Remainders" tags = [:feature, :ema, :unit] begin
     using Backtest, Test
 
-    # The kernel processes 4 elements at a time starting from index p+1.
-    # For period=2 and varying lengths, the number of elements after the seed is:
-    #   n - p = n - 2, and the remainder after unrolling is (n-2) mod 4.
-    # Test lengths that produce remainders of 0, 1, 2, 3.
-
+    # Vary n so that (n - period) mod 4 covers all remainders 0..3
     period = 2
     α = 2.0 / (period + 1)
 
-    for n in 6:9   # (n-2) mod 4 = 0,1,2,3
+    for n in 6:9
         prices = Float64.(1:n)
         ema = calculate_feature(EMA(period), prices)
 
@@ -417,7 +356,6 @@ end
         @test isnan(ema[1])
         @test !isnan(ema[2])
 
-        # Verify against manual scalar recurrence
         expected = Vector{Float64}(undef, n)
         expected[1] = NaN
         expected[2] = Backtest._sma_seed(prices, period)
@@ -431,60 +369,22 @@ end
     end
 end
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Phase 4 — Deep Analysis
-# ─────────────────────────────────────────────────────────────────────────────
+# ── Phase 4: Deep Analysis ──
 
 @testitem "EMA: Static Analysis (JET.jl)" tags = [:feature, :ema, :stability] begin
     using Backtest, Test, JET
 
     prices = collect(1.0:100.0)
 
-    # Optimisation issues (type instability inside the body)
     @test_opt target_modules = (Backtest,) calculate_feature(EMA(10), prices)
-
-    # Method errors (calling a function that doesn't exist for those types)
     @test_call target_modules = (Backtest,) calculate_feature(EMA(10), prices)
 end
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Phase 5 — Allocation Budget Tests
-# ─────────────────────────────────────────────────────────────────────────────
+# ── Phase 5: Allocation Budget Tests ──
 #
-# PURPOSE: Verify that each function layer allocates ONLY its result container
-# (Vector or Matrix) and nothing extra. These are NOT zero-allocation tests —
-# the functions must allocate their return value. We're checking that no
-# *accidental* extra allocations sneak in (e.g. an unintended copy of the data).
-#
-# WHY NOT measure the container header with @allocated identity(Vector(undef,0))?
-# That technique gets DCE'd (Dead Code Eliminated) to 0 bytes on some platforms
-# (confirmed on Windows Julia 1.12). Instead we use a fixed overhead constant.
-#
-# THE MIN-OF-N MEASUREMENT PATTERN:
-#   1. Warmup the TARGET function  → compiles the actual code
-#   2. Define a wrapper function    → avoids Core.Box allocations from closures
-#   3. Measure N=3 times and take the MINIMUM → filters tiered compilation & GC noise
-#
-# OVERHEAD CONSTANTS (chosen to be large enough to absorb container headers,
-# alignment, and GC jitter, but small enough to catch real bugs):
-#
-#   512 bytes  — internal functions (_calculate_ema, _calculate_emas)
-#                 and calculate_feature single period (thin wrapper).
-#                 Container header is ~80 bytes; 512 gives comfortable margin.
-#
-#   1536 bytes — calculate_feature multi-period.
-#                 Higher because it dispatches with Periods as a Tuple (not Vector),
-#                 triggering a different specialization of _calculate_emas.
-#                 The tuple-based dispatch path has more type-computation overhead.
-#
-#   1024 bytes — EMA functors (PriceBars, chaining, multi-period).
-#                 Accounts for NamedTuple construction + merge() overhead.
-#
-# BUG DETECTION: each budget is still well below 2× the data size, so an
-# accidental copy of the result (the main regression we guard against) will
-# always be caught. Example for 200×Float64 vector:
-#   budget = 1600 + 512 = 2112, but a copy bug would produce >= 3200.
-# ─────────────────────────────────────────────────────────────────────────────
+# Budget methodology: data bytes + fixed overhead constant.
+# See TESTING.md §6b for rationale on overhead constants and the
+# Min-of-N measurement pattern.
 
 @testitem "EMA: Allocation — _calculate_ema (single period)" tags = [
     :feature, :ema, :allocation
@@ -493,21 +393,17 @@ end
 
     prices = collect(1.0:200.0)
 
-    # Warmup target function
     Backtest._calculate_ema(prices, 10)
 
-    # Budget: vector data + 512 bytes for container header + alignment + GC noise
     expected_data = sizeof(Float64) * length(prices)
     budget = expected_data + 512
 
-    # Define wrapper
     allocs_ema(prices) = @allocated Backtest._calculate_ema(prices, 10)
 
-    # Run 3 times, take minimum
     actual = minimum([@allocated(allocs_ema(prices)) for _ in 1:3])
 
     @test actual <= budget
-    @test actual > 0  # sanity: must allocate the result vector
+    @test actual > 0
 end
 
 @testitem "EMA: Allocation — _calculate_ema Float32" tags = [:feature, :ema, :allocation] begin
@@ -515,17 +411,13 @@ end
 
     prices = collect(Float32.(1:200))
 
-    # Warmup target function
     Backtest._calculate_ema(prices, 10)
 
-    # Budget: vector data + 512 bytes overhead
     expected_data = sizeof(Float32) * length(prices)
     budget = expected_data + 512
 
-    # Define wrapper
     allocs_ema(prices) = @allocated Backtest._calculate_ema(prices, 10)
 
-    # Run 3 times, take minimum
     actual = minimum([@allocated(allocs_ema(prices)) for _ in 1:3])
 
     @test actual <= budget
@@ -539,17 +431,13 @@ end
     prices = collect(1.0:200.0)
     feat = EMA(10)
 
-    # Warmup target function
     calculate_feature(feat, prices)
 
-    # Budget: vector data + 512 bytes overhead (thin wrapper over _calculate_ema)
     expected_data = sizeof(Float64) * length(prices)
     budget = expected_data + 512
 
-    # Define wrapper
     allocs_calc(feat, prices) = @allocated calculate_feature(feat, prices)
 
-    # Run 3 times, take minimum
     actual = minimum([@allocated(allocs_calc(feat, prices)) for _ in 1:3])
 
     @test actual <= budget
@@ -564,17 +452,13 @@ end
     feat = EMA(5, 10, 20)
     n_periods = 3
 
-    # Warmup target function
     calculate_feature(feat, prices)
 
-    # Budget: matrix data + 1536 bytes overhead
     expected_data = sizeof(Float64) * length(prices) * n_periods
     budget = expected_data + 1536
 
-    # Define wrapper
     allocs_calc(feat, prices) = @allocated calculate_feature(feat, prices)
 
-    # Run 3 times, take minimum
     actual = minimum([@allocated(allocs_calc(feat, prices)) for _ in 1:3])
 
     @test actual <= budget
@@ -588,21 +472,17 @@ end
     bars = TestData.make_pricebars(; n=200)
     feat = EMA(10)
 
-    # Warmup target function
     feat(bars)
 
-    # Budget: result vector + 1024 bytes for NamedTuple construction + merge
     expected_data = sizeof(Float64) * 200
     budget = expected_data + 1024
 
-    # Define wrapper
     allocs_functor(feat, bars) = @allocated feat(bars)
 
-    # Run 3 times, take minimum
     actual = minimum([@allocated(allocs_functor(feat, bars)) for _ in 1:3])
 
     @test actual <= budget
-    @test actual > 0  # must allocate result vector at minimum
+    @test actual > 0
 end
 
 @testitem "EMA: Allocation — EMA functor with NamedTuple (chaining)" tags = [
@@ -614,20 +494,15 @@ end
     feat1 = EMA(10)
     feat2 = EMA(20)
 
-    # Build input NamedTuple from first call
     step1 = feat1(bars)
 
-    # Warmup target function
     feat2(step1)
 
-    # Budget: result vector + 1024 bytes for NamedTuple merge
     expected_data = sizeof(Float64) * 200
     budget = expected_data + 1024
 
-    # Define wrapper
     allocs_chain(feat2, step1) = @allocated feat2(step1)
 
-    # Run 3 times, take minimum
     actual = minimum([@allocated(allocs_chain(feat2, step1)) for _ in 1:3])
 
     @test actual <= budget
@@ -641,17 +516,13 @@ end
     bars = TestData.make_pricebars(; n=200)
     feat = EMA(5, 10, 20)
 
-    # Warmup target function
     feat(bars)
 
-    # Budget: matrix data + 1024 bytes for NamedTuple with views + merge
     expected_data = sizeof(Float64) * 200 * 3
     budget = expected_data + 1024
 
-    # Define wrapper
     allocs_functor(feat, bars) = @allocated feat(bars)
 
-    # Run 3 times, take minimum
     actual = minimum([@allocated(allocs_functor(feat, bars)) for _ in 1:3])
 
     @test actual <= budget
