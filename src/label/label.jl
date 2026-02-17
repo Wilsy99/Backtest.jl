@@ -109,7 +109,7 @@ function calculate_label(
 
     entry_adj = _get_idx_adj(entry_basis)
 
-    @inbounds Base.Threads.@threads for i in 1:n_events
+    @inbounds @threads for i in 1:n_events
         entry_idx = event_indices[i] + entry_adj
 
         if entry_idx < 1 || entry_idx > n_prices
@@ -143,7 +143,7 @@ function calculate_label(
         end
     end
 
-    # Filter unfinished trades BEFORE calculating weights
+    # Filter unfinished trades
     if drop_unfinished
         mask = labels .!= Int8(-99)
         final_entry_indices = entry_indices[mask]
@@ -159,12 +159,13 @@ function calculate_label(
         final_log_rets = log_rets
     end
 
-    weights = _normalised_weights(
+    # UPDATED: Pass close prices to the weighting function
+    weights = _return_attribution_weights(
         length(final_entry_indices),
         n_prices,
         final_entry_indices,
         final_exit_indices,
-        final_rets,
+        price_bars.close,  # <--- NEW
         T,
     )
 
@@ -183,12 +184,17 @@ function _warn_barrier_ordering(barriers::Tuple)
         a = barriers[i]
         b = barriers[i + 1]
         if _temporal_priority(a.exit_basis) > _temporal_priority(b.exit_basis)
-            @warn "Barrier $(typeof(a).name.name) with $(typeof(a.exit_basis).name.name) " *
-                "exit basis is listed before $(typeof(b).name.name) with " *
-                "$(typeof(b.exit_basis).name.name) exit basis. The first-listed " *
-                "barrier takes priority when both trigger on the same bar."
+            _warning_message(a, b)
         end
     end
+end
+
+@noinline function _warning_message(barrier_a, barrier_b)
+    @warn "Barrier $(typeof(barrier_a).name.name) with $(typeof(barrier_a.exit_basis).name.name) " *
+        "exit basis is listed before $(typeof(barrier_b).name.name) with " *
+        "$(typeof(barrier_b.exit_basis).name.name) exit basis. The first-listed " *
+        "barrier takes priority when both trigger on the same bar."
+    return nothing
 end
 
 @inline function _check_and_process_barriers!(
@@ -343,33 +349,36 @@ end
 
 # ── Weight Calculation ──
 
-@inline function _normalised_weights(
-    n_labels, n_prices, entry_indices, exit_indices, rets, ::Type{T}
-)
+@inline function _return_attribution_weights(
+    n_labels, n_prices, entry_indices, exit_indices, closes, ::Type{T}
+) where {T}
     weights = Vector{T}(undef, n_labels)
 
     if n_labels == 0
         return weights
     end
 
-    cum_inv_concurs = _cumulative_inverse_concurrency(
-        n_prices, entry_indices, exit_indices, T
+    # Build the cumulative stream of (BarReturn / Concurrency)
+    # This replaces the old inverse concurrency stream
+    cum_attrib_rets = _cumulative_attributed_returns(
+        n_prices, entry_indices, exit_indices, closes, T
     )
 
     sum_of_weights = zero(T)
+
     @inbounds for i in eachindex(entry_indices)
         entry_idx = entry_indices[i]
         exit_idx = exit_indices[i]
-        ret = rets[i]
 
-        cum_inv_concur = cum_inv_concurs[exit_idx + 1] - cum_inv_concurs[entry_idx]
-        duration = (exit_idx - entry_idx) + 1
+        # Weight is simply the absolute sum of attributed returns over the trade lifespan
+        # Because we used a cumulative array, this is O(1) per label
+        weight = abs(cum_attrib_rets[exit_idx + 1] - cum_attrib_rets[entry_idx + 1])
 
-        weight = (cum_inv_concur / duration) * abs(ret)
-        sum_of_weights += weight
         weights[i] = weight
+        sum_of_weights += weight
     end
 
+    # Standard normalization (weights sum to N)
     if sum_of_weights > 0
         weights .*= (n_labels / sum_of_weights)
     else
@@ -379,9 +388,11 @@ end
     return weights
 end
 
-@inline function _cumulative_inverse_concurrency(
-    n_prices, entry_indices, exit_indices, ::Type{T}
+@inline function _cumulative_attributed_returns(
+    n_prices, entry_indices, exit_indices, closes, ::Type{T}
 ) where {T}
+    # 1. Sweep-Line for Concurrency
+    # We use a difference array to track how many trades are active.
     concur_deltas = zeros(Int32, n_prices + 1)
 
     @inbounds for i in eachindex(entry_indices)
@@ -389,28 +400,46 @@ end
         exit_idx = exit_indices[i]
 
         if entry_idx > 0 && exit_idx > 0
-            concur_deltas[entry_idx] += 1
+            # CRITICAL ADJUSTMENT:
+            # We attribute return r_{t-1, t} to concurrent labels.
+            # A trade entered at `entry_idx` is exposed to returns starting from `entry_idx + 1`.
+            # So we increment concurrency starting at `entry_idx + 1`.
+            if entry_idx < n_prices
+                concur_deltas[entry_idx + 1] += 1
+            end
+
+            # We exit at `exit_idx`. We are exposed up to `exit_idx`.
+            # So we stop counting concurrency at `exit_idx + 1`.
             if exit_idx < n_prices
                 concur_deltas[exit_idx + 1] -= 1
             end
         end
     end
 
-    cum_inv_concurs = Vector{T}(undef, n_prices + 1)
-    cum_inv_concurs[1] = zero(T)
+    # 2. Cumulative Sum of Attributed Returns
+    cum_attrib_rets = Vector{T}(undef, n_prices + 1)
+    cum_attrib_rets[1] = zero(T)
 
     concur = 0
-    cum_inv_concur = zero(T)
+    current_cum_val = zero(T)
 
     @inbounds for i in 1:n_prices
         concur += concur_deltas[i]
 
-        if concur > 0
-            cum_inv_concur += one(T) / concur
+        # Calculate bar return (Log Return)
+        # We calculate on the fly to avoid allocating a full log_ret array
+        if i > 1
+            # r_{t-1, t}
+            bar_ret = log(closes[i] / closes[i - 1])
+
+            # If there are active trades, distribute this return among them
+            if concur > 0
+                current_cum_val += bar_ret / concur
+            end
         end
 
-        cum_inv_concurs[i + 1] = cum_inv_concur
+        cum_attrib_rets[i + 1] = current_cum_val
     end
 
-    return cum_inv_concurs
+    return cum_attrib_rets
 end
