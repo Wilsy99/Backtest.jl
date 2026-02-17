@@ -76,6 +76,7 @@ The current component tags in use are:
 | `:feature` | Feature module |
 | `:ema` | EMA feature |
 | `:cusum` | CUSUM feature |
+| `:event` | Event detection module |
 
 When you add a new module or type, register a new component tag by adding a row to the table above and using it in your `@testitem` blocks.
 
