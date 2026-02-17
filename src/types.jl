@@ -2,6 +2,34 @@ abstract type AbstractBarType end
 abstract type AbstractFeature end
 abstract type AbstractSide end
 abstract type AbstractDirection end
+"""
+    AbstractEvent
+
+Supertype for all event detectors in the pipeline.
+
+An event detector identifies bar indices where one or more conditions on price
+data or computed features are satisfied. The result is a `Vector{Int}` of
+matching indices that downstream labelling stages consume.
+
+# Interface
+
+Subtypes must implement the callable interface:
+
+- `(e::MyEvent)(bars::PriceBars) -> NamedTuple`: evaluate the event on raw
+    price data. Return a `NamedTuple` with at least `bars::PriceBars` and
+    `event_indices::Vector{Int}`.
+- `(e::MyEvent)(d::NamedTuple) -> NamedTuple`: evaluate the event on a
+    pipeline `NamedTuple`. Return the input merged with
+    `event_indices::Vector{Int}`.
+
+# Existing Subtypes
+
+- [`Event`](@ref): evaluates boolean condition functions with AND/OR logic.
+
+# See also
+- [`Event`](@ref): the standard event detector.
+- [`@Event`](@ref): DSL macro for constructing `Event` instances.
+"""
 abstract type AbstractEvent end
 abstract type AbstractBarrier end
 abstract type AbstractLabel end
