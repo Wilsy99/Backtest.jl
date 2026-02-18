@@ -32,9 +32,7 @@ end
     fast = Float64[1, 2, 3, 5, 6, 7, 2, 1, 0]
     slow = Float64[3, 3, 3, 3, 3, 3, 3, 3, 3]
 
-    sides = calculate_side(
-        Crossover(; wait_for_cross=false), fast, slow
-    )
+    sides = calculate_side(Crossover(; wait_for_cross=false), fast, slow)
 
     @test length(sides) == 9
     # No waiting — signals start immediately from first valid index
@@ -123,9 +121,9 @@ end
     @test @inferred(calculate_side(cross_nw, fast64, slow64)) isa Vector{Int8}
 end
 
-@testitem "Crossover: Mathematical Properties" tags = [
-    :side, :crossover, :property
-] setup = [TestData] begin
+@testitem "Crossover: Mathematical Properties" tags = [:side, :crossover, :property] setup = [
+    TestData
+] begin
     using Backtest, Test
 
     prices_up = TestData.make_trending_prices(:up; n=200, start=50.0, step=0.5)
@@ -139,21 +137,21 @@ end
     # → should produce all +1 after first cross
     fast_diverge = Float64[i * 1.0 for i in 1:100]
     slow_diverge = Float64[i * 0.5 for i in 1:100]
-    sides_div = calculate_side(Crossover(; wait_for_cross=false), fast_diverge, slow_diverge)
+    sides_div = calculate_side(
+        Crossover(; wait_for_cross=false), fast_diverge, slow_diverge
+    )
     # fast[1]=1 > slow[1]=0.5, so always long from start
     @test all(sides_div .== Int8(1))
 
     # LongOnly never produces -1
     sides_lo = calculate_side(
-        Crossover(; direction=LongOnly(), wait_for_cross=false),
-        prices_up, prices_down,
+        Crossover(; direction=LongOnly(), wait_for_cross=false), prices_up, prices_down
     )
     @test all(s -> s ∈ Int8.([0, 1]), sides_lo)
 
     # ShortOnly never produces +1
     sides_so = calculate_side(
-        Crossover(; direction=ShortOnly(), wait_for_cross=false),
-        prices_up, prices_down,
+        Crossover(; direction=ShortOnly(), wait_for_cross=false), prices_up, prices_down
     )
     @test all(s -> s ∈ Int8.([-1, 0]), sides_so)
 
@@ -278,9 +276,7 @@ end
     @test length(sides) == 5
 end
 
-@testitem "Crossover: Edge Case — Alternating Crossovers" tags = [
-    :side, :crossover, :edge
-] begin
+@testitem "Crossover: Edge Case — Alternating Crossovers" tags = [:side, :crossover, :edge] begin
     using Backtest, Test
 
     # Fast oscillates around slow
@@ -345,9 +341,7 @@ end
     @test c6 isa AbstractSide
 end
 
-@testitem "Crossover: Named Result Builder (_side_result)" tags = [
-    :side, :crossover, :unit
-] begin
+@testitem "Crossover: Named Result Builder (_side_result)" tags = [:side, :crossover, :unit] begin
     using Backtest, Test
 
     fast = Float64[1, 2, 5, 6, 7]
@@ -363,9 +357,9 @@ end
     @test result.side == calculate_side(cross, fast, slow)
 end
 
-@testitem "Crossover: Callable Interface with NamedTuple" tags = [
-    :side, :crossover, :unit
-] setup = [TestData] begin
+@testitem "Crossover: Callable Interface with NamedTuple" tags = [:side, :crossover, :unit] setup = [
+    TestData
+] begin
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=100)
@@ -384,9 +378,9 @@ end
     @test all(s -> s ∈ Int8.([-1, 0, 1]), result.side)
 end
 
-@testitem "Crossover: Pipeline Composition via >>" tags = [
-    :side, :crossover, :unit
-] setup = [TestData] begin
+@testitem "Crossover: Pipeline Composition via >>" tags = [:side, :crossover, :unit] setup = [
+    TestData
+] begin
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=100)
@@ -404,9 +398,7 @@ end
 
 # ── Phase 3: Robustness — Internal Functions ──
 
-@testitem "Crossover: _find_first_cross (LongShort)" tags = [
-    :side, :crossover, :unit
-] begin
+@testitem "Crossover: _find_first_cross (LongShort)" tags = [:side, :crossover, :unit] begin
     using Backtest, Test
 
     # Cross from below to above at index 3
@@ -425,9 +417,7 @@ end
     @test Backtest._find_first_cross(fast3, slow3, 1, LongShort()) == 2
 end
 
-@testitem "Crossover: _find_first_cross (LongOnly)" tags = [
-    :side, :crossover, :unit
-] begin
+@testitem "Crossover: _find_first_cross (LongOnly)" tags = [:side, :crossover, :unit] begin
     using Backtest, Test
 
     # Fast starts below, crosses above at index 3
@@ -446,9 +436,7 @@ end
     @test Backtest._find_first_cross(fast3, slow3, 1, LongOnly()) == -1
 end
 
-@testitem "Crossover: _find_first_cross (ShortOnly)" tags = [
-    :side, :crossover, :unit
-] begin
+@testitem "Crossover: _find_first_cross (ShortOnly)" tags = [:side, :crossover, :unit] begin
     using Backtest, Test
 
     # Fast starts above, crosses below at index 3
@@ -467,9 +455,7 @@ end
     @test Backtest._find_first_cross(fast3, slow3, 1, ShortOnly()) == -1
 end
 
-@testitem "Crossover: _get_condition_func correctness" tags = [
-    :side, :crossover, :unit
-] begin
+@testitem "Crossover: _get_condition_func correctness" tags = [:side, :crossover, :unit] begin
     using Backtest, Test
 
     fast = Float64[1, 3, 5]
@@ -504,7 +490,9 @@ end
     fast = collect(1.0:200.0)
     slow = fill(100.0, 200)
     sides = zeros(Int8, 200)
-    cond_f = Backtest._get_condition_func(fast, slow, LongShort())
+    cond_f = let fast = fast, slow = slow
+        Backtest._get_condition_func(fast, slow, LongShort())
+    end
 
     # Two warmup calls to ensure full JIT specialisation before measuring
     Backtest._fill_sides_generic!(sides, 1, cond_f)
