@@ -506,13 +506,14 @@ end
     sides = zeros(Int8, 200)
     cond_f = Backtest._get_condition_func(fast, slow, LongShort())
 
-    # Warmup
+    # Two warmup calls to ensure full JIT specialisation before measuring
+    Backtest._fill_sides_generic!(sides, 1, cond_f)
     Backtest._fill_sides_generic!(sides, 1, cond_f)
 
-    allocs(sides, from_idx, cond_f) =
-        @allocated Backtest._fill_sides_generic!(sides, from_idx, cond_f)
-
-    actual = minimum([@allocated(allocs(sides, 1, cond_f)) for _ in 1:3])
+    # Measure directly — the double-@allocated wrapper pattern boxes closure
+    # arguments through the comprehension's captured environment, producing
+    # ~144 bytes of measurement noise that is not present in the hot path.
+    actual = @allocated Backtest._fill_sides_generic!(sides, 1, cond_f)
     @test actual == 0
 end
 
