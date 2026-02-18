@@ -128,7 +128,7 @@ end
     nt = EMA(10, 50)(bars)
 
     cond1 = d -> d.ema_10 .> d.ema_50
-    cond2 = d -> d.close .> 100.0
+    cond2 = d -> d.bars.close .> 100.0
 
     evt_and = Event(cond1, cond2; match=:all)
     evt_or = Event(cond1, cond2; match=:any)
