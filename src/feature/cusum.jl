@@ -62,9 +62,9 @@ as a volatility estimate, scaled by `multiplier`.
 
 ## Warmup
 
-The first 101 bars are used to initialise the EMA of squared
+The first `span` + 1 bars are used to initialise the EMA of squared
 log-returns. No signals are produced during this warmup period. If
-the input has 101 or fewer bars, a warning is emitted and all-zeros
+the input has `span` + 1 or fewer bars, a warning is emitted and all-zeros
 are returned.
 
 ## References
@@ -108,7 +108,7 @@ Compute CUSUM filter signals for `prices`.
 
 Return a `Vector{Int8}` of length `length(prices)` where each entry
 is `Int8(1)` (upward break), `Int8(-1)` (downward break), or
-`Int8(0)` (no signal). The first 101 entries are always zero
+`Int8(0)` (no signal). The first `span` + 1 entries are always zero
 (warmup period).
 
 # Arguments
@@ -126,11 +126,11 @@ is `Int8(1)` (upward break), `Int8(-1)` (downward break), or
 ```jldoctest
 julia> using Backtest
 
-julia> prices = vcat(fill(100.0, 101), [200.0]);
+julia> prices = vcat(fill(100.0, 11), [200.0]);
 
-julia> vals = calculate_feature(CUSUM(1.0), prices);
+julia> vals = calculate_feature(CUSUM(1.0; span=10), prices);
 
-julia> vals[102]
+julia> vals[12]
 1
 ```
 
@@ -158,7 +158,7 @@ end
 Core CUSUM computation. Allocate a result vector and run the
 two-accumulator filter with adaptive volatility threshold.
 
-The first 101 bars initialise the EMA of squared log-returns. Post-
+The first `span` + 1 bars initialise the EMA of squared log-returns. Post-
 warmup, each bar updates the positive and negative accumulators. When
 either exceeds the adaptive threshold (`sqrt(ema_sq_mean) * mult`),
 a signal is recorded and the accumulator resets.
@@ -171,7 +171,7 @@ function _calculate_cusum(
     n = length(prices)
     cusum_values = zeros(Int8, n)
 
-    warmup_idx = 101
+    warmup_idx = span + 1
     if n <= warmup_idx
         return _warn_and_return_zeros(n, warmup_idx)
     end
@@ -207,8 +207,6 @@ function _calculate_cusum(
         s_pos = max(zero(T), s_pos + log_return - expected)
         s_neg = min(zero(T), s_neg + log_return + expected)
 
-        ema_sq_mean = α * log_return^2 + β * ema_sq_mean
-
         if s_pos > threshold
             cusum_values[i] = 1
             s_pos = zero(T)
@@ -216,6 +214,8 @@ function _calculate_cusum(
             cusum_values[i] = -1
             s_neg = zero(T)
         end
+
+        ema_sq_mean = α * log_return^2 + β * ema_sq_mean
     end
 
     return cusum_values
