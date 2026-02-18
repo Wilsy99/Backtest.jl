@@ -366,3 +366,39 @@ end
     @test actual <= budget
     @test actual > 0
 end
+
+# ── span parameter behaviour ──
+
+@testitem "CUSUM: span and expected_value are stored correctly" tags = [
+    :feature, :cusum, :unit
+] begin
+    using Backtest, Test
+
+    @test CUSUM(1.0).span == 100
+    @test CUSUM(1.0; span=50).span == 50
+    @test CUSUM(0.5; span=200).span == 200
+    @test CUSUM(1.0; expected_value=0.01).expected_value ≈ 0.01
+    @test CUSUM(3.0; span=200, expected_value=0.005).expected_value ≈ 0.005
+end
+
+@testitem "CUSUM: span does not change warmup boundary" tags = [:feature, :cusum, :unit] begin
+    using Backtest, Test
+
+    # warmup_idx is hardcoded to 101 in _calculate_cusum regardless of span.
+    # span controls only the EMA smoothing factor α = 2/(span+1).
+    # A 60-bar series with span=50 still triggers the short-data warning.
+    @test_logs (:warn,) calculate_feature(CUSUM(1.0; span=50), fill(100.0, 60))
+    @test_logs (:warn,) calculate_feature(CUSUM(1.0; span=10), fill(100.0, 60))
+
+    # n=101 is still at the boundary regardless of span
+    @test_logs (:warn,) calculate_feature(CUSUM(1.0; span=50), fill(100.0, 101))
+
+    # n=102 is always sufficient — no warning for any span value
+    vals_50 = calculate_feature(CUSUM(1.0; span=50), fill(100.0, 102))
+    vals_200 = calculate_feature(CUSUM(1.0; span=200), fill(100.0, 102))
+
+    @test length(vals_50) == 102
+    @test all(vals_50[1:101] .== Int8(0))
+    @test length(vals_200) == 102
+    @test all(vals_200[1:101] .== Int8(0))
+end

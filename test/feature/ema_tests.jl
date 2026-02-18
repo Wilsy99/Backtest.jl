@@ -527,3 +527,74 @@ end
 
     @test actual <= budget
 end
+
+# ── multi_thread=true path ──
+#
+# The @threads branch of _calculate_emas is a distinct code path from the
+# single-threaded for-loop. Allocation budget tests are excluded because
+# task-creation overhead is non-deterministic across Julia versions and thread
+# counts. JET tests are excluded because @threads closures produce false
+# positives for NTuple dynamic indexing. Correctness and type stability are
+# verified below.
+
+@testitem "EMA: multi_thread=true — constructor stores flag" tags = [:feature, :ema, :unit] begin
+    using Backtest, Test
+
+    ema_mt = EMA(5, 10; multi_thread=true)
+    @test ema_mt.multi_thread === true
+
+    ema_st = EMA(5, 10)
+    @test ema_st.multi_thread === false
+
+    @test EMA(5, 10, 20; multi_thread=true) isa EMA
+end
+
+@testitem "EMA: multi_thread=true matches single-threaded results" tags = [
+    :feature, :ema, :unit
+] begin
+    using Backtest, Test
+
+    prices = collect(1.0:200.0)
+
+    result_mt = calculate_feature(EMA(5, 10, 20; multi_thread=true), prices)
+    result_st = calculate_feature(EMA(5, 10, 20; multi_thread=false), prices)
+
+    @test isequal(result_mt, result_st)
+    @test size(result_mt) == (200, 3)
+    @test eltype(result_mt) == Float64
+end
+
+@testitem "EMA: multi_thread=true Type Stability" tags = [:feature, :ema, :stability] begin
+    using Backtest, Test
+
+    prices64 = Float64.(1:200)
+    prices32 = Float32.(1:200)
+
+    @test @inferred(calculate_feature(EMA(5, 10; multi_thread=true), prices64)) isa
+        Matrix{Float64}
+    @test @inferred(calculate_feature(EMA(5, 10; multi_thread=true), prices32)) isa
+        Matrix{Float32}
+end
+
+@testitem "EMA: multi_thread=true functor with PriceBars" tags = [
+    :feature, :ema, :unit
+] setup = [TestData] begin
+    using Backtest, Test
+
+    bars = TestData.make_pricebars(; n=200)
+    feat_mt = EMA(5, 10, 20; multi_thread=true)
+    feat_st = EMA(5, 10, 20; multi_thread=false)
+
+    result_mt = feat_mt(bars)
+    result_st = feat_st(bars)
+
+    @test haskey(result_mt, :bars)
+    @test haskey(result_mt, :ema_5)
+    @test haskey(result_mt, :ema_10)
+    @test haskey(result_mt, :ema_20)
+
+    # Threaded result must be numerically identical to single-threaded
+    @test isequal(result_mt.ema_5, result_st.ema_5)
+    @test isequal(result_mt.ema_10, result_st.ema_10)
+    @test isequal(result_mt.ema_20, result_st.ema_20)
+end

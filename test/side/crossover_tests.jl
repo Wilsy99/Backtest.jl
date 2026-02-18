@@ -640,3 +640,62 @@ end
 
     @test actual <= budget
 end
+
+# ── wait_for_cross=false reference values for LongOnly and ShortOnly ──
+#
+# The existing reference tests only cover wait_for_cross=false for LongShort.
+# With wait_for_cross=false, _calculate_cross_sides skips _find_first_cross
+# and calls _fill_sides_generic! from the first valid (non-NaN) index directly.
+# The direction filter then determines what signal to emit at each bar.
+
+@testitem "Crossover: Hand-Calculated Reference (LongOnly, wait_for_cross=false)" tags = [
+    :side, :crossover, :reference
+] begin
+    using Backtest, Test
+
+    # Same series as the wait_for_cross=true LongOnly reference test
+    fast = Float64[1, 2, 5, 6, 2, 1, 5, 6]
+    slow = Float64[3, 3, 3, 3, 3, 3, 3, 3]
+
+    sides = calculate_side(
+        Crossover(; wait_for_cross=false, direction=LongOnly()), fast, slow
+    )
+
+    @test length(sides) == 8
+    # start_idx=1 (slow[1] is not NaN), emit immediately via LongOnly condition:
+    # ifelse(fast[i] > slow[i], 1, 0)
+    @test sides[1] == Int8(0)   # 1 < 3
+    @test sides[2] == Int8(0)   # 2 < 3
+    @test sides[3] == Int8(1)   # 5 > 3
+    @test sides[4] == Int8(1)   # 6 > 3
+    @test sides[5] == Int8(0)   # 2 < 3
+    @test sides[6] == Int8(0)   # 1 < 3
+    @test sides[7] == Int8(1)   # 5 > 3
+    @test sides[8] == Int8(1)   # 6 > 3
+end
+
+@testitem "Crossover: Hand-Calculated Reference (ShortOnly, wait_for_cross=false)" tags = [
+    :side, :crossover, :reference
+] begin
+    using Backtest, Test
+
+    # Same series as the wait_for_cross=true ShortOnly reference test
+    fast = Float64[5, 4, 1, 0, 4, 5, 1, 0]
+    slow = Float64[3, 3, 3, 3, 3, 3, 3, 3]
+
+    sides = calculate_side(
+        Crossover(; wait_for_cross=false, direction=ShortOnly()), fast, slow
+    )
+
+    @test length(sides) == 8
+    # start_idx=1, emit immediately via ShortOnly condition:
+    # ifelse(fast[i] < slow[i], -1, 0)
+    @test sides[1] == Int8(0)    # 5 > 3
+    @test sides[2] == Int8(0)    # 4 > 3
+    @test sides[3] == Int8(-1)   # 1 < 3
+    @test sides[4] == Int8(-1)   # 0 < 3
+    @test sides[5] == Int8(0)    # 4 > 3
+    @test sides[6] == Int8(0)    # 5 > 3
+    @test sides[7] == Int8(-1)   # 1 < 3
+    @test sides[8] == Int8(-1)   # 0 < 3
+end
