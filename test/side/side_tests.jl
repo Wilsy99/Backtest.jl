@@ -63,3 +63,14 @@ end
     expected = calculate_side(cross, ema_data.ema_10, ema_data.ema_50)
     @test result.side == expected
 end
+
+@testitem "Side: _fill_sides_generic! from_idx beyond length" tags = [:side, :edge] begin
+    using Backtest, Test
+
+    sides = zeros(Int8, 5)
+    cond = i -> Int8(1)
+
+    # from_idx > length(sides) → range 6:5 is empty, no element is written
+    Backtest._fill_sides_generic!(sides, 6, cond)
+    @test all(sides .== Int8(0))
+end

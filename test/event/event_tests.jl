@@ -568,3 +568,47 @@ end
     actual = minimum([@allocated(allocs_inner(mask, res)) for _ in 1:3])
     @test actual == 0
 end
+
+# ── @Event bars-field symbol scoping ──
+#
+# EventContext maps every :symbol → d.symbol (flat lookup).
+# This works when d is a PriceBars (which has .close, .high, etc. directly),
+# but fails on a pipeline NamedTuple where price data lives under d.bars.
+# BarrierContext handles this distinction via its two-path _replace_symbols;
+# EventContext does not. These tests document that behaviour.
+
+@testitem "Macro: @Event — :close symbol resolves on PriceBars directly" tags = [
+    :macro, :event
+] begin
+    using Backtest, Test, Dates
+
+    bars = PriceBars(
+        [99.0, 100.0, 101.0],
+        [100.0, 101.0, 102.0],
+        [98.0, 99.0, 100.0],
+        [99.5, 100.5, 101.5],
+        fill(1000.0, 3),
+        [DateTime(2024, 1, i) for i in 1:3],
+        TimeBar(),
+    )
+
+    # EventContext: :close → d.close. Works when d is PriceBars.
+    evt = @Event :close .> 100.0
+    result = evt(bars)
+    @test result.event_indices == [2, 3]
+end
+
+@testitem "Macro: @Event — :close symbol fails on pipeline NamedTuple" tags = [
+    :macro, :event, :edge
+] setup = [TestData] begin
+    using Backtest, Test
+
+    bars = TestData.make_pricebars(; n=100)
+    nt = EMA(10)(bars)  # NamedTuple: (bars=PriceBars(...), ema_10=Vector{Float64}(...))
+
+    # EventContext maps :close → d.close, but a pipeline NamedTuple exposes
+    # price data under d.bars.close, not at the top level.
+    # Use Event(d -> d.bars.close .> 100.0) for pipeline use.
+    evt = @Event :close .> 100.0
+    @test_throws Exception evt(nt)
+end
