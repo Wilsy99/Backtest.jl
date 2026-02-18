@@ -43,7 +43,7 @@ julia> bars = PriceBars(
            TimeBar(),
        );
 
-julia> evt = Event(d -> d.close .> 100.0);
+julia> evt = Event(d -> d.bars.close .> 100.0);
 
 julia> result = evt(bars);
 
@@ -176,7 +176,7 @@ julia> bars = PriceBars(
            TimeBar(),
        );
 
-julia> evt = Event(d -> d.close .> 100.0);
+julia> evt = Event(d -> d.bars.close .> 100.0);
 
 julia> r = evt(bars);
 
@@ -200,8 +200,9 @@ referenced by the condition expressions.
 Returns the input merged with `event_indices::Vector{Int}`.
 """
 function (e::Event)(bars::PriceBars)
+    d = (bars=bars,)
     n = length(bars.close)
-    indices = _resolve_indices(e, bars, n)
+    indices = _resolve_indices(e, d, n)
     return (; bars=bars, event_indices=indices)
 end
 
@@ -306,14 +307,21 @@ end
 
 Rewrite a quoted symbol to a field access on the pipeline variable `d`.
 
-For example, `:ema_10` (a `QuoteNode`) becomes the expression `d.ema_10`.
-This method is called by `_build_macro_components` when walking the AST of
-a `@Event` expression.
+Price-bar field names (`:open`, `:high`, `:low`, `:close`, `:volume`,
+`:timestamp`) are routed through `d.bars.symbol` so that the same expression
+works regardless of whether `d` is a wrapped `PriceBars` (from the direct
+callable) or a pipeline `NamedTuple`. All other symbols (feature keys such
+as `:ema_10`) are rewritten to the flat form `d.symbol`.
 
 # See also
 - `_replace_symbols(ctx, ex::Expr)`: recursive case for compound expressions.
 - `_replace_symbols(ctx, ex)`: fallback for literals and other non-symbol nodes.
 """
 function _replace_symbols(::EventContext, ex::QuoteNode)
-    return Expr(:., :d, ex)
+    bars_fields = (:open, :high, :low, :close, :volume, :timestamp)
+    if ex.value in bars_fields
+        return :(d.bars.$(ex.value))
+    else
+        return Expr(:., :d, ex)
+    end
 end

@@ -18,7 +18,7 @@
         TimeBar(),
     )
 
-    evt = Event(d -> d.close .> 100.0, d -> d.close .< 102.0; match=:all)
+    evt = Event(d -> d.bars.close .> 100.0, d -> d.bars.close .< 102.0; match=:all)
     result = evt(bars)
 
     @test result.event_indices == [3]
@@ -43,7 +43,7 @@ end
         TimeBar(),
     )
 
-    evt = Event(d -> d.close .> 101.0, d -> d.close .< 99.0; match=:any)
+    evt = Event(d -> d.bars.close .> 101.0, d -> d.bars.close .< 99.0; match=:any)
     result = evt(bars)
 
     @test result.event_indices == [1, 4]
@@ -62,7 +62,7 @@ end
         TimeBar(),
     )
 
-    evt = Event(d -> d.close .> 100.0)
+    evt = Event(d -> d.bars.close .> 100.0)
     result = evt(bars)
 
     @test result.event_indices == [1, 2, 3, 4]
@@ -81,7 +81,7 @@ end
         TimeBar(),
     )
 
-    evt = Event(d -> d.close .> 100.0)
+    evt = Event(d -> d.bars.close .> 100.0)
     result = evt(bars)
 
     @test isempty(result.event_indices)
@@ -96,7 +96,7 @@ end
     evt = Event(d -> d.ema_10 .> 100.0)
 
     # Callable with PriceBars
-    @test @inferred(Event(d -> d.close .> 100.0)(bars)) isa NamedTuple
+    @test @inferred(Event(d -> d.bars.close .> 100.0)(bars)) isa NamedTuple
 
     # Callable with NamedTuple
     @test @inferred(evt(nt)) isa NamedTuple
@@ -112,7 +112,7 @@ end
     bars = TestData.make_pricebars(; n=200)
     n = length(bars)
 
-    evt = Event(d -> d.close .> 100.0)
+    evt = Event(d -> d.bars.close .> 100.0)
     result = evt(bars)
 
     @test issorted(result.event_indices)
@@ -147,7 +147,7 @@ end
 
     bars = TestData.make_pricebars(; n=100)
 
-    cond = d -> d.close .> 100.0
+    cond = d -> d.bars.close .> 100.0
     r_and = Event(cond; match=:all)(bars)
     r_or = Event(cond; match=:any)(bars)
 
@@ -182,12 +182,12 @@ end
 
     # With a single always-true condition:
     # AND and OR both return all indices
-    r = Event(d -> trues(length(d.close)); match=:all)(bars)
+    r = Event(d -> trues(length(d.bars.close)); match=:all)(bars)
     @test length(r.event_indices) == length(bars)
 
     # With a single always-false condition:
     # AND and OR both return empty
-    r2 = Event(d -> falses(length(d.close)); match=:any)(bars)
+    r2 = Event(d -> falses(length(d.bars.close)); match=:any)(bars)
     @test isempty(r2.event_indices)
 end
 
@@ -206,10 +206,10 @@ end
         TimeBar(),
     )
 
-    r_match = Event(d -> d.close .> 100.0)(bars)
+    r_match = Event(d -> d.bars.close .> 100.0)(bars)
     @test r_match.event_indices == [1]
 
-    r_no_match = Event(d -> d.close .> 200.0)(bars)
+    r_no_match = Event(d -> d.bars.close .> 200.0)(bars)
     @test isempty(r_no_match.event_indices)
 end
 
@@ -222,7 +222,7 @@ end
 
     # close > X AND close < X is always empty
     x = 105.0
-    evt = Event(d -> d.close .> x, d -> d.close .< x; match=:all)
+    evt = Event(d -> d.bars.close .> x, d -> d.bars.close .< x; match=:all)
     result = evt(bars)
 
     @test isempty(result.event_indices)
@@ -237,7 +237,7 @@ end
 
     # close > X OR close <= X covers everything
     x = 105.0
-    evt = Event(d -> d.close .> x, d -> d.close .<= x; match=:any)
+    evt = Event(d -> d.bars.close .> x, d -> d.bars.close .<= x; match=:any)
     result = evt(bars)
 
     @test length(result.event_indices) == length(bars)
@@ -259,11 +259,11 @@ end
     )
 
     # Strict threshold: none match
-    r_none = Event(d -> d.close .> 100.0)(bars)
+    r_none = Event(d -> d.bars.close .> 100.0)(bars)
     @test isempty(r_none.event_indices)
 
     # At-or-below threshold: all match
-    r_all = Event(d -> d.close .>= 100.0)(bars)
+    r_all = Event(d -> d.bars.close .>= 100.0)(bars)
     @test length(r_all.event_indices) == n
 end
 
@@ -305,7 +305,7 @@ end
     )
 
     # Non-broadcasting operator returns a single Bool — should warn
-    bad_evt = Event(d -> all(d.close .> 50.0))
+    bad_evt = Event(d -> all(d.bars.close .> 50.0))
     @test_logs (:warn,) bad_evt(bars)
 end
 
@@ -456,7 +456,7 @@ end
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=100)
-    evt = Event(d -> d.close .> 100.0)
+    evt = Event(d -> d.bars.close .> 100.0)
     result = evt(bars)
 
     @test haskey(result, :bars)
@@ -489,7 +489,7 @@ end
     using Backtest, Test, JET
 
     bars = TestData.make_pricebars(; n=100)
-    evt = Event(d -> d.close .> 100.0)
+    evt = Event(d -> d.bars.close .> 100.0)
     nt = EMA(10)(bars)
 
     @test_opt target_modules = (Backtest,) evt(bars)
@@ -506,7 +506,7 @@ end
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=200)
-    evt = Event(d -> d.close .> 100.0)
+    evt = Event(d -> d.bars.close .> 100.0)
 
     # Warmup
     evt(bars)
@@ -552,13 +552,13 @@ end
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=200)
-    evt = Event(d -> d.close .> 100.0)
+    evt = Event(d -> d.bars.close .> 100.0)
     n = length(bars)
 
     # Pre-allocate mask to isolate the inner loop
     mask = trues(n)
     cond = evt.conditions[1]
-    res = cond(bars)
+    res = cond((bars=bars,))
 
     # Warmup
     mask .= (&).(mask, res)
@@ -571,11 +571,11 @@ end
 
 # ── @Event bars-field symbol scoping ──
 #
-# EventContext maps every :symbol → d.symbol (flat lookup).
-# This works when d is a PriceBars (which has .close, .high, etc. directly),
-# but fails on a pipeline NamedTuple where price data lives under d.bars.
-# BarrierContext handles this distinction via its two-path _replace_symbols;
-# EventContext does not. These tests document that behaviour.
+# EventContext maps bars fields (:open, :high, :low, :close, :volume, :timestamp)
+# to d.bars.symbol, matching the BarrierContext routing. Feature fields (:ema_10,
+# etc.) remain as d.symbol (flat lookup). The Event(bars::PriceBars) callable
+# wraps bars as d=(bars=bars,) so that d.bars.close works in both direct and
+# pipeline contexts.
 
 @testitem "Macro: @Event — :close symbol resolves on PriceBars directly" tags = [
     :macro, :event
@@ -592,13 +592,13 @@ end
         TimeBar(),
     )
 
-    # EventContext: :close → d.close. Works when d is PriceBars.
+    # EventContext: :close → d.bars.close. Works on PriceBars (wrapped as (bars=bars,)).
     evt = @Event :close .> 100.0
     result = evt(bars)
     @test result.event_indices == [2, 3]
 end
 
-@testitem "Macro: @Event — :close symbol fails on pipeline NamedTuple" tags = [
+@testitem "Macro: @Event — :close symbol works on pipeline NamedTuple" tags = [
     :macro, :event, :edge
 ] setup = [TestData] begin
     using Backtest, Test
@@ -606,9 +606,21 @@ end
     bars = TestData.make_pricebars(; n=100)
     nt = EMA(10)(bars)  # NamedTuple: (bars=PriceBars(...), ema_10=Vector{Float64}(...))
 
-    # EventContext maps :close → d.close, but a pipeline NamedTuple exposes
-    # price data under d.bars.close, not at the top level.
-    # Use Event(d -> d.bars.close .> 100.0) for pipeline use.
+    # EventContext now routes :close → d.bars.close, matching BarrierContext.
+    # :close in @Event works correctly in both direct (PriceBars) and pipeline
+    # (NamedTuple) contexts.
     evt = @Event :close .> 100.0
-    @test_throws Exception evt(nt)
+    result = evt(nt)
+
+    # Verify the result is structurally correct
+    @test result isa NamedTuple
+    @test haskey(result, :event_indices)
+    @test haskey(result, :bars)
+    @test result.event_indices isa Vector{Int}
+    @test issorted(result.event_indices)
+    @test all(i -> 1 <= i <= 100, result.event_indices)
+
+    # Results should match the equivalent explicit form
+    evt_explicit = Event(d -> d.bars.close .> 100.0)
+    @test result.event_indices == evt_explicit(nt).event_indices
 end
