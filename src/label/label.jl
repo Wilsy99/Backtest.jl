@@ -6,6 +6,7 @@ struct Label{B<:Tuple,E<:AbstractExecutionBasis,NT<:NamedTuple} <: AbstractLabel
     entry_basis::E
     drop_unfinished::Bool
     barrier_args::NT
+    multi_thread::Bool
 end
 
 function Label(
@@ -13,8 +14,9 @@ function Label(
     entry_basis::AbstractExecutionBasis=NextOpen(),
     drop_unfinished::Bool=true,
     barrier_args::NamedTuple=(;),
+    multi_thread::Bool=false,
 )
-    return Label(barriers, entry_basis, drop_unfinished, barrier_args)
+    return Label(barriers, entry_basis, drop_unfinished, barrier_args, multi_thread)
 end
 
 struct Label!{B<:Tuple,E<:AbstractExecutionBasis,NT<:NamedTuple} <: AbstractLabel
@@ -22,6 +24,7 @@ struct Label!{B<:Tuple,E<:AbstractExecutionBasis,NT<:NamedTuple} <: AbstractLabe
     entry_basis::E
     drop_unfinished::Bool
     barrier_args::NT
+    multi_thread::Bool
 end
 
 function Label!(
@@ -29,8 +32,9 @@ function Label!(
     entry_basis::AbstractExecutionBasis=NextOpen(),
     drop_unfinished::Bool=true,
     barrier_args::NamedTuple=(;),
+    multi_thread::Bool=false,
 )
-    return Label!(barriers, entry_basis, drop_unfinished, barrier_args)
+    return Label!(barriers, entry_basis, drop_unfinished, barrier_args, multi_thread)
 end
 
 struct LabelResults{I<:Int,T<:AbstractFloat}
@@ -50,6 +54,7 @@ function (lab::Label)(d::NamedTuple)
         entry_basis=lab.entry_basis,
         drop_unfinished=lab.drop_unfinished,
         barrier_args=merge(d, lab.barrier_args),
+        multi_thread=lab.multi_thread,
     )
 
     return merge(d, (; labels=results))
@@ -63,6 +68,7 @@ function (lab::Label!)(d::NamedTuple)
         entry_basis=lab.entry_basis,
         drop_unfinished=lab.drop_unfinished,
         barrier_args=merge(d, lab.barrier_args),
+        multi_thread=lab.multi_thread,
     )
 end
 
@@ -78,10 +84,17 @@ function calculate_label(
     entry_basis::AbstractExecutionBasis=NextOpen(),
     drop_unfinished::Bool=true,
     barrier_args::NamedTuple=(;),
+    multi_thread::Bool=false,
 ) where {T<:AbstractFloat}
     price_bars = PriceBars(opens, highs, lows, closes, volumes, timestamps, TimeBar())
     return calculate_label(
-        event_indices, price_bars, barriers; entry_basis, drop_unfinished, barrier_args
+        event_indices,
+        price_bars,
+        barriers;
+        entry_basis,
+        drop_unfinished,
+        barrier_args,
+        multi_thread,
     )
 end
 
@@ -92,6 +105,7 @@ function calculate_label(
     entry_basis::AbstractExecutionBasis=NextOpen(),
     drop_unfinished::Bool=true,
     barrier_args::NamedTuple=(;),
+    multi_thread::Bool=false,
 )
     _warn_barrier_ordering(barriers)
 
@@ -109,37 +123,41 @@ function calculate_label(
 
     entry_adj = _get_idx_adj(entry_basis)
 
-    @inbounds @threads for i in 1:n_events
-        entry_idx = event_indices[i] + entry_adj
-
-        if entry_idx < 1 || entry_idx > n_prices
-            continue
-        end
-
-        entry_indices[i] = entry_idx
-        entry_ts = price_bars.timestamp[entry_idx]
-        entry_price = _get_price(entry_basis, zero(T), entry_idx, full_args)
-
-        for j in (entry_idx + 1):n_prices
-            loop_args = (; full_args..., idx=j, entry_price=entry_price, entry_ts=entry_ts)
-
-            hit = _check_and_process_barriers!(
+    if multi_thread
+        @inbounds @threads for i in 1:n_events
+            _process_label_event!(
                 i,
-                j,
-                barriers,
-                loop_args,
-                price_bars,
-                entry_price,
-                full_args,
+                entry_adj,
                 n_prices,
+                event_indices,
+                price_bars,
+                barriers,
+                full_args,
+                entry_basis,
+                entry_indices,
                 exit_indices,
                 labels,
                 rets,
                 log_rets,
             )
-            if hit
-                break
-            end
+        end
+    else
+        @inbounds for i in 1:n_events
+            _process_label_event!(
+                i,
+                entry_adj,
+                n_prices,
+                event_indices,
+                price_bars,
+                barriers,
+                full_args,
+                entry_basis,
+                entry_indices,
+                exit_indices,
+                labels,
+                rets,
+                log_rets,
+            )
         end
     end
 
@@ -177,6 +195,56 @@ function calculate_label(
         final_rets,
         final_log_rets,
     )
+end
+
+@inline function _process_label_event!(
+    i,
+    entry_adj,
+    n_prices,
+    event_indices,
+    price_bars,
+    barriers,
+    full_args,
+    entry_basis,
+    entry_indices,
+    exit_indices,
+    labels,
+    rets,
+    log_rets,
+)
+    T = eltype(rets)
+    entry_idx = event_indices[i] + entry_adj
+
+    if entry_idx < 1 || entry_idx > n_prices
+        return nothing
+    end
+
+    entry_indices[i] = entry_idx
+    entry_ts = price_bars.timestamp[entry_idx]
+    entry_price = _get_price(entry_basis, zero(T), entry_idx, full_args)
+
+    @inbounds for j in (entry_idx + 1):n_prices
+        loop_args = (; full_args..., idx=j, entry_price=entry_price, entry_ts=entry_ts)
+
+        hit = _check_and_process_barriers!(
+            i,
+            j,
+            barriers,
+            loop_args,
+            price_bars,
+            entry_price,
+            full_args,
+            n_prices,
+            exit_indices,
+            labels,
+            rets,
+            log_rets,
+        )
+        if hit
+            break
+        end
+    end
+    return nothing
 end
 
 function _warn_barrier_ordering(barriers::Tuple)
