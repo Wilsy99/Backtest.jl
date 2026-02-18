@@ -31,6 +31,29 @@
     @test vals_multi[104] == Int8(1)
 end
 
+@testitem "CUSUM: Hand-Calculated Reference (non-default span)" tags = [
+    :feature, :cusum, :reference
+] begin
+    using Backtest, Test
+
+    # span=10 → warmup_idx=11: first 11 bars are warmup, signals from bar 12.
+    # Flat warmup → ema_sq_mean = 0 → threshold = sqrt(1e-16) ≈ 1e-8
+    # Jump at i=12: log(200/100) = 0.693 → s_pos = 0.693 > 1e-8 → signal +1
+    prices_up = vcat(fill(100.0, 11), [200.0])
+    vals_up = calculate_feature(CUSUM(1.0; span=10), prices_up)
+
+    @test length(vals_up) == 12
+    @test eltype(vals_up) == Int8
+    @test all(vals_up[1:11] .== Int8(0))
+    @test vals_up[12] == Int8(1)
+
+    # Drop at i=12: log(50/100) = -0.693 → s_neg = -0.693 < -1e-8 → signal -1
+    prices_down = vcat(fill(100.0, 11), [50.0])
+    vals_down = calculate_feature(CUSUM(1.0; span=10), prices_down)
+
+    @test vals_down[12] == Int8(-1)
+end
+
 @testitem "CUSUM: Output Domain Property" tags = [:feature, :cusum, :property] setup = [
     TestData
 ] begin
@@ -119,7 +142,7 @@ end
     @test length(vals_50) == 50
     @test all(vals_50 .== Int8(0))
 
-    # n = 101 is at the boundary (n <= warmup_idx) so still warns
+    # warmup_idx = span + 1 = 101 for default span=100; n=101 is at the boundary so still warns
     vals_101 = @test_logs (:warn,) calculate_feature(CUSUM(1.0), prices_101)
     @test length(vals_101) == 101
     @test all(vals_101 .== Int8(0))
@@ -381,24 +404,25 @@ end
     @test CUSUM(3.0; span=200, expected_value=0.005).expected_value ≈ 0.005
 end
 
-@testitem "CUSUM: span does not change warmup boundary" tags = [:feature, :cusum, :unit] begin
+@testitem "CUSUM: span determines warmup boundary" tags = [:feature, :cusum, :unit] begin
     using Backtest, Test
 
-    # warmup_idx is hardcoded to 101 in _calculate_cusum regardless of span.
-    # span controls only the EMA smoothing factor α = 2/(span+1).
-    # A 60-bar series with span=50 still triggers the short-data warning.
-    @test_logs (:warn,) calculate_feature(CUSUM(1.0; span=50), fill(100.0, 60))
-    @test_logs (:warn,) calculate_feature(CUSUM(1.0; span=10), fill(100.0, 60))
+    # warmup_idx = span + 1, so the warmup length scales with span.
+    # span=50 → warmup_idx=51: n=51 warns, n=52 does not
+    @test_logs (:warn,) calculate_feature(CUSUM(1.0; span=50), fill(100.0, 51))
+    vals_52 = calculate_feature(CUSUM(1.0; span=50), fill(100.0, 52))
+    @test length(vals_52) == 52
+    @test all(vals_52[1:51] .== Int8(0))
 
-    # n=101 is still at the boundary regardless of span
-    @test_logs (:warn,) calculate_feature(CUSUM(1.0; span=50), fill(100.0, 101))
+    # span=10 → warmup_idx=11: n=11 warns, n=12 does not
+    @test_logs (:warn,) calculate_feature(CUSUM(1.0; span=10), fill(100.0, 11))
+    vals_12 = calculate_feature(CUSUM(1.0; span=10), fill(100.0, 12))
+    @test length(vals_12) == 12
+    @test all(vals_12[1:11] .== Int8(0))
 
-    # n=102 is always sufficient — no warning for any span value
-    vals_50 = calculate_feature(CUSUM(1.0; span=50), fill(100.0, 102))
-    vals_200 = calculate_feature(CUSUM(1.0; span=200), fill(100.0, 102))
-
-    @test length(vals_50) == 102
-    @test all(vals_50[1:101] .== Int8(0))
-    @test length(vals_200) == 102
-    @test all(vals_200[1:101] .== Int8(0))
+    # span=200 → warmup_idx=201: n=201 warns, n=202 does not
+    @test_logs (:warn,) calculate_feature(CUSUM(1.0; span=200), fill(100.0, 201))
+    vals_202 = calculate_feature(CUSUM(1.0; span=200), fill(100.0, 202))
+    @test length(vals_202) == 202
+    @test all(vals_202[1:201] .== Int8(0))
 end
