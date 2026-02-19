@@ -15,22 +15,28 @@ synchronisation.
 # Fields
 - `exit_indices::Vector{Int}`: bar index where each event exited.
 - `exit_timestamps::Vector{TS}`: timestamp of the exit bar.
+- `sides::Vector{Int8}`: entry-time side signal for each event.
 - `labels::Vector{Int8}`: barrier label for each event. Initialised
     to `Int8(-99)` as a sentinel for unfinished trades.
+- `bins::Vector{Int8}`: meta label `max(side * label, 0)` for each
+    event. Set when a barrier is hit.
 - `rets::Vector{T}`: raw arithmetic return `(exit_price / entry_price) - 1`.
 - `log_rets::Vector{T}`: log return `log1p(ret)`.
 """
 struct ExitBuffers{T<:AbstractFloat,TS}
     exit_indices::Vector{Int}
     exit_timestamps::Vector{TS}
+    sides::Vector{Int8}
     labels::Vector{Int8}
+    bins::Vector{Int8}
     rets::Vector{T}
     log_rets::Vector{T}
 end
 
 function ExitBuffers(n::Int, ::Type{T}, ::Type{TS}) where {T,TS}
     return ExitBuffers{T,TS}(
-        zeros(Int, n), Vector{TS}(undef, n), fill(Int8(-99), n), zeros(T, n), zeros(T, n)
+        zeros(Int, n), Vector{TS}(undef, n), zeros(Int8, n), fill(Int8(-99), n),
+        zeros(Int8, n), zeros(T, n), zeros(T, n)
     )
 end
 
@@ -118,9 +124,9 @@ period):
 - `entry_price`: fill price at entry.
 - `entry_ts`: timestamp of the entry bar.
 - `entry_side`: side signal (`Int8`) at the entry bar. Equals the
-    `side` vector value at the entry index when a [`Crossover`](@ref)
-    or other side detector is upstream, or `Int8(0)` otherwise. Use
-    this to condition barrier levels on trade direction.
+    `side` vector value at the entry bar index. A side detector
+    (e.g. [`Crossover`](@ref)) must be upstream in the pipeline.
+    Use this to condition barrier levels on trade direction.
 
 # Examples
 ```julia
@@ -150,6 +156,8 @@ Expects a `NamedTuple` with at least:
 - `event_indices::Vector{Int}`: bar indices from an upstream
     [`Event`](@ref).
 - `bars::PriceBars`: the price data.
+- `side::Vector{Int8}`: side signals from an upstream side detector
+    (e.g. [`Crossover`](@ref)).
 
 ## Output
 Return the input merged with:
@@ -209,8 +217,14 @@ have the same length (one entry per resolved event, or per event if
 - `exit_idx::Vector{I}`: bar index of barrier exit.
 - `entry_ts::Vector{TS}`: timestamp of the entry bar.
 - `exit_ts::Vector{TS}`: timestamp of the exit bar.
+- `side::Vector{Int8}`: entry-time side signal (`1` long, `-1`
+    short, `0` neutral). Snapshotted from the `side` vector at the
+    entry bar index.
 - `label::Vector{Int8}`: barrier label (`1` upper, `-1` lower, `0`
     time/condition, `-99` unfinished).
+- `bin::Vector{Int8}`: meta label `max(side * label, 0)`. Equals
+    `1` when the trade direction agrees with the barrier outcome,
+    `0` otherwise.
 - `weight::Vector{T}`: sample weight incorporating attribution,
     time decay, and class-imbalance correction.
 - `ret::Vector{T}`: arithmetic return `(exit_price / entry_price) - 1`.
@@ -225,7 +239,9 @@ struct LabelResults{I<:Int,T<:AbstractFloat,TS}
     exit_idx::Vector{I}
     entry_ts::Vector{TS}
     exit_ts::Vector{TS}
+    side::Vector{Int8}
     label::Vector{Int8}
+    bin::Vector{Int8}
     weight::Vector{T}
     ret::Vector{T}
     log_ret::Vector{T}
@@ -238,6 +254,7 @@ end
         d.event_indices,
         d.bars,
         core.barriers;
+        side=d.side,
         entry_basis=core.entry_basis,
         drop_unfinished=core.drop_unfinished,
         time_decay_start=core.time_decay_start,
@@ -271,6 +288,8 @@ ordering.
     checked in order of priority.
 
 # Keywords
+- `side::AbstractVector{Int8}`: side signals (required). One entry
+    per bar (`1` long, `-1` short, `0` neutral).
 - `entry_basis::AbstractExecutionBasis = NextOpen()`: determines the
     entry fill price and index offset.
 - `drop_unfinished::Bool = true`: drop events whose barriers are not
@@ -283,7 +302,7 @@ ordering.
 
 # Returns
 - [`LabelResults`](@ref): labelling output with entry/exit indices,
-    timestamps, labels, weights, and returns.
+    timestamps, side, labels, bin (meta label), weights, and returns.
 
 # See also
 - [`Label`](@ref), [`Label!`](@ref): functor wrappers for pipeline use.
@@ -297,6 +316,7 @@ function calculate_label(
     closes::AbstractVector{T},
     volumes::AbstractVector{T},
     barriers::Tuple;
+    side::AbstractVector{Int8},
     entry_basis::AbstractExecutionBasis=NextOpen(),
     drop_unfinished::Bool=true,
     time_decay_start::Real=1.0,
@@ -308,6 +328,7 @@ function calculate_label(
         event_indices,
         price_bars,
         barriers;
+        side,
         entry_basis,
         drop_unfinished,
         time_decay_start,
@@ -320,6 +341,7 @@ function calculate_label(
     event_indices::AbstractVector{Int},
     price_bars::PriceBars,
     barriers::Tuple;
+    side::AbstractVector{Int8},
     entry_basis::AbstractExecutionBasis=NextOpen(),
     drop_unfinished::Bool=true,
     time_decay_start::Real=1.0,
@@ -342,7 +364,7 @@ function calculate_label(
     n_events = length(sorted_events)
     n_prices = length(price_bars)
 
-    full_args = merge(barrier_args, (; bars=price_bars))
+    full_args = merge(barrier_args, (; bars=price_bars, side=side))
 
     entry_indices = zeros(Int, n_events)
     entry_timestamps = fill(price_bars.timestamp[1], n_events)
@@ -373,7 +395,9 @@ function calculate_label(
     exit_idx = buf.exit_indices[mask]
     entry_ts = entry_timestamps[mask]
     exit_ts = buf.exit_timestamps[mask]
+    sides = buf.sides[mask]
     labels = buf.labels[mask]
+    bins = buf.bins[mask]
     rets = buf.rets[mask]
     log_rets = buf.log_rets[mask]
 
@@ -400,14 +424,17 @@ function calculate_label(
         exit_idx = exit_idx[reorder]
         entry_ts = entry_ts[reorder]
         exit_ts = exit_ts[reorder]
+        sides = sides[reorder]
         labels = labels[reorder]
+        bins = bins[reorder]
         weights = weights[reorder]
         rets = rets[reorder]
         log_rets = log_rets[reorder]
     end
 
     return LabelResults(
-        entry_idx, exit_idx, entry_ts, exit_ts, labels, weights, rets, log_rets
+        entry_idx, exit_idx, entry_ts, exit_ts, sides, labels, bins, weights, rets,
+        log_rets,
     )
 end
 
@@ -489,7 +516,7 @@ the following scalar (entry-time) fields:
 - `entry_price`: fill price at entry, determined by `entry_basis`.
 - `entry_ts`: timestamp of the entry bar.
 - `entry_side`: side signal (`Int8`) at the entry bar, snapshotted
-    from `full_args.side` if present, or `Int8(0)` otherwise.
+    from `full_args.side` at the entry bar index.
 """
 @inline function _label_event!(
     i,
@@ -518,13 +545,13 @@ the following scalar (entry-time) fields:
     entry_price = _get_price(entry_basis, zero(T), entry_idx, full_args)
     entry_ts = entry_timestamps[i]
     # Snapshot the side signal at entry so barrier functions can branch on trade direction
-    entry_side = hasproperty(full_args, :side) ? Int8(full_args.side[entry_idx]) : Int8(0)
+    entry_side = full_args.side[entry_idx]
 
     for j in (entry_idx + 1):n_prices
         loop_args = (; full_args..., idx=j, entry_price=entry_price, entry_ts=entry_ts, entry_side=entry_side)
 
         hit = _check_barriers!(
-            i, j, barriers, loop_args, price_bars, entry_price, full_args, n_prices, buf
+            i, j, barriers, loop_args, price_bars, entry_price, entry_side, full_args, n_prices, buf
         )
         hit && break
     end
@@ -562,7 +589,7 @@ end
 end
 
 """
-    _check_barriers!(i, j, barriers, loop_args, price_bars, entry_price, full_args, n_prices, buf) -> Bool
+    _check_barriers!(i, j, barriers, loop_args, price_bars, entry_price, entry_side, full_args, n_prices, buf) -> Bool
 
 Check all barriers for the current bar `j` of event `i`.
 
@@ -577,6 +604,7 @@ the exit was recorded), `false` otherwise.
     loop_args,
     price_bars,
     entry_price,
+    entry_side,
     full_args,
     n_prices,
     buf::ExitBuffers,
@@ -590,6 +618,7 @@ the exit was recorded), `false` otherwise.
         loop_args,
         price_bars,
         entry_price,
+        entry_side,
         full_args,
         n_prices,
         buf,
@@ -605,6 +634,7 @@ end
     loop_args,
     price_bars,
     entry_price,
+    entry_side,
     full_args,
     n_prices,
     buf::ExitBuffers,
@@ -613,7 +643,7 @@ end
 end
 
 """
-    _check_barrier_recursive!(i, j, barriers, open_price, loop_args, price_bars, entry_price, full_args, n_prices, buf) -> Bool
+    _check_barrier_recursive!(i, j, barriers, open_price, loop_args, price_bars, entry_price, entry_side, full_args, n_prices, buf) -> Bool
 
 Recursively check barriers via tuple unrolling.
 
@@ -631,6 +661,7 @@ time.
     loop_args,
     price_bars,
     entry_price,
+    entry_side,
     full_args,
     n_prices,
     buf::ExitBuffers,
@@ -641,13 +672,15 @@ time.
     # Gap check: did the bar open past the barrier?
     if gap_hit(barrier, level, open_price)
         return _record_exit!(
-            i, j, barrier, open_price, entry_price, full_args, n_prices, buf
+            i, j, barrier, open_price, entry_price, entry_side, full_args, n_prices, buf
         )
     # Intra-bar check: did the trading range touch the barrier?
     elseif barrier_hit(
         barrier, level, price_bars.low[j], price_bars.high[j], price_bars.timestamp[j]
     )
-        return _record_exit!(i, j, barrier, level, entry_price, full_args, n_prices, buf)
+        return _record_exit!(
+            i, j, barrier, level, entry_price, entry_side, full_args, n_prices, buf
+        )
     end
 
     return _check_barrier_recursive!(
@@ -658,6 +691,7 @@ time.
         loop_args,
         price_bars,
         entry_price,
+        entry_side,
         full_args,
         n_prices,
         buf,
@@ -665,17 +699,17 @@ time.
 end
 
 """
-    _record_exit!(i, j, barrier, level, entry_price, full_args, n_prices, buf) -> Bool
+    _record_exit!(i, j, barrier, level, entry_price, entry_side, full_args, n_prices, buf) -> Bool
 
 Record a barrier exit into `buf` at event slot `i`.
 
 Compute the exit index from the barrier's `exit_basis` adjustment.
 Return `false` without recording if the exit index exceeds available
 data (e.g., `NextOpen` exit on the final bar). Otherwise record the
-exit index, timestamp, label, and returns, then return `true`.
+exit index, timestamp, side, label, bin, and returns, then return `true`.
 """
 @inline function _record_exit!(
-    i, j, barrier, level, entry_price, full_args, n_prices, buf::ExitBuffers
+    i, j, barrier, level, entry_price, entry_side, full_args, n_prices, buf::ExitBuffers
 )
     exit_adj = _get_idx_adj(barrier.exit_basis)
     exit_idx = j + exit_adj
@@ -687,7 +721,9 @@ exit index, timestamp, label, and returns, then return `true`.
 
     buf.exit_indices[i] = exit_idx
     buf.exit_timestamps[i] = full_args.bars.timestamp[exit_idx]
+    buf.sides[i] = entry_side
     buf.labels[i] = barrier.label
+    buf.bins[i] = max(entry_side * barrier.label, Int8(0))
 
     raw_ret = (exit_price / entry_price) - one(T)
     buf.rets[i] = raw_ret
