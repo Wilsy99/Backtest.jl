@@ -25,7 +25,8 @@ end
 LowerBarrier(f; label=-1, exit_basis=Immediate()) = LowerBarrier(f, label, exit_basis)
 UpperBarrier(f; label=1, exit_basis=Immediate()) = UpperBarrier(f, label, exit_basis)
 TimeBarrier(f; label=0, exit_basis=Immediate()) = TimeBarrier(f, label, exit_basis)
-function ConditionBarrier(f; label=0, exit_basis=NextClose())
+
+function ConditionBarrier(f; label=0, exit_basis=NextOpen())
     return ConditionBarrier(f, label, exit_basis)
 end
 

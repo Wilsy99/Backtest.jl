@@ -19,3 +19,6 @@ _get_idx_adj(::Union{NextOpen,NextClose}) = 1
 @inline _get_price(::Union{CurrentClose,NextClose}, ::Any, idx, args) = args.bars.close[idx]
 @inline _get_price(::Immediate, level::AbstractFloat, ::Any, ::Any) = level
 @inline _get_price(::Immediate, ::Union{TimeType,Bool}, idx, args) = args.bars.close[idx]
+
+_get_exposure_adj(::Union{CurrentOpen,NextOpen,Immediate}) = 0
+_get_exposure_adj(::Union{CurrentClose,NextClose}) = 1

@@ -57,7 +57,9 @@ strat(bars::PriceBars) =
         )
 #! format: on
 
-@benchmark $strat(bars)()
+@time strat(bars)()
+
+@time strat(big_bars)()
 
 @benchmark $strat(big_bars)()
 
