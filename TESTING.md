@@ -77,6 +77,10 @@ The current component tags in use are:
 | `:ema` | EMA feature |
 | `:cusum` | CUSUM feature |
 | `:event` | Event detection module |
+| `:label` | Label module |
+| `:barrier` | Barrier types and dispatch |
+| `:execution` | Execution basis types |
+| `:pipeline` | Pipeline composition and `>>` operator |
 
 When you add a new module or type, register a new component tag by adding a row to the table above and using it in your `@testitem` blocks.
 

@@ -4,8 +4,21 @@ include("barrier.jl")
 # ── Output Buffers ──
 
 """
-Thread-safe output buffer for barrier exit recording.
-Each thread writes to a unique index `i`, so no synchronisation is needed.
+    ExitBuffers{T<:AbstractFloat,TS}
+
+Thread-safe output buffer for recording barrier exit results.
+
+Each event index `i` maps to a unique slot in each vector, so
+concurrent writes from `Threads.@threads` do not require
+synchronisation.
+
+# Fields
+- `exit_indices::Vector{Int}`: bar index where each event exited.
+- `exit_timestamps::Vector{TS}`: timestamp of the exit bar.
+- `labels::Vector{Int8}`: barrier label for each event. Initialised
+    to `Int8(-99)` as a sentinel for unfinished trades.
+- `rets::Vector{T}`: raw arithmetic return `(exit_price / entry_price) - 1`.
+- `log_rets::Vector{T}`: log return `log1p(ret)`.
 """
 struct ExitBuffers{T<:AbstractFloat,TS}
     exit_indices::Vector{Int}
@@ -24,9 +37,27 @@ end
 # ── Label Structs ──
 
 """
-Shared storage for `Label` and `Label!`. Both are identical except that
-`Label` merges results into the input NamedTuple while `Label!` returns
-only the `LabelResults`.
+    _LabelCore{B<:Tuple,E<:AbstractExecutionBasis,NT<:NamedTuple}
+
+Shared storage for [`Label`](@ref) and [`Label!`](@ref) functors.
+
+Both functor types delegate to `_run_label` which calls
+[`calculate_label`](@ref) with the settings stored here. The only
+difference is how the result is returned: `Label` merges it into the
+pipeline `NamedTuple`, while `Label!` returns the raw
+[`LabelResults`](@ref).
+
+# Fields
+- `barriers::B`: tuple of [`AbstractBarrier`](@ref) instances.
+- `entry_basis::E`: execution basis for trade entry pricing.
+- `drop_unfinished::Bool`: whether to drop events whose barriers
+    are not resolved by end of data.
+- `time_decay_start::Float64`: starting value for linear time decay
+    in weight calculation. Ramps from this value to `1.0` across
+    events in temporal order.
+- `multi_thread::Bool`: enable multi-threaded event loop.
+- `barrier_args::NT`: additional keyword arguments forwarded to
+    barrier level functions via `merge`.
 """
 struct _LabelCore{B<:Tuple,E<:AbstractExecutionBasis,NT<:NamedTuple}
     barriers::B
@@ -55,10 +86,84 @@ function _LabelCore(
     )
 end
 
+"""
+    Label{C<:_LabelCore} <: AbstractLabel
+
+Triple-barrier labelling functor that merges results into the pipeline
+`NamedTuple`.
+
+When called on a pipeline `NamedTuple` containing `event_indices` and
+`bars`, compute labels for each event and return the input merged with
+`(; labels=LabelResults(...))`.
+
+# Constructors
+    Label(barriers::AbstractBarrier...; kwargs...)
+
+# Keywords
+- `entry_basis::AbstractExecutionBasis = NextOpen()`: execution basis
+    for trade entry pricing.
+- `drop_unfinished::Bool = true`: drop events whose barriers are not
+    resolved by end of data.
+- `time_decay_start::Real = 1.0`: starting value for linear time
+    decay (`1.0` disables decay).
+- `multi_thread::Bool = false`: enable multi-threaded event loop.
+- `barrier_args::NamedTuple = (;)`: additional arguments forwarded to
+    barrier level functions.
+
+# Examples
+```julia
+using Backtest, Dates
+
+lab = Label(
+    UpperBarrier(d -> d.entry_price * 1.05),
+    LowerBarrier(d -> d.entry_price * 0.95),
+    TimeBarrier(d -> d.entry_ts + Day(20)),
+)
+
+# In a pipeline:
+# result = bars >> EMA(10, 50) >> evt >> lab
+```
+
+# Pipeline Data Flow
+
+## Input
+Expects a `NamedTuple` with at least:
+- `event_indices::Vector{Int}`: bar indices from an upstream
+    [`Event`](@ref).
+- `bars::PriceBars`: the price data.
+
+## Output
+Return the input merged with:
+- `labels::LabelResults`: the labelling results.
+
+# See also
+- [`Label!`](@ref): variant that returns only `LabelResults`.
+- [`calculate_label`](@ref): the underlying computation function.
+- [`LabelResults`](@ref): the output container.
+"""
 struct Label{C<:_LabelCore} <: AbstractLabel
     core::C
 end
 
+"""
+    Label!{C<:_LabelCore} <: AbstractLabel
+
+Triple-barrier labelling functor that returns only the
+[`LabelResults`](@ref) without merging into the pipeline.
+
+Identical to [`Label`](@ref) in computation, but returns the raw
+`LabelResults` struct instead of merging it into the input
+`NamedTuple`. Useful when the upstream pipeline data is not needed
+downstream.
+
+# Constructors
+    Label!(barriers::AbstractBarrier...; kwargs...)
+
+Keywords are identical to [`Label`](@ref).
+
+# See also
+- [`Label`](@ref): variant that merges results into the pipeline.
+"""
 struct Label!{C<:_LabelCore} <: AbstractLabel
     core::C
 end
@@ -71,6 +176,31 @@ function Label!(barriers::AbstractBarrier...; kwargs...)
     return Label!(_LabelCore(barriers...; kwargs...))
 end
 
+"""
+    LabelResults{I<:Int,T<:AbstractFloat,TS}
+
+Immutable container for triple-barrier labelling output.
+
+Each field is a parallel vector indexed by event number. All vectors
+have the same length (one entry per resolved event, or per event if
+`drop_unfinished=false`).
+
+# Fields
+- `entry_idx::Vector{I}`: bar index of trade entry.
+- `exit_idx::Vector{I}`: bar index of barrier exit.
+- `entry_ts::Vector{TS}`: timestamp of the entry bar.
+- `exit_ts::Vector{TS}`: timestamp of the exit bar.
+- `label::Vector{Int8}`: barrier label (`1` upper, `-1` lower, `0`
+    time/condition, `-99` unfinished).
+- `weight::Vector{T}`: sample weight incorporating attribution,
+    time decay, and class-imbalance correction.
+- `ret::Vector{T}`: arithmetic return `(exit_price / entry_price) - 1`.
+- `log_ret::Vector{T}`: log return `log1p(ret)`.
+
+# See also
+- [`Label`](@ref), [`Label!`](@ref): functors that produce this.
+- [`calculate_label`](@ref): the computation function.
+"""
 struct LabelResults{I<:Int,T<:AbstractFloat,TS}
     entry_idx::Vector{I}
     exit_idx::Vector{I}
@@ -102,6 +232,43 @@ end
 
 # ── Main Label Calculation ──
 
+"""
+    calculate_label(event_indices, timestamps, opens, highs, lows, closes, volumes, barriers; kwargs...) -> LabelResults
+    calculate_label(event_indices, price_bars, barriers; kwargs...) -> LabelResults
+
+Compute triple-barrier labels for a set of event indices.
+
+For each event, walk forward through subsequent bars and check each
+barrier in priority order. The first barrier hit determines the exit
+bar, label, and return. Events are processed in temporal order for
+correct time-decay weighting, then restored to the caller's original
+ordering.
+
+# Arguments
+- `event_indices::AbstractVector{Int}`: bar indices where events were
+    detected.
+- `price_bars::PriceBars`: OHLCV price data with timestamps.
+- `barriers::Tuple`: tuple of [`AbstractBarrier`](@ref) instances,
+    checked in order of priority.
+
+# Keywords
+- `entry_basis::AbstractExecutionBasis = NextOpen()`: determines the
+    entry fill price and index offset.
+- `drop_unfinished::Bool = true`: drop events whose barriers are not
+    resolved by end of data.
+- `time_decay_start::Real = 1.0`: starting value for linear time
+    decay in weight calculation. `1.0` disables decay.
+- `multi_thread::Bool = false`: enable multi-threaded event loop.
+- `barrier_args::NamedTuple = (;)`: additional context forwarded to
+    barrier level functions.
+
+# Returns
+- [`LabelResults`](@ref): labelling output with entry/exit indices,
+    timestamps, labels, weights, and returns.
+
+# See also
+- [`Label`](@ref), [`Label!`](@ref): functor wrappers for pipeline use.
+"""
 function calculate_label(
     event_indices::AbstractVector{Int},
     timestamps::AbstractVector,
@@ -180,7 +347,7 @@ function calculate_label(
         multi_thread,
     )
 
-    # Filter unfinished trades
+    # Filter unfinished trades (sentinel label -99)
     mask = drop_unfinished ? buf.labels .!= Int8(-99) : trues(n_events)
 
     entry_idx = entry_indices[mask]
@@ -227,6 +394,15 @@ end
 
 # ── Event Loop ──
 
+"""
+    _label_loop!(sorted_events, entry_indices, entry_timestamps, buf, barriers, price_bars, full_args, entry_basis, entry_adj, n_events, n_prices, ::Type{T}, multi_thread) -> Nothing
+
+Iterate over all events and dispatch to `_label_event!`.
+
+When `multi_thread=true`, uses `Threads.@threads` for parallel
+processing. Each event writes to a unique index so no synchronisation
+is needed.
+"""
 function _label_loop!(
     sorted_events,
     entry_indices,
@@ -280,6 +456,15 @@ function _label_loop!(
     return nothing
 end
 
+"""
+    _label_event!(i, sorted_events, entry_indices, entry_timestamps, buf, barriers, price_bars, full_args, entry_basis, entry_adj, n_prices, ::Type{T}) -> Nothing
+
+Process a single event at position `i` in the sorted event list.
+
+Compute the entry index (event index + entry adjustment), skip if
+out of bounds, then walk forward through bars checking barriers until
+one triggers or data ends.
+"""
 @inline function _label_event!(
     i,
     sorted_events,
@@ -296,6 +481,7 @@ end
 ) where {T}
     entry_idx = sorted_events[i] + entry_adj
 
+    # Skip events that fall outside the price data
     if entry_idx < 1 || entry_idx > n_prices
         return nothing
     end
@@ -319,6 +505,16 @@ end
 
 # ── Barrier Checks ──
 
+"""
+    _warn_barrier_ordering(barriers::Tuple) -> Nothing
+
+Emit a warning when barriers are listed in non-optimal priority order.
+
+Barriers are checked in tuple order; the first to trigger wins. If a
+barrier with a later temporal priority (e.g., `NextOpen`) is listed
+before one with an earlier priority (e.g., `Immediate`), the
+user may get unexpected results.
+"""
 function _warn_barrier_ordering(barriers::Tuple)
     for i in 1:(length(barriers) - 1)
         a = barriers[i]
@@ -337,6 +533,15 @@ end
     return nothing
 end
 
+"""
+    _check_barriers!(i, j, barriers, loop_args, price_bars, entry_price, full_args, n_prices, buf) -> Bool
+
+Check all barriers for the current bar `j` of event `i`.
+
+Delegate to `_check_barrier_recursive!` which walks the barrier tuple
+via recursive dispatch. Return `true` if any barrier triggered (and
+the exit was recorded), `false` otherwise.
+"""
 @inline function _check_barriers!(
     i,
     j,
@@ -379,6 +584,17 @@ end
     return false
 end
 
+"""
+    _check_barrier_recursive!(i, j, barriers, open_price, loop_args, price_bars, entry_price, full_args, n_prices, buf) -> Bool
+
+Recursively check barriers via tuple unrolling.
+
+For the first barrier in the tuple: check gap-through first (open
+price vs level), then intra-bar hit (low/high/timestamp vs level).
+If neither triggers, recurse on `Base.tail(barriers)`. This pattern
+enables the compiler to fully unroll the barrier tuple at compile
+time.
+"""
 @inline function _check_barrier_recursive!(
     i,
     j,
@@ -394,10 +610,12 @@ end
     barrier = first(barriers)
     level = barrier_level(barrier, loop_args)
 
+    # Gap check: did the bar open past the barrier?
     if gap_hit(barrier, level, open_price)
         return _record_exit!(
             i, j, barrier, open_price, entry_price, full_args, n_prices, buf
         )
+    # Intra-bar check: did the trading range touch the barrier?
     elseif barrier_hit(
         barrier, level, price_bars.low[j], price_bars.high[j], price_bars.timestamp[j]
     )
@@ -419,15 +637,21 @@ end
 end
 
 """
-Record a barrier exit into `buf`. Uses `full_args.bars` for timestamp lookup.
-Returns `false` without recording if exit index exceeds available data
-(e.g. NextOpen exit on the final bar).
+    _record_exit!(i, j, barrier, level, entry_price, full_args, n_prices, buf) -> Bool
+
+Record a barrier exit into `buf` at event slot `i`.
+
+Compute the exit index from the barrier's `exit_basis` adjustment.
+Return `false` without recording if the exit index exceeds available
+data (e.g., `NextOpen` exit on the final bar). Otherwise record the
+exit index, timestamp, label, and returns, then return `true`.
 """
 @inline function _record_exit!(
     i, j, barrier, level, entry_price, full_args, n_prices, buf::ExitBuffers
 )
     exit_adj = _get_idx_adj(barrier.exit_basis)
     exit_idx = j + exit_adj
+    # Cannot exit beyond available data
     exit_idx > n_prices && return false
 
     T = eltype(buf.rets)
@@ -446,9 +670,21 @@ end
 # ── Weight Calculation ──
 
 """
+    _attribution_weights(label_classes, n_labels, n_prices, entry_indices, exit_indices, labels, closes, time_decay_start, exposure_offset) -> Vector{T}
+
 Compute sample weights via uniqueness-weighted attribution returns,
 linear time decay, and class-imbalance correction.
-Weights are normalised so that `sum(weights) == n_labels`.
+
+The algorithm has three passes:
+1. **Sweep-line attributed returns**: compute per-bar log returns
+   weighted by `1/concurrency` where concurrency is the number of
+   overlapping trades. Accumulated via `_cumulative_attributed_returns`.
+2. **Time decay**: multiply each event's attribution weight by a
+   linear ramp from `time_decay_start` to `1.0` across events in
+   temporal order.
+3. **Class-imbalance correction**: rebalance so each label class
+   contributes equally to total weight, then normalise so
+   `sum(weights) == n_labels`.
 """
 @inline function _attribution_weights(
     label_classes::Vector{Int8},
@@ -522,6 +758,21 @@ Weights are normalised so that `sum(weights) == n_labels`.
     return weights
 end
 
+"""
+    _cumulative_attributed_returns(n_prices, entry_indices, exit_indices, closes, exposure_offset, ::Type{T}) -> Vector{T}
+
+Compute a prefix-sum array of uniqueness-weighted log returns.
+
+Use a sweep-line approach: increment a concurrency counter at each
+entry and decrement at each exit. Each bar's log return is divided by
+the number of concurrent trades to produce "attributed" returns. The
+result is a cumulative sum array of length `n_prices + 1` where
+`cum[t+1] - cum[s]` gives the total attributed return over bars
+`s` through `t`.
+
+The `+2` buffer on `concur_deltas` prevents out-of-bounds when
+`exit_idx == n_prices`.
+"""
 @inline function _cumulative_attributed_returns(
     n_prices, entry_indices, exit_indices, closes, exposure_offset, ::Type{T}
 ) where {T}
