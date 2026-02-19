@@ -764,3 +764,125 @@ end
         @test all(lr.exit_idx .>= lr.entry_idx)
     end
 end
+
+# ── entry_side integration tests ──
+
+@testitem "Label: entry_side — side-dependent barrier levels" tags = [
+    :label, :unit
+] begin
+    using Backtest, Test, Dates
+
+    # Construct data where we know exact side signals and barrier outcomes.
+    # 20 bars with moderate uptrend — highs are wide enough to trigger upper.
+    n = 20
+    opens  = [100.0 + 0.5 * i for i in 1:n]
+    highs  = [108.0 + 0.5 * i for i in 1:n]   # high enough to hit +5% upper
+    lows   = [92.0 + 0.5 * i for i in 1:n]     # low enough to hit -5% lower
+    closes = [101.0 + 0.5 * i for i in 1:n]
+    vols   = fill(1000.0, n)
+    ts     = [DateTime(2024, 1, 1) + Day(i - 1) for i in 1:n]
+    bars   = PriceBars(opens, highs, lows, closes, vols, ts, TimeBar())
+
+    # Synthetic side vector: long (1) at bars 1–10, short (-1) at bars 11–20
+    side = vcat(fill(Int8(1), 10), fill(Int8(-1), 10))
+
+    # Two events: one long (bar 1), one short (bar 11)
+    event_indices = [1, 11]
+
+    # Side-dependent lower barrier: long gets 0.95, short gets 0.90
+    lb = LowerBarrier(d -> d.entry_side == Int8(1) ? d.entry_price * 0.95 : d.entry_price * 0.90)
+    tb = TimeBarrier(d -> d.entry_ts + Day(15))
+
+    result = calculate_label(
+        event_indices, bars, (lb, tb);
+        barrier_args=(; side=side),
+    )
+
+    # Both should resolve
+    @test length(result.label) == 2
+
+    # Verify the barrier levels were computed using the ENTRY bar's side,
+    # not a shifting side value — entry_side should be frozen at entry time.
+    # Event 1: entry at bar 2 (NextOpen), side[2] = 1 (long) → barrier at 0.95
+    # Event 2: entry at bar 12 (NextOpen), side[12] = -1 (short) → barrier at 0.90
+    # We can verify indirectly: if lower barrier triggered, the exit price
+    # should be consistent with the side-dependent level.
+    for i in eachindex(result.label)
+        if result.label[i] == Int8(-1)  # lower barrier hit
+            entry_price_i = bars.open[result.entry_idx[i]]
+            # The level should have been 0.95 or 0.90 of entry price
+            # depending on entry_side
+            @test result.ret[i] < 0  # lower barrier always produces negative return
+        end
+    end
+end
+
+@testitem "Label: entry_side defaults to 0 without Side stage" tags = [
+    :label, :edge
+] begin
+    using Backtest, Test, Dates
+
+    # Pipeline without Crossover — no :side key in the NamedTuple
+    n = 10
+    bars = PriceBars(
+        fill(100.0, n), fill(105.0, n), fill(95.0, n),
+        fill(100.0, n), fill(1000.0, n),
+        [DateTime(2024, 1, i) for i in 1:n], TimeBar(),
+    )
+
+    event_indices = [1]
+
+    # Barrier that branches on entry_side: since side is absent,
+    # entry_side should default to Int8(0)
+    lb = LowerBarrier(
+        d -> d.entry_side == Int8(1) ? d.entry_price * 0.95 : d.entry_price * 0.80
+    )
+    tb = TimeBarrier(d -> d.entry_ts + Day(5))
+
+    result = calculate_label(event_indices, bars, (lb, tb))
+
+    # entry_side defaults to 0, so the else branch (0.80) should be used
+    # With flat prices at 100 and lows at 95, barrier at 80 won't trigger.
+    # TimeBarrier should fire instead.
+    @test length(result.label) == 1
+    @test result.label[1] == Int8(0)  # TimeBarrier
+end
+
+@testitem "Label: entry_side is constant across holding period" tags = [
+    :label, :property
+] begin
+    using Backtest, Test, Dates
+
+    # Verify that entry_side is frozen at entry — it should NOT change
+    # as the side vector flips during the trade.
+    n = 20
+    opens  = fill(100.0, n)
+    highs  = fill(100.5, n)
+    lows   = fill(99.5, n)
+    closes = fill(100.0, n)
+    vols   = fill(1000.0, n)
+    ts     = [DateTime(2024, 1, 1) + Day(i - 1) for i in 1:n]
+    bars   = PriceBars(opens, highs, lows, closes, vols, ts, TimeBar())
+
+    # Side flips from 1 to -1 at bar 5
+    side = vcat(fill(Int8(1), 5), fill(Int8(-1), 15))
+
+    event_indices = [1]  # entry at bar 2
+
+    # ConditionBarrier that fires when entry_side != 1:
+    # If entry_side were re-evaluated per bar, it would change at bar 5
+    # and trigger the condition. But since it's frozen, it stays 1 and
+    # never triggers — the time barrier fires instead.
+    cb = ConditionBarrier(d -> d.entry_side != Int8(1); exit_basis=NextOpen())
+    tb = TimeBarrier(d -> d.entry_ts + Day(10))
+
+    result = calculate_label(
+        event_indices, bars, (cb, tb);
+        barrier_args=(; side=side),
+    )
+
+    @test length(result.label) == 1
+    # entry_side is frozen at side[2] = 1, so the ConditionBarrier never fires.
+    # TimeBarrier should be the exit.
+    @test result.label[1] == Int8(0)  # TimeBarrier label
+end

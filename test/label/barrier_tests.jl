@@ -327,3 +327,58 @@ end
         bars=(; close=[0.0], open=[0.0], high=[0.0], low=[0.0], volume=[0.0], timestamp=[nothing]))
     @test Backtest.barrier_level(lb, d) ≈ 0.95 * 100.0 - 2.0  # = 93.0
 end
+
+# ── entry_side macro rewriting ──
+
+@testitem "Macro: :entry_side is a direct field (scalar access)" tags = [
+    :macro, :label, :barrier
+] begin
+    using Backtest, Test, Dates
+
+    # :entry_side should rewrite to d.entry_side (scalar), not d.entry_side[d.idx]
+    lb = @LowerBarrier :entry_side == 1 ? :entry_price * 0.95 : :entry_price * 0.90
+
+    bars = PriceBars(
+        fill(100.0, 10), fill(110.0, 10), fill(90.0, 10),
+        fill(100.0, 10), fill(1000.0, 10),
+        [DateTime(2024, 1, i) for i in 1:10], TimeBar(),
+    )
+
+    # Long trade (entry_side = 1) → barrier at 0.95 * 100 = 95.0
+    d_long = (;
+        entry_price=100.0, entry_ts=DateTime(2024, 1, 1),
+        entry_side=Int8(1), idx=5, bars=bars,
+    )
+    @test Backtest.barrier_level(lb, d_long) ≈ 95.0
+
+    # Short trade (entry_side = -1) → barrier at 0.90 * 100 = 90.0
+    d_short = (;
+        entry_price=100.0, entry_ts=DateTime(2024, 1, 1),
+        entry_side=Int8(-1), idx=5, bars=bars,
+    )
+    @test Backtest.barrier_level(lb, d_short) ≈ 90.0
+end
+
+@testitem "Macro: :entry_side in @UpperBarrier" tags = [:macro, :label, :barrier] begin
+    using Backtest, Test, Dates
+
+    ub = @UpperBarrier :entry_side == 1 ? :entry_price * 1.05 : :entry_price * 1.10
+
+    bars = PriceBars(
+        fill(100.0, 5), fill(110.0, 5), fill(90.0, 5),
+        fill(100.0, 5), fill(1000.0, 5),
+        [DateTime(2024, 1, i) for i in 1:5], TimeBar(),
+    )
+
+    d_long = (;
+        entry_price=100.0, entry_ts=DateTime(2024, 1, 1),
+        entry_side=Int8(1), idx=3, bars=bars,
+    )
+    @test Backtest.barrier_level(ub, d_long) ≈ 105.0
+
+    d_short = (;
+        entry_price=100.0, entry_ts=DateTime(2024, 1, 1),
+        entry_side=Int8(-1), idx=3, bars=bars,
+    )
+    @test Backtest.barrier_level(ub, d_short) ≈ 110.0
+end

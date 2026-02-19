@@ -110,6 +110,18 @@ When called on a pipeline `NamedTuple` containing `event_indices` and
 - `barrier_args::NamedTuple = (;)`: additional arguments forwarded to
     barrier level functions.
 
+# Barrier Context Fields
+
+Inside barrier level functions, the following scalar fields are
+available (snapshotted at entry time, constant across the holding
+period):
+- `entry_price`: fill price at entry.
+- `entry_ts`: timestamp of the entry bar.
+- `entry_side`: side signal (`Int8`) at the entry bar. Equals the
+    `side` vector value at the entry index when a [`Crossover`](@ref)
+    or other side detector is upstream, or `Int8(0)` otherwise. Use
+    this to condition barrier levels on trade direction.
+
 # Examples
 ```julia
 using Backtest, Dates
@@ -120,8 +132,15 @@ lab = Label(
     TimeBarrier(d -> d.entry_ts + Day(20)),
 )
 
+# Side-dependent barrier using entry_side:
+lab2 = Label(
+    @UpperBarrier(:entry_side == 1 ? :entry_price * 1.05 : :entry_price * 1.10),
+    @LowerBarrier(:entry_side == 1 ? :entry_price * 0.95 : :entry_price * 0.90),
+    @TimeBarrier(:entry_ts + Day(20)),
+)
+
 # In a pipeline:
-# result = bars >> EMA(10, 50) >> evt >> lab
+# result = bars >> EMA(10, 50) >> Crossover(:ema_10, :ema_50) >> evt >> lab2
 ```
 
 # Pipeline Data Flow
@@ -464,6 +483,13 @@ Process a single event at position `i` in the sorted event list.
 Compute the entry index (event index + entry adjustment), skip if
 out of bounds, then walk forward through bars checking barriers until
 one triggers or data ends.
+
+The loop context `loop_args` injected into each barrier check contains
+the following scalar (entry-time) fields:
+- `entry_price`: fill price at entry, determined by `entry_basis`.
+- `entry_ts`: timestamp of the entry bar.
+- `entry_side`: side signal (`Int8`) at the entry bar, snapshotted
+    from `full_args.side` if present, or `Int8(0)` otherwise.
 """
 @inline function _label_event!(
     i,
@@ -491,9 +517,11 @@ one triggers or data ends.
 
     entry_price = _get_price(entry_basis, zero(T), entry_idx, full_args)
     entry_ts = entry_timestamps[i]
+    # Snapshot the side signal at entry so barrier functions can branch on trade direction
+    entry_side = hasproperty(full_args, :side) ? Int8(full_args.side[entry_idx]) : Int8(0)
 
     for j in (entry_idx + 1):n_prices
-        loop_args = (; full_args..., idx=j, entry_price=entry_price, entry_ts=entry_ts)
+        loop_args = (; full_args..., idx=j, entry_price=entry_price, entry_ts=entry_ts, entry_side=entry_side)
 
         hit = _check_barriers!(
             i, j, barriers, loop_args, price_bars, entry_price, full_args, n_prices, buf

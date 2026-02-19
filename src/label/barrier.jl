@@ -331,8 +331,9 @@ Rewrite a quoted symbol to a field access on the barrier loop
 variable `d`.
 
 Three routing categories:
-- **Direct fields** (`:entry_price`, `:entry_ts`, `:idx`): rewritten
-    to `d.field` — these are scalar values in the loop context.
+- **Direct fields** (`:entry_price`, `:entry_ts`, `:entry_side`,
+    `:idx`): rewritten to `d.field` — these are scalar values in the
+    loop context.
 - **Bar fields** (`:open`, `:high`, `:low`, `:close`, `:volume`,
     `:timestamp`): rewritten to `d.bars.field[d.idx]` — indexed into
     the price bar arrays at the current bar.
@@ -341,7 +342,7 @@ Three routing categories:
     current bar.
 """
 function _replace_symbols(::BarrierContext, ex::QuoteNode)
-    direct_fields = (:entry_price, :entry_ts, :idx)
+    direct_fields = (:entry_price, :entry_ts, :idx, :entry_side)
     bars_fields = (:open, :high, :low, :close, :volume, :timestamp)
     if ex.value in direct_fields
         return :(d.$(ex.value))
