@@ -800,7 +800,7 @@ end
 
     # Side-dependent lower barrier: long gets 0.95, short gets 0.90
     lb = LowerBarrier(d -> d.entry_side == Int8(1) ? d.entry_price * 0.95 : d.entry_price * 0.90)
-    tb = TimeBarrier(d -> d.entry_ts + Day(15))
+    tb = TimeBarrier(d -> d.entry_ts + Day(8))
 
     result = calculate_label(
         event_indices, bars, (lb, tb);
