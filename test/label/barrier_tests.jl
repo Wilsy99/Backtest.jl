@@ -23,21 +23,30 @@ end
 @testitem "Barrier: Custom label and exit_basis" tags = [:label, :barrier, :unit] begin
     using Backtest, Test
 
-    lb = LowerBarrier(d -> 0.0; label=-2, exit_basis=NextOpen())
-    @test lb.label == Int8(-2)
+    lb = LowerBarrier(d -> 0.0; label=-1, exit_basis=NextOpen())
+    @test lb.label == Int8(-1)
     @test lb.exit_basis isa NextOpen
 
-    ub = UpperBarrier(d -> 0.0; label=3, exit_basis=CurrentClose())
-    @test ub.label == Int8(3)
+    ub = UpperBarrier(d -> 0.0; label=1, exit_basis=CurrentClose())
+    @test ub.label == Int8(1)
     @test ub.exit_basis isa CurrentClose
 
-    tb = TimeBarrier(d -> 0; label=5, exit_basis=NextClose())
-    @test tb.label == Int8(5)
+    tb = TimeBarrier(d -> 0; label=0, exit_basis=NextClose())
+    @test tb.label == Int8(0)
     @test tb.exit_basis isa NextClose
 
-    cb = ConditionBarrier(d -> false; label=-3, exit_basis=Immediate())
-    @test cb.label == Int8(-3)
+    cb = ConditionBarrier(d -> false; label=-1, exit_basis=Immediate())
+    @test cb.label == Int8(-1)
     @test cb.exit_basis isa Immediate
+end
+
+@testitem "Barrier: Invalid label throws ArgumentError" tags = [:label, :barrier, :unit] begin
+    using Backtest, Test
+
+    @test_throws ArgumentError LowerBarrier(d -> 0.0; label=-2)
+    @test_throws ArgumentError UpperBarrier(d -> 0.0; label=2)
+    @test_throws ArgumentError TimeBarrier(d -> 0; label=5)
+    @test_throws ArgumentError ConditionBarrier(d -> false; label=-3)
 end
 
 @testitem "Barrier: Subtypes of AbstractBarrier" tags = [:label, :barrier, :unit] begin
@@ -184,17 +193,24 @@ end
 @testitem "Macro: @UpperBarrier with custom label" tags = [:macro, :label, :barrier] begin
     using Backtest, Test
 
-    ub = @UpperBarrier :entry_price * 1.10 label = 2
+    ub = @UpperBarrier :entry_price * 1.10 label = 0
     @test ub isa UpperBarrier
-    @test ub.label == Int8(2)
+    @test ub.label == Int8(0)
 end
 
 @testitem "Macro: @LowerBarrier with custom label" tags = [:macro, :label, :barrier] begin
     using Backtest, Test
 
-    lb = @LowerBarrier :entry_price * 0.90 label = -5
+    lb = @LowerBarrier :entry_price * 0.90 label = 0
     @test lb isa LowerBarrier
-    @test lb.label == Int8(-5)
+    @test lb.label == Int8(0)
+end
+
+@testitem "Macro: Invalid label throws ArgumentError" tags = [:macro, :label, :barrier] begin
+    using Backtest, Test
+
+    @test_throws ArgumentError @UpperBarrier :entry_price * 1.10 label = 2
+    @test_throws ArgumentError @LowerBarrier :entry_price * 0.90 label = -5
 end
 
 @testitem "Macro: Barrier symbol rewriting — direct fields" tags = [
