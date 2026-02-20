@@ -10,8 +10,8 @@ for short positions.
 # Fields
 - `level_func::F`: function `(args) -> price_level` computing the
     barrier threshold from the loop context.
-- `label::Int8`: label assigned when this barrier triggers. Default
-    `Int8(-1)`.
+- `label::Int8`: ternary label assigned when this barrier triggers;
+    must be `-1`, `0`, or `1`. Default `Int8(-1)`.
 - `exit_basis::E`: execution basis for the exit fill price. Default
     [`Immediate`](@ref) (fill at the barrier level).
 
@@ -23,8 +23,8 @@ for short positions.
 # Fixed 5% stop below entry
 lb = LowerBarrier(d -> d.entry_price * 0.95)
 
-# Custom label and exit basis
-lb = LowerBarrier(d -> d.entry_price * 0.95; label=-2, exit_basis=NextOpen())
+# Custom exit basis
+lb = LowerBarrier(d -> d.entry_price * 0.95; label=-1, exit_basis=NextOpen())
 ```
 
 # See also
@@ -51,8 +51,8 @@ for short positions.
 # Fields
 - `level_func::F`: function `(args) -> price_level` computing the
     barrier threshold from the loop context.
-- `label::Int8`: label assigned when this barrier triggers. Default
-    `Int8(1)`.
+- `label::Int8`: ternary label assigned when this barrier triggers;
+    must be `-1`, `0`, or `1`. Default `Int8(1)`.
 - `exit_basis::E`: execution basis for the exit fill price. Default
     [`Immediate`](@ref) (fill at the barrier level).
 
@@ -87,8 +87,8 @@ return a `TimeType` (e.g., `DateTime`).
 # Fields
 - `level_func::F`: function `(args) -> TimeType` computing the
     expiry timestamp from the loop context.
-- `label::Int8`: label assigned when this barrier triggers. Default
-    `Int8(0)` (neutral / no-signal).
+- `label::Int8`: ternary label assigned when this barrier triggers;
+    must be `-1`, `0`, or `1`. Default `Int8(0)` (neutral / no-signal).
 - `exit_basis::E`: execution basis for the exit fill price. Default
     [`Immediate`](@ref).
 
@@ -127,8 +127,8 @@ next bar's open.
 # Fields
 - `level_func::F`: function `(args) -> Bool` evaluating the exit
     condition from the loop context.
-- `label::Int8`: label assigned when this barrier triggers. Default
-    `Int8(0)`.
+- `label::Int8`: ternary label assigned when this barrier triggers;
+    must be `-1`, `0`, or `1`. Default `Int8(0)`.
 - `exit_basis::E`: execution basis for the exit fill price. Default
     [`NextOpen`](@ref).
 
@@ -152,12 +152,15 @@ struct ConditionBarrier{F<:Function,E<:AbstractExecutionBasis} <: AbstractBarrie
     exit_basis::E
 end
 
-LowerBarrier(f; label=-1, exit_basis=Immediate()) = LowerBarrier(f, label, exit_basis)
-UpperBarrier(f; label=1, exit_basis=Immediate()) = UpperBarrier(f, label, exit_basis)
-TimeBarrier(f; label=0, exit_basis=Immediate()) = TimeBarrier(f, label, exit_basis)
+LowerBarrier(f; label=-1, exit_basis=Immediate()) =
+    LowerBarrier(f, _ternary(Int(label)), exit_basis)
+UpperBarrier(f; label=1, exit_basis=Immediate()) =
+    UpperBarrier(f, _ternary(Int(label)), exit_basis)
+TimeBarrier(f; label=0, exit_basis=Immediate()) =
+    TimeBarrier(f, _ternary(Int(label)), exit_basis)
 
 function ConditionBarrier(f; label=0, exit_basis=NextOpen())
-    return ConditionBarrier(f, label, exit_basis)
+    return ConditionBarrier(f, _ternary(Int(label)), exit_basis)
 end
 
 # ── Barrier testing interface ──
@@ -246,7 +249,7 @@ Default label is `Int8(1)`.
 # Examples
 ```julia
 ub = @UpperBarrier :entry_price * 1.05
-ub = @UpperBarrier :entry_price + (:ema_10 - :ema_50) label=2
+ub = @UpperBarrier :entry_price + (:ema_10 - :ema_50) label=1
 ```
 
 # See also
