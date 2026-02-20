@@ -153,14 +153,14 @@ struct ConditionBarrier{F<:Function,E<:AbstractExecutionBasis} <: AbstractBarrie
 end
 
 LowerBarrier(f; label=-1, exit_basis=Immediate()) =
-    LowerBarrier(f, _ternary(Int(label)), exit_basis)
+    LowerBarrier(f, Int8(_ternary(Int(label))), exit_basis)
 UpperBarrier(f; label=1, exit_basis=Immediate()) =
-    UpperBarrier(f, _ternary(Int(label)), exit_basis)
+    UpperBarrier(f, Int8(_ternary(Int(label))), exit_basis)
 TimeBarrier(f; label=0, exit_basis=Immediate()) =
-    TimeBarrier(f, _ternary(Int(label)), exit_basis)
+    TimeBarrier(f, Int8(_ternary(Int(label))), exit_basis)
 
 function ConditionBarrier(f; label=0, exit_basis=NextOpen())
-    return ConditionBarrier(f, _ternary(Int(label)), exit_basis)
+    return ConditionBarrier(f, Int8(_ternary(Int(label))), exit_basis)
 end
 
 # ── Barrier testing interface ──
