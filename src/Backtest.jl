@@ -4,7 +4,6 @@ using DataFrames, DataFramesMeta, Chain
 using YFinance
 using Dates
 using Base.Threads
-using Combinatorics
 
 include("types.jl")
 include("utility.jl")
