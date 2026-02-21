@@ -58,18 +58,18 @@ pipeline `NamedTuple`, while `Label!` returns the raw
 - `entry_basis::E`: execution basis for trade entry pricing.
 - `drop_unfinished::Bool`: whether to drop events whose barriers
     are not resolved by end of data.
-- `time_decay_start::Float64`: starting value for linear time decay
+- `time_decay_start::T`: starting value for linear time decay
     in weight calculation. Ramps from this value to `1.0` across
     events in temporal order.
 - `multi_thread::Bool`: enable multi-threaded event loop.
 - `barrier_args::NT`: additional keyword arguments forwarded to
     barrier level functions via `merge`.
 """
-struct _LabelCore{B<:Tuple,E<:AbstractExecutionBasis,NT<:NamedTuple}
+struct _LabelCore{B<:Tuple,E<:AbstractExecutionBasis,NT<:NamedTuple,T<:Real}
     barriers::B
     entry_basis::E
     drop_unfinished::Bool
-    time_decay_start::Float64
+    time_decay_start::T
     multi_thread::Bool
     barrier_args::NT
 end
@@ -86,7 +86,7 @@ function _LabelCore(
         barriers,
         entry_basis,
         drop_unfinished,
-        Float64(time_decay_start),
+        float(time_decay_start),
         multi_thread,
         barrier_args,
     )
@@ -841,6 +841,8 @@ The `+2` buffer on `concur_deltas` prevents out-of-bounds when
     n_prices, entry_indices, exit_indices, closes, exposure_offset, ::Type{T}
 ) where {T}
     # +2 buffer: safely handles exit_idx + 1 decrement when exit_idx == n_prices
+    # Int32 halves memory vs Int since this is sized to n_prices; concurrency
+    # counts (overlapping trades per bar) won't approach the ~2.1B Int32 limit.
     concur_deltas = zeros(Int32, n_prices + 2)
 
     @inbounds for i in eachindex(entry_indices)
