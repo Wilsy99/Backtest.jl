@@ -267,7 +267,7 @@ end
 """Return the simple moving average of `prices[1:p]`."""
 @inline function _sma_seed(prices::AbstractVector{T}, p::Int) where {T<:AbstractFloat}
     s = zero(T)
-    @inbounds @simd for i in 1:p
+    @fastmath @inbounds @simd for i in 1:p
         s += prices[i]
     end
     return s / T(p)
@@ -293,7 +293,7 @@ and type-stable.
     c0, c1, c2, c3 = α, α * β, α * β2, α * β3
     @inbounds prev = ema[p]
     i = p + 1
-    @inbounds while i <= n - 3
+    @fastmath @inbounds while i <= n - 3
         p1, p2, p3, p4 = prices[i], prices[i + 1], prices[i + 2], prices[i + 3]
         ema[i] = c0 * p1 + β * prev
         ema[i + 1] = c0 * p2 + c1 * p1 + β2 * prev
@@ -303,7 +303,7 @@ and type-stable.
         i += 4
     end
     # Scalar tail for remaining elements
-    @inbounds while i <= n
+    @fastmath @inbounds while i <= n
         prev = α * prices[i] + β * prev
         ema[i] = prev
         i += 1

@@ -185,7 +185,7 @@ function _calculate_cusum(
     sum_sq_ret = zero(T)
     prev_log = log(prices[1])
 
-    @inbounds for k in 2:warmup_idx
+    @fastmath @inbounds for k in 2:warmup_idx
         curr_log = log(prices[k])
         sum_sq_ret += (curr_log - prev_log)^2
         prev_log = curr_log
@@ -196,7 +196,7 @@ function _calculate_cusum(
     s_neg = zero(T)
 
     # ── Post-warmup: detect structural breaks ──
-    @inbounds for i in (warmup_idx + 1):n
+    @fastmath @inbounds for i in (warmup_idx + 1):n
         curr_log = log(prices[i])
         log_return = curr_log - prev_log
         prev_log = curr_log
