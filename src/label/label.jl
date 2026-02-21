@@ -438,6 +438,52 @@ function calculate_label(
     )
 end
 
+# ── Barrier Loop Context ──
+
+"""
+    BarrierArgs{NT<:NamedTuple,T<:AbstractFloat,TS}
+
+Mutable barrier-loop context that eliminates per-bar `NamedTuple`
+allocation in the label event loop.
+
+The static pipeline data (`bars`, `side`, feature vectors, user-provided
+`barrier_args`) lives in an immutable `NamedTuple` in the `data` field.
+The per-bar index `idx` and per-event entry scalars are stored as
+mutable fields and updated in-place.
+
+Transparent field access via `Base.getproperty` makes this a drop-in
+replacement for the `NamedTuple` that barrier level functions expect:
+`d.entry_price`, `d.bars`, `d.ema_20[d.idx]` all work unchanged.
+
+# Fields
+- `data::NT`: immutable pipeline context (bars, side, barrier_args).
+- `idx::Int`: current bar index (mutated each inner-loop iteration).
+- `entry_price::T`: fill price at trade entry (set once per event).
+- `entry_ts::TS`: timestamp of the entry bar (set once per event).
+- `entry_side::Int8`: side signal at entry (set once per event).
+"""
+mutable struct BarrierArgs{NT<:NamedTuple,T<:AbstractFloat,TS}
+    const data::NT
+    idx::Int
+    entry_price::T
+    entry_ts::TS
+    entry_side::Int8
+end
+
+@inline function Base.getproperty(ba::BarrierArgs, s::Symbol)
+    if s === :idx
+        return getfield(ba, :idx)
+    elseif s === :entry_price
+        return getfield(ba, :entry_price)
+    elseif s === :entry_ts
+        return getfield(ba, :entry_ts)
+    elseif s === :entry_side
+        return getfield(ba, :entry_side)
+    else
+        return getproperty(getfield(ba, :data), s)
+    end
+end
+
 # ── Event Loop ──
 
 """
@@ -511,12 +557,16 @@ Compute the entry index (event index + entry adjustment), skip if
 out of bounds, then walk forward through bars checking barriers until
 one triggers or data ends.
 
-The loop context `loop_args` injected into each barrier check contains
-the following scalar (entry-time) fields:
+A [`BarrierArgs`](@ref) context is allocated once per event and its
+`idx` field is mutated each bar iteration, eliminating per-bar
+`NamedTuple` allocation. The context exposes the following fields to
+barrier level functions via `getproperty`:
 - `entry_price`: fill price at entry, determined by `entry_basis`.
 - `entry_ts`: timestamp of the entry bar.
 - `entry_side`: side signal (`Int8`) at the entry bar, snapshotted
     from `full_args.side` at the entry bar index.
+- `idx`: current bar index (mutated each iteration).
+- All fields from `full_args` (`bars`, `side`, feature vectors, etc.).
 """
 @inline function _label_event!(
     i,
@@ -547,8 +597,11 @@ the following scalar (entry-time) fields:
     # Snapshot the side signal at entry so barrier functions can branch on trade direction
     entry_side = full_args.side[entry_idx]
 
+    # Build barrier context once per event — mutate idx per bar (zero per-bar allocation)
+    loop_args = BarrierArgs(full_args, entry_idx, entry_price, entry_ts, entry_side)
+
     for j in (entry_idx + 1):n_prices
-        loop_args = (; full_args..., idx=j, entry_price=entry_price, entry_ts=entry_ts, entry_side=entry_side)
+        loop_args.idx = j
 
         hit = _check_barriers!(
             i, j, barriers, loop_args, price_bars, entry_price, entry_side, full_args, n_prices, buf
