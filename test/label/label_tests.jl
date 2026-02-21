@@ -959,3 +959,93 @@ end
     # bin = max((-1) * (-1), 0) = max(1, 0) = 1 (correct direction for short)
     @test result.bin[1] == Int8(1)
 end
+
+# ── BarrierArgs: Mutable Loop Context ──
+
+@testitem "BarrierArgs: getproperty — mutable fields and delegation" tags = [
+    :label, :barrier_args, :unit
+] begin
+    using Backtest, Test, Dates
+
+    # Construct a BarrierArgs with representative pipeline data
+    ts = DateTime(2024, 1, 1)
+    data = (; bars=:placeholder, side=Int8[1, -1, 1], ema_10=[10.0, 20.0, 30.0])
+
+    ba = Backtest.BarrierArgs(data, 2, 100.0, ts, Int8(1))
+
+    # Mutable fields are accessible directly
+    @test ba.idx == 2
+    @test ba.entry_price == 100.0
+    @test ba.entry_ts == ts
+    @test ba.entry_side == Int8(1)
+
+    # Delegated fields go through the underlying NamedTuple
+    @test ba.bars === :placeholder
+    @test ba.side === data.side
+    @test ba.ema_10 === data.ema_10
+
+    # Indexed access pattern used by barrier functions: d.ema_10[d.idx]
+    @test ba.ema_10[ba.idx] == 20.0
+
+    # Mutation of idx — zero allocation per bar
+    ba.idx = 3
+    @test ba.idx == 3
+    @test ba.ema_10[ba.idx] == 30.0
+
+    # Mutation of entry scalars — set once per event
+    ba.entry_price = 200.0
+    ba.entry_side = Int8(-1)
+    @test ba.entry_price == 200.0
+    @test ba.entry_side == Int8(-1)
+end
+
+@testitem "BarrierArgs: barrier function compatibility" tags = [
+    :label, :barrier_args, :unit
+] begin
+    using Backtest, Test, Dates
+
+    # Simulate barrier level functions that would be used with BarrierArgs
+    ts = DateTime(2024, 1, 1)
+    prices = [100.0, 101.0, 102.0, 103.0, 104.0]
+    bars = PriceBars(prices, prices, prices, prices, fill(1000.0, 5),
+        [ts + Day(i - 1) for i in 1:5], TimeBar())
+
+    data = (; bars=bars, side=fill(Int8(1), 5))
+    ba = Backtest.BarrierArgs(data, 1, 100.0, ts, Int8(1))
+
+    # Upper barrier: d -> d.entry_price * 1.05
+    upper_func = d -> d.entry_price * 1.05
+    @test upper_func(ba) ≈ 105.0
+
+    # Lower barrier: d -> d.entry_price * 0.95
+    lower_func = d -> d.entry_price * 0.95
+    @test lower_func(ba) ≈ 95.0
+
+    # Time barrier: d -> d.entry_ts + Day(3)
+    time_func = d -> d.entry_ts + Day(3)
+    @test time_func(ba) == DateTime(2024, 1, 4)
+
+    # Side-dependent: d -> d.entry_side == 1 ? ... : ...
+    side_func = d -> d.entry_side == Int8(1) ? d.entry_price * 1.05 : d.entry_price * 0.95
+    @test side_func(ba) ≈ 105.0
+    ba.entry_side = Int8(-1)
+    @test side_func(ba) ≈ 95.0
+
+    # Indexed access: d -> d.bars.close[d.idx]
+    idx_func = d -> d.bars.close[d.idx]
+    ba.idx = 3
+    @test idx_func(ba) ≈ 102.0
+end
+
+@testitem "BarrierArgs: type stability" tags = [:label, :barrier_args, :stability] begin
+    using Backtest, Test, Dates
+
+    ts = DateTime(2024, 1, 1)
+    data = (; bars=:placeholder, side=Int8[1, -1])
+    ba = Backtest.BarrierArgs(data, 1, 100.0, ts, Int8(1))
+
+    @test @inferred(ba.idx) isa Int
+    @test @inferred(ba.entry_price) isa Float64
+    @test @inferred(ba.entry_ts) isa DateTime
+    @test @inferred(ba.entry_side) isa Int8
+end

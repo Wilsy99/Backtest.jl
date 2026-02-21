@@ -1,5 +1,6 @@
 include("ema.jl")
 include("cusum.jl")
+include("feature_union.jl")
 
 """
     (feat::AbstractFeature)(bars::PriceBars) -> NamedTuple
