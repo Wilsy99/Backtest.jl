@@ -20,29 +20,35 @@ big_bars =
         big_data.timestamp,
         TimeBar(),
     )
-
+    
 #! format: off
-bars |>
+@time bars |>
     EMA(10, 20) |>
     CUSUM(1) |>
-    Crossover(:ema_10, :ema_20; direction=LongOnly()) |>
+    Crossover(:ema_10, :ema_20; direction=LongShort()) |>
     @Event(:cusum .!= 0, :side .!= 0) |> 
     Label!(
-        @LowerBarrier(:entry_price * 0.95, label=Int8(-1), exit_basis=Immediate()),
-        @UpperBarrier(:entry_price * 1.2, label=Int8(1), exit_basis=Immediate()),
-        @LowerBarrier(:ema_20, label=Int8(-1), exit_basis=NextOpen()),
+        @LowerBarrier(:entry_side == 1 ? :entry_price * 0.95 : :entry_price * 0.90, label=Int8(-1), exit_basis=Immediate()),
+        @UpperBarrier(:entry_side == 1 ? :entry_price * 1.2 : :entry_price * 1.1, label=Int8(1), exit_basis=Immediate()),
         @TimeBarrier(:entry_ts + Day(10), label=Int8(0), exit_basis=NextOpen()),
-        @ConditionBarrier(:ema_10 < :ema_20 && :close <= :entry_price, label=Int8(-1), exit_basis=NextOpen()),
-        @ConditionBarrier(:ema_10 < :ema_20 && :close > :entry_price, label=Int8(1), exit_basis=NextOpen());
+        @ConditionBarrier(
+            :entry_side == 1 ? (:ema_10 < :ema_20 && :close <= :entry_price) : (:ema_10 > :ema_20 && :close < :entry_price), 
+            label=Int8(-1), 
+            exit_basis=NextOpen()
+            ), #long postion; if ema_10 crosses below ema_20, then exit trade, if trade closes in loss (close < entry price) then label as 1, the opposite for short
+        @ConditionBarrier(
+            :entry_side == 1 ? (:ema_10 < :ema_20 && :close > :entry_price) : (:ema_10 > :ema_20 && :close >= :entry_price), 
+            label=Int8(1), 
+            exit_basis=NextOpen()
+            ); 
         entry_basis=NextOpen()
         )
 #! format: on
 
-
-strat(bars::PriceBars) = 
+strat(bars::PriceBars, multi_thread) = 
 #! format: off
     bars >>
-    EMA(10, 20) >>
+    EMA(10, 20, multi_thread=multi_thread) >>
     CUSUM(1) >>
     Crossover(:ema_10, :ema_20; direction=LongOnly()) >>
     @Event(:cusum .!= 0, :side .!= 0) >> 
@@ -53,15 +59,18 @@ strat(bars::PriceBars) =
         @TimeBarrier(:entry_ts + Day(10), label=Int8(0), exit_basis=NextOpen()),
         @ConditionBarrier(:ema_10 < :ema_20 && :close <= :entry_price, label=Int8(-1), exit_basis=NextOpen()),
         @ConditionBarrier(:ema_10 < :ema_20 && :close > :entry_price, label=Int8(1), exit_basis=NextOpen());
-        entry_basis=NextOpen()
+        entry_basis=NextOpen(),
+        multi_thread=multi_thread
         )
 #! format: on
 
-@time strat(bars)()
+@time strat(bars, false)()
+@benchmark $strat(bars, false)()
 
-@time strat(big_bars)()
 
-@benchmark $strat(big_bars)()
+@time strat(big_bars, true)()
+
+@benchmark $strat(big_bars, true)()
 
 feats = EMA(10, 20) >> CUSUM(1)
 side = Crossover(:ema_10, :ema_20; wait_for_cross=false, direction=LongOnly())
@@ -108,3 +117,5 @@ benchmark_strat = big_bars >> feats >> side >> event >> label
 end
 
 @allocations bars |> EMA(5,10,15,20,3,4,6,1)
+
+
