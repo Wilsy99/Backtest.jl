@@ -962,7 +962,7 @@ end
 
 # ── BarrierArgs: Mutable Loop Context ──
 
-@testitem "BarrierArgs: getproperty — mutable fields and delegation" tags = [
+@testitem "BarrierArgs: getproperty — field access and delegation" tags = [
     :label, :barrier_args, :unit
 ] begin
     using Backtest, Test, Dates
@@ -973,7 +973,7 @@ end
 
     ba = Backtest.BarrierArgs(data, 2, 100.0, ts, Int8(1))
 
-    # Mutable fields are accessible directly
+    # Own fields are accessible directly
     @test ba.idx == 2
     @test ba.entry_price == 100.0
     @test ba.entry_ts == ts
@@ -987,16 +987,15 @@ end
     # Indexed access pattern used by barrier functions: d.ema_10[d.idx]
     @test ba.ema_10[ba.idx] == 20.0
 
-    # Mutation of idx — zero allocation per bar
-    ba.idx = 3
-    @test ba.idx == 3
-    @test ba.ema_10[ba.idx] == 30.0
+    # New instance with different idx — mirrors per-bar loop pattern
+    ba2 = Backtest.BarrierArgs(data, 3, 100.0, ts, Int8(1))
+    @test ba2.idx == 3
+    @test ba2.ema_10[ba2.idx] == 30.0
 
-    # Mutation of entry scalars — set once per event
-    ba.entry_price = 200.0
-    ba.entry_side = Int8(-1)
-    @test ba.entry_price == 200.0
-    @test ba.entry_side == Int8(-1)
+    # New instance with different entry scalars
+    ba3 = Backtest.BarrierArgs(data, 2, 200.0, ts, Int8(-1))
+    @test ba3.entry_price == 200.0
+    @test ba3.entry_side == Int8(-1)
 end
 
 @testitem "BarrierArgs: barrier function compatibility" tags = [
@@ -1028,13 +1027,13 @@ end
     # Side-dependent: d -> d.entry_side == 1 ? ... : ...
     side_func = d -> d.entry_side == Int8(1) ? d.entry_price * 1.05 : d.entry_price * 0.95
     @test side_func(ba) ≈ 105.0
-    ba.entry_side = Int8(-1)
-    @test side_func(ba) ≈ 95.0
+    ba_short = Backtest.BarrierArgs(data, 1, 100.0, ts, Int8(-1))
+    @test side_func(ba_short) ≈ 95.0
 
     # Indexed access: d -> d.bars.close[d.idx]
     idx_func = d -> d.bars.close[d.idx]
-    ba.idx = 3
-    @test idx_func(ba) ≈ 102.0
+    ba_at3 = Backtest.BarrierArgs(data, 3, 100.0, ts, Int8(1))
+    @test idx_func(ba_at3) ≈ 102.0
 end
 
 @testitem "BarrierArgs: type stability" tags = [:label, :barrier_args, :stability] begin

@@ -443,27 +443,28 @@ end
 """
     BarrierArgs{NT<:NamedTuple,T<:AbstractFloat,TS}
 
-Mutable barrier-loop context that eliminates per-bar `NamedTuple`
-allocation in the label event loop.
+Immutable barrier-loop context that avoids heap allocations in the
+label event loop.
 
-The static pipeline data (`bars`, `side`, feature vectors, user-provided
-`barrier_args`) lives in an immutable `NamedTuple` in the `data` field.
-The per-bar index `idx` and per-event entry scalars are stored as
-mutable fields and updated in-place.
+The pipeline data (`bars`, `side`, feature vectors, user-provided
+`barrier_args`) lives in a `NamedTuple` in the `data` field.
+A new instance is created each bar iteration with only the `idx`
+field changing; being immutable, the compiler can stack-allocate it
+when callers are inlined, achieving zero heap allocations per bar.
 
 Transparent field access via `Base.getproperty` makes this a drop-in
 replacement for the `NamedTuple` that barrier level functions expect:
 `d.entry_price`, `d.bars`, `d.ema_20[d.idx]` all work unchanged.
 
 # Fields
-- `data::NT`: immutable pipeline context (bars, side, barrier_args).
-- `idx::Int`: current bar index (mutated each inner-loop iteration).
+- `data::NT`: pipeline context (bars, side, barrier_args).
+- `idx::Int`: current bar index (changes each inner-loop iteration).
 - `entry_price::T`: fill price at trade entry (set once per event).
 - `entry_ts::TS`: timestamp of the entry bar (set once per event).
 - `entry_side::Int8`: side signal at entry (set once per event).
 """
-mutable struct BarrierArgs{NT<:NamedTuple,T<:AbstractFloat,TS}
-    const data::NT
+struct BarrierArgs{NT<:NamedTuple,T<:AbstractFloat,TS}
+    data::NT
     idx::Int
     entry_price::T
     entry_ts::TS
@@ -557,15 +558,16 @@ Compute the entry index (event index + entry adjustment), skip if
 out of bounds, then walk forward through bars checking barriers until
 one triggers or data ends.
 
-A [`BarrierArgs`](@ref) context is allocated once per event and its
-`idx` field is mutated each bar iteration, eliminating per-bar
-`NamedTuple` allocation. The context exposes the following fields to
-barrier level functions via `getproperty`:
+A new [`BarrierArgs`](@ref) context is created each bar iteration
+with only the `idx` field changing. Being immutable, the compiler
+stack-allocates it (zero heap allocations per bar). The context
+exposes the following fields to barrier level functions via
+`getproperty`:
 - `entry_price`: fill price at entry, determined by `entry_basis`.
 - `entry_ts`: timestamp of the entry bar.
 - `entry_side`: side signal (`Int8`) at the entry bar, snapshotted
     from `full_args.side` at the entry bar index.
-- `idx`: current bar index (mutated each iteration).
+- `idx`: current bar index (new value each iteration).
 - All fields from `full_args` (`bars`, `side`, feature vectors, etc.).
 """
 @inline function _label_event!(
@@ -597,11 +599,9 @@ barrier level functions via `getproperty`:
     # Snapshot the side signal at entry so barrier functions can branch on trade direction
     entry_side = full_args.side[entry_idx]
 
-    # Build barrier context once per event — mutate idx per bar (zero per-bar allocation)
-    loop_args = BarrierArgs(full_args, entry_idx, entry_price, entry_ts, entry_side)
-
     for j in (entry_idx + 1):n_prices
-        loop_args.idx = j
+        # Immutable struct — stack-allocated, zero heap allocations per bar
+        loop_args = BarrierArgs(full_args, j, entry_price, entry_ts, entry_side)
 
         hit = _check_barriers!(
             i, j, barriers, loop_args, price_bars, entry_price, entry_side, full_args, n_prices, buf
