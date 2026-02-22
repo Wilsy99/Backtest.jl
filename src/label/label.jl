@@ -20,8 +20,8 @@ synchronisation.
     to `Int8(-99)` as a sentinel for unfinished trades.
 - `bins::Vector{Int8}`: meta label `max(side * label, 0)` for each
     event. Set when a barrier is hit.
-- `rets::Vector{T}`: raw arithmetic return `(exit_price / entry_price) - 1`.
-- `log_rets::Vector{T}`: log return `log1p(ret)`.
+- `rets::Vector{T}`: side-adjusted arithmetic return `side * ((exit_price / entry_price) - 1)`.
+- `log_rets::Vector{T}`: side-adjusted log return `side * log1p((exit_price / entry_price) - 1)`.
 """
 struct ExitBuffers{T<:AbstractFloat,TS}
     exit_indices::Vector{Int}
@@ -227,8 +227,8 @@ have the same length (one entry per resolved event, or per event if
     `0` otherwise.
 - `weight::Vector{T}`: sample weight incorporating attribution,
     time decay, and class-imbalance correction.
-- `ret::Vector{T}`: arithmetic return `(exit_price / entry_price) - 1`.
-- `log_ret::Vector{T}`: log return `log1p(ret)`.
+- `ret::Vector{T}`: side-adjusted arithmetic return `side * ((exit_price / entry_price) - 1)`.
+- `log_ret::Vector{T}`: side-adjusted log return `side * log1p((exit_price / entry_price) - 1)`.
 
 # See also
 - [`Label`](@ref), [`Label!`](@ref): functors that produce this.
@@ -778,9 +778,9 @@ exit index, timestamp, side, label, bin, and returns, then return `true`.
     buf.labels[i] = barrier.label
     buf.bins[i] = max(entry_side * barrier.label, Int8(0))
 
-    raw_ret = (exit_price / entry_price) - one(T)
-    buf.rets[i] = raw_ret
-    buf.log_rets[i] = log1p(raw_ret)
+    price_ret = (exit_price / entry_price) - one(T)
+    buf.rets[i] = entry_side * price_ret
+    buf.log_rets[i] = entry_side * log1p(price_ret)
     return true
 end
 

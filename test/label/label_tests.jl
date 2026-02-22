@@ -21,7 +21,7 @@
     event_indices = [1]
 
     ub = UpperBarrier(d -> d.entry_price * 1.10)
-    result = calculate_label(event_indices, bars, (ub,); side=zeros(Int8, n))
+    result = calculate_label(event_indices, bars, (ub,); side=ones(Int8, n))
 
     @test result isa Backtest.LabelResults
     @test length(result.label) == 1
@@ -34,8 +34,9 @@
     @test result.exit_idx[1] == 7
 
     # Return: exit_price = barrier level = 110.0, entry_price = open[2] = 100.0
+    # side=1 (long): ret = 1 * (110.0/100.0 - 1) = 0.10
     @test result.ret[1] ≈ (110.0 / 100.0) - 1.0  # = 0.10
-    @test result.log_ret[1] ≈ log1p(result.ret[1])
+    @test result.log_ret[1] ≈ log1p((110.0 / 100.0) - 1.0)
 end
 
 @testitem "Label: Hand-Calculated Reference — LowerBarrier hit" tags = [
@@ -56,7 +57,7 @@ end
     event_indices = [1]
 
     lb = LowerBarrier(d -> d.entry_price * 0.95)
-    result = calculate_label(event_indices, bars, (lb,); side=zeros(Int8, n))
+    result = calculate_label(event_indices, bars, (lb,); side=ones(Int8, n))
 
     @test length(result.label) == 1
     @test result.label[1] == Int8(-1)
@@ -66,6 +67,7 @@ end
     # Barrier level = 95.0. Low at bar 6 = 95.0 → hit (<=)
     @test result.exit_idx[1] == 6
     # Exit price = barrier level = 95.0 (Immediate)
+    # side=1 (long): ret = 1 * (95.0/100.0 - 1) = -0.05
     @test result.ret[1] ≈ (95.0 / 100.0) - 1.0  # = -0.05
 end
 
@@ -188,7 +190,7 @@ end
 
     bars = TestData.make_pricebars(; n=200)
     evt = Event(d -> trues(length(d.bars.close)))
-    pipe_data = merge(evt(bars), (; side=zeros(Int8, length(bars))))
+    pipe_data = merge(evt(bars), (; side=ones(Int8, length(bars))))
 
     lab = Label!(
         UpperBarrier(d -> d.entry_price * 1.03),
@@ -214,7 +216,8 @@ end
 
     bars = TestData.make_pricebars(; n=200)
     evt = Event(d -> trues(length(d.bars.close)))
-    pipe_data = merge(evt(bars), (; side=zeros(Int8, length(bars))))
+    # Use side=1 (long): log_ret = 1 * log1p(price_ret) = log1p(ret) holds for long trades
+    pipe_data = merge(evt(bars), (; side=ones(Int8, length(bars))))
 
     lab = Label!(
         UpperBarrier(d -> d.entry_price * 1.03),
@@ -507,7 +510,7 @@ end
     # Upper barrier = 110.0. Bar 4: open=115 >= 110 → gap hit
     ub = UpperBarrier(d -> d.entry_price * 1.10)
 
-    result = calculate_label(event_indices, bars, (ub,); side=zeros(Int8, n))
+    result = calculate_label(event_indices, bars, (ub,); side=ones(Int8, n))
 
     @test length(result.label) == 1
     @test result.label[1] == Int8(1)
@@ -515,6 +518,7 @@ end
 
     # Gap-through: exit price is the open price (Immediate with open_price arg),
     # because _record_exit! is called with open_price as the level
+    # side=1 (long): ret = 1 * (115.0/100.0 - 1) = 0.15
     @test result.ret[1] ≈ (115.0 / 100.0) - 1.0  # = 0.15
 end
 
