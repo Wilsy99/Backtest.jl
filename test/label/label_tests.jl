@@ -1044,8 +1044,8 @@ end
     data = (; bars=:placeholder, side=Int8[1, -1])
     ba = Backtest.BarrierArgs(data, 1, 100.0, ts, Int8(1))
 
-    @test @inferred(ba.idx) isa Int
-    @test @inferred(ba.entry_price) isa Float64
-    @test @inferred(ba.entry_ts) isa DateTime
-    @test @inferred(ba.entry_side) isa Int8
+    @test @inferred(getproperty(ba, :idx)) isa Int
+    @test @inferred(getproperty(ba, :entry_price)) isa Float64
+    @test @inferred(getproperty(ba, :entry_ts)) isa DateTime
+    @test @inferred(getproperty(ba, :entry_side)) isa Int8
 end

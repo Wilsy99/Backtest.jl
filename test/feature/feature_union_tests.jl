@@ -23,7 +23,7 @@ end
     using Backtest, Test
 
     @test_throws ArgumentError FeatureUnion(EMA(10))
-    @test_throws MethodError FeatureUnion()
+    @test_throws ArgumentError FeatureUnion()
 end
 
 # ── Phase 2: Core Correctness — Reference Values ──
