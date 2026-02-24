@@ -10,8 +10,7 @@ bars = PriceBars(
     data.open, data.high, data.low, data.close, data.volume, data.timestamp, TimeBar()
 )
 
-big_bars =
-    bars = PriceBars(
+big_bars = PriceBars(
         big_data.open,
         big_data.high,
         big_data.low,
@@ -20,7 +19,7 @@ big_bars =
         big_data.timestamp,
         TimeBar(),
     )
-    
+
 #! format: off
 @time bars |>
     EMA(10, 20) |>
@@ -70,7 +69,7 @@ strat(bars::PriceBars, multi_thread) =
 
 @time strat(big_bars, true)()
 
-@benchmark $strat(big_bars, true)()
+@benchmark $strat(big_bars, false)()
 
 feats = EMA(10, 20) >> CUSUM(1)
 side = Crossover(:ema_10, :ema_20; wait_for_cross=false, direction=LongOnly())

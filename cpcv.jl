@@ -36,35 +36,45 @@ function get_group_idx_range(cpcv::CPCV, group_num::Int)
     start_idx = (group_num - 1) * base_len + rem_used_before + 1
 
     # Does this specific group get an extra bit?
-    current_extra = group_num <= rem
-    end_idx = start_idx + base_len + current_extra - 1
+    extra = group_num <= rem
+    end_idx = start_idx + base_len + extra - 1
 
     return start_idx:end_idx
 end
 
-function get_fold_test_groups(cpcv::CPCV, fold_num::Int)
-
-    # Switch to 0-indexed for the math logic
-    idx = fold_num - 1
+function get_fold_test_group_mask(cpcv::CPCV, fold_num::Int)
+    n_groups = cpcv.n_groups
     k = cpcv.n_test_groups
-    n = cpcv.n_groups
 
-    test_groups = Vector{Int}(undef, k)
+    n = n_groups - 1
+    k = k
+    group_id = 1
 
-    # We use a greedy approach to find the combination lexicographically
-    # We start from the highest possible group number and work backwards
-    current_n = n - 1
-    for i in k:-1:1
-        # Find the largest 'current_n' such that binomial(current_n, i) <= idx
-        while binomial(current_n, i) > idx
-            current_n -= 1
+    target_dist = cpcv.n_folds - fold_num + 1
+
+    test_group_mask = falses(n_groups)
+
+    for _ in 1:k
+        # Calculate the size of the "Exclude this group" block (the tail)
+        binom = binomial(n, k)
+
+        # WHILE the tail is large enough to contain our target distance...
+        while binom >= target_dist
+            # Move to the next group and shrink the tail size
+            n -= 1
+            group_id += 1
+            binom = binomial(n, k)
         end
 
-        # In lexicographic order, this translates to our group ID
-        # The +1 maps it back to Julia's 1-based indexing
-        test_groups[k - i + 1] = n - current_n
-        idx -= binomial(current_n, i)
+        # If the tail is too small, the group_id MUST be in the set
+        test_group_mask[group_id] = true
+
+        # Prepare for the next pick (move one step right in the set)
+        n -= 1
+        group_id += 1
+        k -= 1
+        target_dist -= binom
     end
 
-    return sort(test_groups)
+    return test_group_mask
 end
