@@ -140,6 +140,100 @@ function Event(cond_funcs::Function...; match::Symbol=:all)
     return Event(cond_funcs, op)
 end
 
+# ── Standalone Calculation ──
+
+"""
+    calculate_event(event::Event, data) -> Vector{Int}
+
+Evaluate the event detector against `data` and return the bar indices
+where the combined condition mask is `true`.
+
+This is the standalone computation function for the Event stage. The
+functor interface (`event(bars)`, `event(d)`) delegates to this
+function after wrapping the input.
+
+`data` must be whatever the condition closures expect — typically a
+`NamedTuple` with at least `bars::PriceBars`, plus any feature keys
+referenced by the conditions (e.g., `:ema_10`).
+
+# Arguments
+- `event::Event`: the event detector.
+- `data`: the data passed to each condition function. Must support
+    `data.bars.close` to determine the series length.
+
+# Returns
+- `Vector{Int}`: sorted bar indices where all (`:all`) or any (`:any`)
+    conditions hold.
+
+# Examples
+```julia
+using Backtest, Dates
+
+bars = PriceBars(
+    [99.0, 100.0, 101.0],
+    [100.0, 101.0, 102.0],
+    [98.0,  99.0, 100.0],
+    [100.0, 101.0, 100.5],
+    [1000.0, 1100.0, 900.0],
+    [DateTime(2024,1,1), DateTime(2024,1,2), DateTime(2024,1,3)],
+    TimeBar(),
+)
+
+evt = Event(d -> d.bars.close .> 100.0)
+indices = calculate_event(evt, (bars=bars,))  # [2, 3]
+```
+
+# See also
+- [`Event`](@ref): constructor and type documentation.
+- [`calculate_event(::Event, ::PriceBars)`](@ref): convenience overload.
+"""
+function calculate_event(event::Event, data)
+    n = length(data.bars.close)
+    return _resolve_indices(event, data, n)
+end
+
+"""
+    calculate_event(event::Event, bars::PriceBars) -> Vector{Int}
+
+Convenience overload that wraps `bars` as `(bars=bars,)` before
+evaluating.
+
+Only works when conditions reference bar fields (`:close`, `:open`,
+etc.) and do not depend on upstream feature keys.
+
+# Arguments
+- `event::Event`: the event detector.
+- `bars::PriceBars`: the price data.
+
+# Returns
+- `Vector{Int}`: sorted bar indices where conditions hold.
+
+# Examples
+```julia
+using Backtest, Dates
+
+bars = PriceBars(
+    [99.0, 100.0, 101.0],
+    [100.0, 101.0, 102.0],
+    [98.0,  99.0, 100.0],
+    [100.0, 101.0, 100.5],
+    [1000.0, 1100.0, 900.0],
+    [DateTime(2024,1,1), DateTime(2024,1,2), DateTime(2024,1,3)],
+    TimeBar(),
+)
+
+evt = Event(d -> d.bars.close .> 100.0)
+indices = calculate_event(evt, bars)  # [2, 3]
+```
+
+# See also
+- [`Event`](@ref): constructor and type documentation.
+- [`calculate_event(::Event, data)`](@ref): general overload for pipeline data.
+"""
+function calculate_event(event::Event, bars::PriceBars)
+    return calculate_event(event, (bars=bars,))
+end
+
 """
     (e::Event)(bars::PriceBars) -> NamedTuple
     (e::Event)(d::NamedTuple)   -> NamedTuple
@@ -201,14 +295,12 @@ Returns the input merged with `event_indices::Vector{Int}`.
 """
 function (e::Event)(bars::PriceBars)
     d = (bars=bars,)
-    n = length(bars.close)
-    indices = _resolve_indices(e, d, n)
+    indices = calculate_event(e, d)
     return (; bars=bars, event_indices=indices)
 end
 
 function (e::Event)(d::NamedTuple)
-    n = length(d.bars.close)
-    indices = _resolve_indices(e, d, n)
+    indices = calculate_event(e, d)
     return merge(d, (; event_indices=indices))
 end
 
