@@ -235,3 +235,47 @@ end
     @test actual <= budget
     @test actual > 0
 end
+
+# ── Duck-Typed Data Support ──
+
+@testitem "Feature Interface: NamedTuple with close field (no PriceBars)" tags = [
+    :feature, :unit
+] begin
+    using Backtest, Test
+
+    # A plain NamedTuple with a :close field should work as input
+    close = Float64[10, 11, 12, 13, 14, 15]
+    data = (close=close, volume=ones(6))
+
+    result = EMA(3)(data)
+
+    @test result isa NamedTuple
+    @test haskey(result, :bars)
+    @test haskey(result, :ema_3)
+    @test result.bars === data
+    @test result.ema_3[3] ≈ 11.0
+end
+
+@testitem "Feature Interface: field keyword routes to alternate series" tags = [
+    :feature, :unit
+] setup = [TestData] begin
+    using Backtest, Test
+
+    bars = TestData.make_pricebars(; n=200)
+
+    # EMA on volume via field keyword
+    result = EMA(10; field=:volume)(bars)
+    expected = calculate_feature(EMA(10), bars.volume)
+    @test isequal(result.ema_10, expected)
+
+    # Pipeline chaining with field keyword
+    result2 = (EMA(10) >> EMA(20; field=:volume))(bars)
+    @test haskey(result2, :ema_10)
+    @test haskey(result2, :ema_20)
+
+    # :ema_10 computed on close, :ema_20 computed on volume
+    ema_close = calculate_feature(EMA(10), bars.close)
+    ema_vol = calculate_feature(EMA(20), bars.volume)
+    @test isequal(result2.ema_10, ema_close)
+    @test isequal(result2.ema_20, ema_vol)
+end

@@ -117,4 +117,40 @@ end
 
 @allocations bars |> EMA(5,10,15,20,3,4,6,1)
 
+# ── Fully Standalone Approach (no pipeline, no functors) ──
 
+# 1. Features — raw vectors in, raw vectors out
+ema_10 = calculate_feature(EMA(10), data.close)
+ema_20 = calculate_feature(EMA(20), data.close)
+cusum = calculate_feature(CUSUM(1), data.close)
+
+# 2. Side — raw vectors in, Vector{Int8} out
+sides = calculate_side(Crossover(), ema_10, ema_20)
+
+# 3. Event — standalone calculation using calculate_event
+#    Conditions reference pipeline data, so we build a minimal NamedTuple
+evt = Event(d -> d.cusum .!= 0 .&& d.side .!= 0)
+event_indices = calculate_event(evt, (bars=bars, cusum=cusum, side=sides))
+
+# 4. Label — raw vectors + barriers in, LabelResults out
+results = calculate_label(
+    event_indices,
+    data.timestamp,
+    data.open,
+    data.high,
+    data.low,
+    data.close,
+    data.volume,
+    (
+        LowerBarrier(a -> a.entry_price * 0.95, Int8(-1), Immediate()),
+        UpperBarrier(a -> a.entry_price * 1.2, Int8(1), Immediate()),
+        LowerBarrier(a -> a.ema_20[a.idx], Int8(-1), NextOpen()),
+        TimeBarrier(a -> a.entry_ts + Day(10), Int8(0), NextOpen()),
+    );
+    side=sides,
+    entry_basis=NextOpen(),
+    barrier_args=(; ema_20=ema_20),
+)
+
+println("Standalone approach: $(length(event_indices)) events → $(length(results.label)) labels")
+println("  Label distribution: +1=$(count(==(1), results.label)), -1=$(count(==(-1), results.label)), 0=$(count(==(0), results.label))")

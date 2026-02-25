@@ -90,16 +90,19 @@ struct CUSUM{T<:AbstractFloat} <: AbstractFeature
     multiplier::T
     span::Int
     expected_value::T
+    field::Symbol
 
-    function CUSUM{T}(m, s, e) where {T<:AbstractFloat}
-        return new{T}(_positive_float(T(m)), _natural(Int(s)), T(e))
+    function CUSUM{T}(m, s, e, f) where {T<:AbstractFloat}
+        return new{T}(_positive_float(T(m)), _natural(Int(s)), T(e), f)
     end
 end
 
-function CUSUM(multiplier::Real; span=100, expected_value=0.0)
+function CUSUM(multiplier::Real; span=100, expected_value=0.0, field::Symbol=:close)
     T = typeof(float(multiplier))
-    return CUSUM{T}(multiplier, span, expected_value)
+    return CUSUM{T}(multiplier, span, expected_value, field)
 end
+
+_feature_field(feat::CUSUM) = feat.field
 
 """
     calculate_feature(feat::CUSUM, prices::AbstractVector{T}) where {T<:AbstractFloat} -> Vector{Int8}
@@ -142,6 +145,47 @@ function calculate_feature(feat::CUSUM, prices::AbstractVector{T}) where {T<:Abs
 end
 
 """
+    calculate_feature!(dest::AbstractVector{Int8}, feat::CUSUM, prices::AbstractVector{T}) where {T<:AbstractFloat} -> dest
+
+Compute CUSUM filter signals in-place, writing results into the
+pre-allocated vector `dest`. This avoids allocation for
+performance-critical paths.
+
+`dest` is first zeroed, then filled with signals (`Int8(1)`,
+`Int8(-1)`, or `Int8(0)`).
+
+# Arguments
+- `dest::AbstractVector{Int8}`: output vector. Must have the same
+    length as `prices`.
+- `feat::CUSUM`: the CUSUM feature instance.
+- `prices::AbstractVector{T}`: the input price series.
+
+# Returns
+- `dest`: the mutated output vector (returned for convenience).
+
+# Throws
+- `DimensionMismatch`: if `length(dest) != length(prices)`.
+
+# See also
+- [`calculate_feature`](@ref): allocating version.
+- [`CUSUM`](@ref): constructor and type documentation.
+"""
+function calculate_feature!(
+    dest::AbstractVector{Int8}, feat::CUSUM, prices::AbstractVector{T}
+) where {T<:AbstractFloat}
+    length(dest) == length(prices) ||
+        throw(DimensionMismatch("dest length $(length(dest)) != prices length $(length(prices))"))
+    fill!(dest, Int8(0))
+    n = length(prices)
+    warmup_idx = feat.span + 1
+    if n <= warmup_idx
+        return dest
+    end
+    _calculate_cusum!(dest, prices, feat.multiplier, feat.span, feat.expected_value)
+    return dest
+end
+
+"""
     _feature_result(feat::CUSUM, prices) -> NamedTuple
 
 Wrap the CUSUM output in a `NamedTuple` with key `:cusum` for
@@ -158,23 +202,38 @@ end
 Core CUSUM computation. Allocate a result vector and run the
 two-accumulator filter with adaptive volatility threshold.
 
-The first `span` + 1 bars initialise the EMA of squared log-returns. Post-
-warmup, each bar updates the positive and negative accumulators. When
-either exceeds the adaptive threshold (`sqrt(ema_sq_mean) * mult`),
-a signal is recorded and the accumulator resets.
-
 Assume all prices are strictly positive (caller must validate).
 """
 function _calculate_cusum(
     prices::AbstractVector{T}, multiplier::T, span::Int, expected_value::T
 ) where {T<:AbstractFloat}
     n = length(prices)
-    cusum_values = zeros(Int8, n)
-
     warmup_idx = span + 1
     if n <= warmup_idx
         return _warn_and_return_zeros(n, warmup_idx)
     end
+    cusum_values = zeros(Int8, n)
+    _calculate_cusum!(cusum_values, prices, multiplier, span, expected_value)
+    return cusum_values
+end
+
+"""
+    _calculate_cusum!(dest, prices, multiplier, span, expected_value) -> Nothing
+
+In-place CUSUM computation. `dest` must be pre-zeroed and have
+length `>= span + 2`.
+
+The first `span` + 1 bars initialise the EMA of squared log-returns. Post-
+warmup, each bar updates the positive and negative accumulators. When
+either exceeds the adaptive threshold (`sqrt(ema_sq_mean) * mult`),
+a signal is recorded and the accumulator resets.
+"""
+function _calculate_cusum!(
+    dest::AbstractVector{Int8}, prices::AbstractVector{T},
+    multiplier::T, span::Int, expected_value::T
+) where {T<:AbstractFloat}
+    n = length(prices)
+    warmup_idx = span + 1
 
     α = T(2.0) / (T(span) + one(T))
     β = one(T) - α
@@ -208,17 +267,17 @@ function _calculate_cusum(
         s_neg = min(zero(T), s_neg + log_return + expected)
 
         if s_pos > threshold
-            cusum_values[i] = 1
+            dest[i] = 1
             s_pos = zero(T)
         elseif s_neg < -threshold
-            cusum_values[i] = -1
+            dest[i] = -1
             s_neg = zero(T)
         end
 
         ema_sq_mean = α * log_return^2 + β * ema_sq_mean
     end
 
-    return cusum_values
+    return nothing
 end
 
 """Return zeros and warn when data is shorter than the warmup period"""

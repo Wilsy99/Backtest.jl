@@ -90,16 +90,19 @@ single-threaded.
 """
 struct EMA{Periods} <: AbstractFeature
     multi_thread::Bool
-    function EMA{Periods}(; multi_thread::Bool=false) where {Periods}
+    field::Symbol
+    function EMA{Periods}(; multi_thread::Bool=false, field::Symbol=:close) where {Periods}
         isempty(Periods) && throw(ArgumentError("At least one period is required"))
         allunique(Periods) || throw(ArgumentError("Periods must be unique, got $Periods"))
         foreach(_natural, Periods)
-        return new{Periods}(multi_thread)
+        return new{Periods}(multi_thread, field)
     end
 end
 
-EMA(p::Int; multi_thread::Bool=false) = EMA{(p,)}(; multi_thread)
-EMA(ps::Vararg{Int}; multi_thread::Bool=false) = EMA{ps}(; multi_thread)
+EMA(p::Int; multi_thread::Bool=false, field::Symbol=:close) = EMA{(p,)}(; multi_thread, field)
+EMA(ps::Vararg{Int}; multi_thread::Bool=false, field::Symbol=:close) = EMA{ps}(; multi_thread, field)
+
+_feature_field(feat::EMA) = feat.field
 
 """
     calculate_feature(feat::EMA{Periods}, prices::AbstractVector{T}) where {Periods, T<:AbstractFloat} -> Union{Vector{T}, Matrix{T}}
@@ -169,6 +172,94 @@ function calculate_feature(
     else
         return _calculate_emas(prices, Periods, feat.multi_thread)
     end
+end
+
+"""
+    calculate_feature!(dest::AbstractVector{T}, feat::EMA{(p,)}, prices::AbstractVector{T}) where {p, T<:AbstractFloat} -> dest
+
+Compute a single-period EMA in-place, writing results into the
+pre-allocated vector `dest`. This avoids allocation for
+performance-critical paths such as Monte Carlo simulations or
+high-frequency backtests.
+
+# Arguments
+- `dest::AbstractVector{T}`: output vector. Must have the same
+    length as `prices`.
+- `feat::EMA{(p,)}`: a single-period EMA instance.
+- `prices::AbstractVector{T}`: the input price series.
+
+# Returns
+- `dest`: the mutated output vector (returned for convenience).
+
+# Throws
+- `DimensionMismatch`: if `length(dest) != length(prices)`.
+
+# Examples
+```jldoctest
+julia> using Backtest
+
+julia> prices = Float64[10, 11, 12, 13, 14, 15];
+
+julia> dest = similar(prices);
+
+julia> calculate_feature!(dest, EMA(3), prices);
+
+julia> dest[3] ≈ 11.0
+true
+```
+
+# See also
+- [`calculate_feature`](@ref): allocating version.
+- [`EMA`](@ref): constructor and type documentation.
+"""
+function calculate_feature!(
+    dest::AbstractVector{T}, feat::EMA{(p,)}, prices::AbstractVector{T}
+) where {p,T<:AbstractFloat}
+    length(dest) == length(prices) ||
+        throw(DimensionMismatch("dest length $(length(dest)) != prices length $(length(prices))"))
+    _single_ema!(dest, prices, p, length(prices))
+    return dest
+end
+
+"""
+    calculate_feature!(dest::AbstractMatrix{T}, feat::EMA{Periods}, prices::AbstractVector{T}) where {Periods, T<:AbstractFloat} -> dest
+
+Compute a multi-period EMA in-place, writing results into the
+pre-allocated matrix `dest`. Column `j` receives the EMA for
+`Periods[j]`.
+
+# Arguments
+- `dest::AbstractMatrix{T}`: output matrix of size
+    `(length(prices), length(Periods))`.
+- `feat::EMA{Periods}`: a multi-period EMA instance.
+- `prices::AbstractVector{T}`: the input price series.
+
+# Returns
+- `dest`: the mutated output matrix (returned for convenience).
+
+# Throws
+- `DimensionMismatch`: if `size(dest) != (length(prices), length(Periods))`.
+
+# See also
+- [`calculate_feature`](@ref): allocating version.
+"""
+function calculate_feature!(
+    dest::AbstractMatrix{T}, feat::EMA{Periods}, prices::AbstractVector{T}
+) where {Periods,T<:AbstractFloat}
+    n_prices = length(prices)
+    n_periods = length(Periods)
+    size(dest) == (n_prices, n_periods) ||
+        throw(DimensionMismatch("dest size $(size(dest)) != expected ($n_prices, $n_periods)"))
+    @views if feat.multi_thread
+        @threads for j in 1:n_periods
+            _single_ema!(dest[:, j], prices, Periods[j], n_prices)
+        end
+    else
+        for j in 1:n_periods
+            _single_ema!(dest[:, j], prices, Periods[j], n_prices)
+        end
+    end
+    return dest
 end
 
 """

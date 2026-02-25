@@ -510,6 +510,7 @@ evt = @Event :ema_10 .> :ema_50 :close .> 100.0 match=:any
 
 # See also
 - [`Event`](@ref): the underlying type constructed by this macro.
+- [`calculate_event`](@ref): standalone computation function.
 - [`@UpperBarrier`](@ref), [`@LowerBarrier`](@ref): barrier macros
     using the same symbol rewriting rules.
 """

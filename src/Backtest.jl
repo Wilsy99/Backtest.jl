@@ -14,10 +14,10 @@ include("event.jl")
 include("label/label.jl")
 
 export PriceBars, TimeBar
-export AbstractFeature, EMA, CUSUM, FeatureUnion, calculate_feature
+export AbstractFeature, EMA, CUSUM, FeatureUnion, calculate_feature, calculate_feature!
 export AbstractDirection, LongOnly, ShortOnly, LongShort
 export AbstractSide, Crossover, calculate_side
-export AbstractEvent, Event, @Event
+export AbstractEvent, Event, @Event, calculate_event
 export AbstractExecutionBasis, CurrentOpen, CurrentClose, NextOpen, NextClose, Immediate
 export AbstractBarrier,
     LowerBarrier,
