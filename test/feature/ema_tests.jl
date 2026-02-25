@@ -598,3 +598,85 @@ end
     @test isequal(result_mt.ema_10, result_st.ema_10)
     @test isequal(result_mt.ema_20, result_st.ema_20)
 end
+
+# ── field keyword ──
+
+@testitem "EMA: field keyword defaults to :close" tags = [:feature, :ema, :unit] begin
+    using Backtest, Test
+
+    @test EMA(10).field === :close
+    @test EMA(10, 20).field === :close
+end
+
+@testitem "EMA: field keyword selects target series" tags = [:feature, :ema, :unit] setup = [
+    TestData
+] begin
+    using Backtest, Test
+
+    bars = TestData.make_pricebars(; n=200)
+
+    result_close = EMA(10)(bars)
+    result_volume = EMA(10; field=:volume)(bars)
+
+    # Results should differ because close and volume are different series
+    @test !isequal(result_close.ema_10, result_volume.ema_10)
+
+    # Volume-based EMA should match computing EMA directly on volume
+    expected = calculate_feature(EMA(10), bars.volume)
+    @test isequal(result_volume.ema_10, expected)
+end
+
+# ── calculate_feature! (in-place) ──
+
+@testitem "EMA: calculate_feature! single period" tags = [:feature, :ema, :unit] begin
+    using Backtest, Test
+
+    prices = Float64[10, 11, 12, 13, 14, 15]
+    dest = similar(prices)
+
+    result = calculate_feature!(dest, EMA(3), prices)
+
+    @test result === dest
+    @test isequal(dest, calculate_feature(EMA(3), prices))
+end
+
+@testitem "EMA: calculate_feature! multi-period" tags = [:feature, :ema, :unit] begin
+    using Backtest, Test
+
+    prices = Float64.(1:100)
+    dest = Matrix{Float64}(undef, 100, 3)
+
+    result = calculate_feature!(dest, EMA(5, 10, 20), prices)
+
+    @test result === dest
+    @test isequal(dest, calculate_feature(EMA(5, 10, 20), prices))
+end
+
+@testitem "EMA: calculate_feature! dimension mismatch" tags = [:feature, :ema, :edge] begin
+    using Backtest, Test
+
+    prices = Float64[10, 11, 12, 13, 14, 15]
+
+    # Vector too short
+    dest_short = Vector{Float64}(undef, 3)
+    @test_throws DimensionMismatch calculate_feature!(dest_short, EMA(3), prices)
+
+    # Matrix wrong size
+    dest_bad = Matrix{Float64}(undef, 6, 2)
+    @test_throws DimensionMismatch calculate_feature!(dest_bad, EMA(5, 10, 20), prices)
+end
+
+@testitem "EMA: calculate_feature! zero allocations" tags = [:feature, :ema, :allocation] begin
+    using Backtest, Test
+
+    prices = collect(1.0:200.0)
+    dest = similar(prices)
+    feat = EMA(10)
+
+    calculate_feature!(dest, feat, prices)
+
+    allocs_inplace(dest, feat, prices) = @allocated calculate_feature!(dest, feat, prices)
+
+    actual = minimum([@allocated(allocs_inplace(dest, feat, prices)) for _ in 1:3])
+    @test actual == 0
+end

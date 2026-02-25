@@ -426,3 +426,76 @@ end
     @test length(vals_202) == 202
     @test all(vals_202[1:201] .== Int8(0))
 end
+
+# ── field keyword ──
+
+@testitem "CUSUM: field keyword defaults to :close" tags = [:feature, :cusum, :unit] begin
+    using Backtest, Test
+
+    @test CUSUM(1.0).field === :close
+    @test CUSUM(0.5; span=50).field === :close
+end
+
+@testitem "CUSUM: field keyword selects target series" tags = [:feature, :cusum, :unit] setup = [
+    TestData
+] begin
+    using Backtest, Test
+
+    bars = TestData.make_pricebars(; n=200)
+
+    result_close = CUSUM(1.0)(bars)
+    result_high = CUSUM(1.0; field=:high)(bars)
+
+    # High-based CUSUM should match computing CUSUM directly on high prices
+    expected = calculate_feature(CUSUM(1.0), bars.high)
+    @test isequal(result_high.cusum, expected)
+end
+
+# ── calculate_feature! (in-place) ──
+
+@testitem "CUSUM: calculate_feature! matches allocating version" tags = [:feature, :cusum, :unit] begin
+    using Backtest, Test
+
+    prices = vcat(fill(100.0, 101), [200.0, 100.0, 200.0])
+    dest = Vector{Int8}(undef, length(prices))
+
+    result = calculate_feature!(dest, CUSUM(1.0), prices)
+
+    @test result === dest
+    @test isequal(dest, calculate_feature(CUSUM(1.0), prices))
+end
+
+@testitem "CUSUM: calculate_feature! with short data" tags = [:feature, :cusum, :edge] begin
+    using Backtest, Test
+
+    # Data shorter than warmup — should return zeros without error
+    prices = fill(100.0, 50)
+    dest = Vector{Int8}(undef, 50)
+
+    result = calculate_feature!(dest, CUSUM(1.0), prices)
+
+    @test result === dest
+    @test all(dest .== Int8(0))
+end
+
+@testitem "CUSUM: calculate_feature! dimension mismatch" tags = [:feature, :cusum, :edge] begin
+    using Backtest, Test
+
+    prices = fill(100.0, 200)
+    dest_short = Vector{Int8}(undef, 100)
+
+    @test_throws DimensionMismatch calculate_feature!(dest_short, CUSUM(1.0), prices)
+end
+
+@testitem "CUSUM: calculate_feature! zeroes dest before computing" tags = [:feature, :cusum, :unit] begin
+    using Backtest, Test
+
+    prices = vcat(fill(100.0, 101), [200.0])
+    dest = fill(Int8(99), length(prices))
+
+    calculate_feature!(dest, CUSUM(1.0), prices)
+
+    # Warmup region must be zero (was 99 before the call)
+    @test all(dest[1:101] .== Int8(0))
+    @test dest[102] == Int8(1)
+end
