@@ -54,6 +54,7 @@ julia> result.event_indices
 ```
 
 # See also
+- [`calculate_event`](@ref): standalone computation function.
 - [`@Event`](@ref): DSL macro for constructing `Event` with symbol rewriting.
 - [`AbstractEvent`](@ref): supertype and interface contract.
 
@@ -133,6 +134,7 @@ true
 ```
 
 # See also
+- [`calculate_event`](@ref): standalone computation function.
 - [`@Event`](@ref): DSL macro that constructs `Event` with symbol rewriting.
 """
 function Event(cond_funcs::Function...; match::Symbol=:all)
@@ -282,6 +284,7 @@ julia> r.event_indices
 
 # See also
 - [`Event`](@ref): constructor and type documentation.
+- [`calculate_event`](@ref): standalone computation function.
 - [`_resolve_indices`](@ref): the underlying index-resolution kernel.
 
 # Pipeline Data Flow
@@ -386,6 +389,7 @@ evt = @Event :ema_10 .> :ema_50 :close .> 100.0 match=:any
 
 # See also
 - [`Event`](@ref): the underlying type constructed by this macro.
+- [`calculate_event`](@ref): standalone computation function.
 - [`@UpperBarrier`](@ref), [`@LowerBarrier`](@ref): barrier macros using the
     same symbol-rewriting rules.
 """
