@@ -175,7 +175,7 @@ function calculate_feature(
 end
 
 """
-    calculate_feature!(dest::AbstractVector{T}, feat::EMA{(p,)}, prices::AbstractVector{T}) where {p, T<:AbstractFloat} -> dest
+    calculate_feature!(dest::AbstractVector{T}, feat::EMA{Periods}, prices::AbstractVector{T}) where {Periods, T<:AbstractFloat} -> dest
 
 Compute a single-period EMA in-place, writing results into the
 pre-allocated vector `dest`. This avoids allocation for
@@ -213,11 +213,11 @@ true
 - [`EMA`](@ref): constructor and type documentation.
 """
 function calculate_feature!(
-    dest::AbstractVector{T}, feat::EMA{(p,)}, prices::AbstractVector{T}
-) where {p,T<:AbstractFloat}
+    dest::AbstractVector{T}, feat::EMA{Periods}, prices::AbstractVector{T}
+) where {Periods,T<:AbstractFloat}
     length(dest) == length(prices) ||
         throw(DimensionMismatch("dest length $(length(dest)) != prices length $(length(prices))"))
-    _single_ema!(dest, prices, p, length(prices))
+    _single_ema!(dest, prices, Periods[1], length(prices))
     return dest
 end
 
