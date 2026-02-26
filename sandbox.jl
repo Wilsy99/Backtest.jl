@@ -152,5 +152,3 @@ results = calculate_label(
     barrier_args=(; ema_20=ema_20),
 )
 
-println("Standalone approach: $(length(event_indices)) events → $(length(results.label)) labels")
-println("  Label distribution: +1=$(count(==(1), results.label)), -1=$(count(==(-1), results.label)), 0=$(count(==(0), results.label))")

@@ -1,0 +1,7 @@
+Overall: Make implementation plan look like future_impl_plan
+
+Label: Update output to: 1) merge entry and exit indices into one field thats a vector unit range. 2) Remove timestamps 3) Add features
+Label: Intigrate costs (see costs.txt)
+
+
+CPCV: Allow automated embargoing using Mutual Information (MI) Decay based on Shannon's Entropy. See mutual_information_decay.txt

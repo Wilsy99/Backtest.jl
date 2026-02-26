@@ -1,0 +1,44 @@
+
+Plan is to change entry and exit bases to be structs that takes in the entry type eg immediate next open etc, the fixed costs and then the 
+dynamic costs are functions so we have a dependency injection that allows us to input the actual data if we have it or an approximation function.
+
+Also for profit-taking (TP) and stop-loss (SL) barriers (i.e upper and lower barriers) the barriers need to take into account bid ask spread.
+E.g. if you are Long and your TP target is $105.00, the raw price extreme (High in this example) must breach the barrier plus/minus the spread. 
+If the raw High only hits $105.05, your real fill would be $104.95—meaning the barrier was not hit yet.
+
+
+1. Deterministic Costs (100% Accurate)
+These are static, known costs that you can code into your backtester with near-perfect accuracy based on your broker and exchange.
+
+Commissions: Your broker’s fee (e.g., $0.005 per share, or 0.10% of trade value).
+
+Exchange & Regulatory Fees: Clearing fees, SEC fees, or regional taxes (like UK Stamp Duty).
+
+Financing/Borrowing Costs: Margin interest, short-borrow fees, or overnight swap rates. (Note: Accurate if you have access to historical fee data; otherwise, a flat average is used).
+
+
+2. The Bid-Ask Spread (Data-Dependent Accuracy)
+The spread is the gap between what buyers are bidding and sellers are asking. If your model uses market orders to guarantee execution, you will always cross the spread (buying at the Ask, selling at the Bid).
+
+Accurate: If you have high-quality historical Tick Data (Level 1/BBO), you know exactly what the bid and ask were at the millisecond your signal triggered.
+
+Approximated: If you are using standard OHLCV bars (minute or daily data), you only have the last traded price. You will have to approximate the spread. Lopez de Prado frequently recommends using estimators like the Roll measure or Corwin-Schultz to estimate historical bid-ask spreads purely from OHLC data.
+
+
+3. Slippage (Approximated)
+Slippage is the difference between the expected price when you decided to trade and the actual execution price. It happens because of network latency (the milliseconds it takes your order to reach the exchange) and market volatility (the price moved while your order was traveling).
+
+Why it must be approximated: In a backtest, you don't have a real network connection, and you don't know where your order would have landed in the exchange's matching engine queue.
+
+How to approximate it: You generally model slippage in one of two ways:
+
+Fixed Penalty: Assume a static slippage per trade (e.g., 1 or 2 ticks, or 0.05%).
+
+Volatility-Adjusted: Assume slippage increases as market volatility increases, applying a multiplier based on the asset's rolling standard deviation.
+
+4. Market Impact (Approximated)
+Market impact is the adverse price movement caused by your own trade. If you buy 10,000 shares but there are only 2,000 available at the current Ask, you will "eat" through the order book, triggering higher and higher prices to fill your order.
+
+Why it must be approximated: You cannot know for sure how other algorithms would have reacted to your large order hitting the tape.
+
+How to approximate it: If you are trading small retail size (e.g., a few hundred shares of Apple), market impact is practically zero. If you are trading institutional size, you must use mathematical models (like the Almgren-Chriss model or a square-root impact model) that scale transaction costs exponentially based on your trade size relative to the bar's total volume.

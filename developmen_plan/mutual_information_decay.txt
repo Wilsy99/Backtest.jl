@@ -1,0 +1,28 @@
+Mutual Information (MI) Decay
+
+Instead of linear correlation, we calculate the Mutual Information (MI) based on Shannon's Entropy. MI measures any kind of dependency (linear or non-linear) between a feature at time $t$ and that same feature at time t + k.
+
+When the MI between X_t and X_{t+k} hits the noise floor of the dataset, the "memory" of that feature is dead. That lag k is your mathematically optimal embargo. 
+
+Why is this the best? 
+
+1. Model Agnostic: It catches non-linear leakage that tree-based models (like Random Forests or XGBoost) will absolutely exploit if left un-embargoed. 
+
+2. Statistically Sound: Unlike arbitrary lookback periods, MI gives you a strict probabilistic measure of shared information. 
+
+3. Automatable: You can calculate the noise floor algorithmically.
+
+Step 1: Discretize the Features
+Mutual Information works best on discrete distributions. In Julia, loop through your features and bin them into quantiles (e.g., 10 bins)
+
+Step 2: Calculate the MI Decay CurveFor your most persistent features, calculate the MI between the unshifted feature array and the shifted feature array at increasing lags (k=1, 2, 3...$).
+
+Step 3: Define the "Noise Floor" (The Automatable Trigger)
+You cannot just wait for MI to hit exactly 0.0, because finite datasets always have some random background noise.
+ 
+ - The Automation Trick: Shuffle your feature array randomly and calculate the MI against the original array. Do this 50 times. The 95th percentile of these randomized MI scores is your Noise Floor.
+
+ - The automated embargo is exactly the lag k where the feature's true MI drops below this Noise Floor.
+
+Step 4: Aggregate via the "Soft Max"
+Once you have the optimal k for each feature, don't just take the absolute maximum (which starves your dataset). Take the 90th or 95th percentile of the required lags across your feature space.
