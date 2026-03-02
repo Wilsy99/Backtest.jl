@@ -204,7 +204,7 @@ function Label!(barriers::AbstractBarrier...; kwargs...)
 end
 
 """
-    LabelResults{I<:Int,T<:AbstractFloat,TS}
+    LabelResults{I<:Int,T<:AbstractFloat}
 
 Immutable container for triple-barrier labelling output.
 
@@ -213,10 +213,8 @@ have the same length (one entry per resolved event, or per event if
 `drop_unfinished=false`).
 
 # Fields
-- `entry_idx::Vector{I}`: bar index of trade entry.
-- `exit_idx::Vector{I}`: bar index of barrier exit.
-- `entry_ts::Vector{TS}`: timestamp of the entry bar.
-- `exit_ts::Vector{TS}`: timestamp of the exit bar.
+- `trade_idx_range::Vector{UnitRange{I}}`: bar index range from
+    entry to exit for each trade (e.g. `3:7`).
 - `side::Vector{Int8}`: entry-time side signal (`1` long, `-1`
     short, `0` neutral). Snapshotted from the `side` vector at the
     entry bar index.
@@ -234,11 +232,8 @@ have the same length (one entry per resolved event, or per event if
 - [`Label`](@ref), [`Label!`](@ref): functors that produce this.
 - [`calculate_label`](@ref): the computation function.
 """
-struct LabelResults{I<:Int,T<:AbstractFloat,TS}
-    entry_idx::Vector{I}
-    exit_idx::Vector{I}
-    entry_ts::Vector{TS}
-    exit_ts::Vector{TS}
+struct LabelResults{I<:Int,T<:AbstractFloat}
+    trade_idx_range::Vector{UnitRange{I}}
     side::Vector{Int8}
     label::Vector{Int8}
     bin::Vector{Int8}
@@ -246,6 +241,8 @@ struct LabelResults{I<:Int,T<:AbstractFloat,TS}
     ret::Vector{T}
     log_ret::Vector{T}
 end
+
+Base.length(r::LabelResults) = length(r.trade_idx_range)
 
 # ── Functors ──
 
@@ -301,8 +298,8 @@ ordering.
     barrier level functions.
 
 # Returns
-- [`LabelResults`](@ref): labelling output with entry/exit indices,
-    timestamps, side, labels, bin (meta label), weights, and returns.
+- [`LabelResults`](@ref): labelling output with trade index ranges,
+    side, labels, bin (meta label), weights, and returns.
 
 # See also
 - [`Label`](@ref), [`Label!`](@ref): functor wrappers for pipeline use.
@@ -393,8 +390,6 @@ function calculate_label(
 
     entry_idx = entry_indices[mask]
     exit_idx = buf.exit_indices[mask]
-    entry_ts = entry_timestamps[mask]
-    exit_ts = buf.exit_timestamps[mask]
     sides = buf.sides[mask]
     labels = buf.labels[mask]
     bins = buf.bins[mask]
@@ -422,8 +417,6 @@ function calculate_label(
         reorder = sortperm(invperm(sort_perm)[mask])
         entry_idx = entry_idx[reorder]
         exit_idx = exit_idx[reorder]
-        entry_ts = entry_ts[reorder]
-        exit_ts = exit_ts[reorder]
         sides = sides[reorder]
         labels = labels[reorder]
         bins = bins[reorder]
@@ -432,9 +425,10 @@ function calculate_label(
         log_rets = log_rets[reorder]
     end
 
+    trade_idx_range = [entry_idx[i]:exit_idx[i] for i in eachindex(entry_idx)]
+
     return LabelResults(
-        entry_idx, exit_idx, entry_ts, exit_ts, sides, labels, bins, weights, rets,
-        log_rets,
+        trade_idx_range, sides, labels, bins, weights, rets, log_rets,
     )
 end
 
