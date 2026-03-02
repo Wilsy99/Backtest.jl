@@ -27,11 +27,9 @@
     @test length(result.label) == 1
     @test result.label[1] == Int8(1)
 
-    # Entry at bar 2 (NextOpen of event bar 1)
-    @test result.entry_idx[1] == 2
-
+    # Entry at bar 2 (NextOpen of event bar 1), exit at bar 7
     # Bar 7: high=111.0 >= 110.0 → first hit. With Immediate exit, exit at bar 7.
-    @test result.exit_idx[1] == 7
+    @test result.trade_idx_range[1] == 2:7
 
     # Return: exit_price = barrier level = 110.0, entry_price = open[2] = 100.0
     @test result.ret[1] ≈ (110.0 / 100.0) - 1.0  # = 0.10
@@ -62,9 +60,8 @@ end
     @test result.label[1] == Int8(-1)
 
     # Entry at bar 2, entry_price = open[2] = 100.0
-    @test result.entry_idx[1] == 2
     # Barrier level = 95.0. Low at bar 6 = 95.0 → hit (<=)
-    @test result.exit_idx[1] == 6
+    @test result.trade_idx_range[1] == 2:6
     # Exit price = barrier level = 95.0 (Immediate)
     @test result.ret[1] ≈ (95.0 / 100.0) - 1.0  # = -0.05
 end
@@ -100,8 +97,7 @@ end
     # Entry at bar 2 (NextOpen), entry_ts = ts[2] = 2024-01-02
     # TimeBarrier level = 2024-01-02 + Day(3) = 2024-01-05
     # Bar 5: ts[5] = 2024-01-05 >= 2024-01-05 → hit
-    @test result.entry_idx[1] == 2
-    @test result.exit_idx[1] == 5
+    @test result.trade_idx_range[1] == 2:5
 end
 
 @testitem "Label: ConditionBarrier triggers on boolean" tags = [:label, :unit] begin
@@ -131,7 +127,7 @@ end
     @test length(result.label) == 1
     @test result.label[1] == Int8(0)
     # Condition fires at bar 6, NextOpen exit → exit at bar 7
-    @test result.exit_idx[1] == 7
+    @test last(result.trade_idx_range[1]) == 7
 end
 
 # ── Phase 2: Core Correctness — Label vs Label! Functors ──
@@ -249,7 +245,7 @@ end
     @test all(l ∈ Int8.([-1, 0, 1]) for l in result.label)
 end
 
-@testitem "Label: Exit timestamp >= entry timestamp" tags = [:label, :property] setup = [
+@testitem "Label: Exit index >= entry index" tags = [:label, :property] setup = [
     TestData
 ] begin
     using Backtest, Test, Dates
@@ -266,9 +262,8 @@ end
 
     result = lab(pipe_data)
 
-    for i in eachindex(result.entry_ts)
-        @test result.exit_ts[i] >= result.entry_ts[i]
-        @test result.exit_idx[i] >= result.entry_idx[i]
+    for i in eachindex(result.trade_idx_range)
+        @test last(result.trade_idx_range[i]) >= first(result.trade_idx_range[i])
     end
 end
 
@@ -290,10 +285,8 @@ end
     result = lab(pipe_data)
 
     n = length(result.label)
-    @test length(result.entry_idx) == n
-    @test length(result.exit_idx) == n
-    @test length(result.entry_ts) == n
-    @test length(result.exit_ts) == n
+    @test length(result) == n
+    @test length(result.trade_idx_range) == n
     @test length(result.side) == n
     @test length(result.bin) == n
     @test length(result.weight) == n
@@ -376,7 +369,7 @@ end
 
     @test result isa Backtest.LabelResults
     @test length(result.label) == 0
-    @test length(result.entry_idx) == 0
+    @test length(result) == 0
     @test length(result.ret) == 0
     @test length(result.weight) == 0
 end
@@ -468,10 +461,10 @@ end
 
     # Results should be in caller's order (10, 5, 15), not sorted (5, 10, 15)
     # Entry indices with NextOpen: 11, 6, 16
-    if length(result.entry_idx) == 3
-        @test result.entry_idx[1] == 11
-        @test result.entry_idx[2] == 6
-        @test result.entry_idx[3] == 16
+    if length(result.trade_idx_range) == 3
+        @test first(result.trade_idx_range[1]) == 11
+        @test first(result.trade_idx_range[2]) == 6
+        @test first(result.trade_idx_range[3]) == 16
     end
 end
 
@@ -511,7 +504,7 @@ end
 
     @test length(result.label) == 1
     @test result.label[1] == Int8(1)
-    @test result.exit_idx[1] == 4
+    @test last(result.trade_idx_range[1]) == 4
 
     # Gap-through: exit price is the open price (Immediate with open_price arg),
     # because _record_exit! is called with open_price as the level
@@ -580,8 +573,7 @@ end
     @test result_st.label == result_mt.label
     @test result_st.side == result_mt.side
     @test result_st.bin == result_mt.bin
-    @test result_st.entry_idx == result_mt.entry_idx
-    @test result_st.exit_idx == result_mt.exit_idx
+    @test result_st.trade_idx_range == result_mt.trade_idx_range
     @test result_st.ret ≈ result_mt.ret
     @test result_st.log_ret ≈ result_mt.log_ret
 end
@@ -606,8 +598,7 @@ end
     result_bars = calculate_label(event_indices, bars, (tb,); side=s)
 
     @test result_raw.label == result_bars.label
-    @test result_raw.entry_idx == result_bars.entry_idx
-    @test result_raw.exit_idx == result_bars.exit_idx
+    @test result_raw.trade_idx_range == result_bars.trade_idx_range
     @test result_raw.ret ≈ result_bars.ret
 end
 
@@ -634,8 +625,7 @@ end
 
     @test length(result.label) == 1
     @test result.label[1] == Int8(1)
-    @test result.entry_idx[1] == 2
-    @test result.exit_idx[1] == 3
+    @test result.trade_idx_range[1] == 2:3
 end
 
 @testitem "Label: Barrier priority — first barrier wins on same bar" tags = [
@@ -689,9 +679,8 @@ end
 
     @test length(result.label) == 1
     # Entry at bar 1, entry_price = close[1] = 100.5
-    @test result.entry_idx[1] == 1
     # Barrier = 100.5 * 1.10 = 110.55. Bar 7: high=115 >= 110.55 → hit
-    @test result.exit_idx[1] == 7
+    @test result.trade_idx_range[1] == 1:7
 end
 
 # ── Phase 3: Robustness — ExitBuffers ──
@@ -770,7 +759,7 @@ end
     lr = result.labels
     if length(lr.label) > 0
         @test all(l ∈ Int8.([-1, 0, 1]) for l in lr.label)
-        @test all(lr.exit_idx .>= lr.entry_idx)
+        @test all(last(r) >= first(r) for r in lr.trade_idx_range)
     end
 end
 
@@ -818,7 +807,7 @@ end
     # should be consistent with the side-dependent level.
     for i in eachindex(result.label)
         if result.label[i] == Int8(-1)  # lower barrier hit
-            entry_price_i = bars.open[result.entry_idx[i]]
+            entry_price_i = bars.open[first(result.trade_idx_range[i])]
             # The level should have been 0.95 or 0.90 of entry price
             # depending on entry_side
             @test result.ret[i] < 0  # lower barrier always produces negative return
