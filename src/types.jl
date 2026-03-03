@@ -34,6 +34,8 @@ Subtypes must implement the callable interface:
 abstract type AbstractEvent end
 abstract type AbstractBarrier end
 abstract type AbstractLabel end
+abstract type AbstractCrossValidation end
+abstract type AbstractMetaLabeler end
 
 struct TimeBar <: AbstractBarType end
 struct DollarBar <: AbstractBarType end

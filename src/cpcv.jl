@@ -1,4 +1,4 @@
-struct CPCV
+struct CPCV <: AbstractCrossValidation
     n_groups::Int
     n_test_groups::Int
     embargo::Int
@@ -22,27 +22,67 @@ function CPCV(embargo; n_groups=6, n_test_groups=2)
     return CPCV(n_groups, n_test_groups, embargo)
 end
 
-struct CPCVBuffers
+struct CPCVBuffers{T<:AbstractVector{Bool}}
     test_group_mask::BitVector
-    train_data_mask::Vector{Bool}
+    test_data_mask::T
+    train_data_mask::T
     test_ranges::Vector{UnitRange{Int}}
 
-    function CPCVBuffers(cpcv::CPCV, n_labels)
-        return new(falses(cpcv.n_groups), ones(Bool, n_labels), UnitRange{Int}[])
+    # Version 1: Dispatch for Vector{Bool}
+    function CPCVBuffers(cpcv::CPCV, n_labels::Int, ::Type{Vector{Bool}})
+        return new{Vector{Bool}}(
+            falses(cpcv.n_groups),
+            fill(true, n_labels),
+            fill(true, n_labels),
+            UnitRange{Int}[],
+        )
+    end
+
+    # Version 2: Dispatch for BitVector
+    function CPCVBuffers(cpcv::CPCV, n_labels::Int, ::Type{BitVector})
+        return new{BitVector}(
+            falses(cpcv.n_groups), trues(n_labels), trues(n_labels), UnitRange{Int}[]
+        )
     end
 end
 
+function _reset!(buf::CPCVBuffers)
+    fill!(buf.test_group_mask, false)
+    fill!(buf.test_data_mask, false)
+    fill!(buf.train_data_mask, true)
+    empty!(buf.test_ranges)
+    return nothing
+end
 # ============================================================================
 # Public API
 # ============================================================================
 
-function (cpcv::CPCV)(labels::LabelResults, fold_num::Int)
-    return get_fold_train_data_mask(cpcv, labels, fold_num)
+function (cpcv::CPCV)(
+    labels::LabelResults,
+    fold_num::Int;
+    mask_type::Type{<:AbstractVector{Bool}}=Vector{Bool},
+)
+    return get_fold_data_masks(cpcv, labels, fold_num; mask_type)
 end
 
-function get_fold_train_data_mask(cpcv::CPCV, labels::LabelResults, fold_num::Int)
+function get_fold_data_masks(
+    cpcv::CPCV,
+    labels::LabelResults,
+    fold_num::Int;
+    mask_type::Type{<:AbstractVector{Bool}}=Vector{Bool},
+)
     n_labels = length(labels)
-    buf = CPCVBuffers(cpcv, n_labels)
+    buf = CPCVBuffers(cpcv, n_labels, mask_type)
+    return _get_fold_data_masks!(cpcv, labels, buf, n_labels, fold_num)
+end
+
+# ============================================================================
+# Internal
+# ============================================================================
+
+@inline function _get_fold_data_masks!(
+    cpcv::CPCV, labels::LabelResults, buf::CPCVBuffers, n_labels::Int, fold_num::Int
+)
     n_groups = cpcv.n_groups
     trade_idx_ranges = labels.trade_idx_range
 
@@ -54,11 +94,11 @@ function get_fold_train_data_mask(cpcv::CPCV, labels::LabelResults, fold_num::In
         buf.test_group_mask[group_id] || continue
 
         label_idx_range = _get_group_idx_range(cpcv, n_labels, group_id)
-        trade_idx_range = @view trade_idx_ranges[label_idx_range]
+        buf.test_data_mask[label_idx_range] .= true
 
+        trade_idx_range = @view trade_idx_ranges[label_idx_range]
         obs_start = minimum(r.start for r in trade_idx_range)
         obs_stop = maximum(r.stop for r in trade_idx_range)
-
         push!(buf.test_ranges, obs_start:obs_stop)
     end
 
@@ -82,12 +122,8 @@ function get_fold_train_data_mask(cpcv::CPCV, labels::LabelResults, fold_num::In
         end
     end
 
-    return buf.train_data_mask
+    return (train=buf.train_data_mask, test=buf.test_data_mask)
 end
-
-# ============================================================================
-# Internal
-# ============================================================================
 
 @inline function _get_fold_test_group_mask!(mask::BitVector, cpcv::CPCV, fold_num::Int)
     fill!(mask, false)
