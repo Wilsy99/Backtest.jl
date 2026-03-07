@@ -1,7 +1,7 @@
 using Pkg
 Pkg.activate(".")
 
-using Backtest, BenchmarkTools, InteractiveUtils, Dates, DataFrames, DataFramesMeta, Chain
+using Backtest, BenchmarkTools, InteractiveUtils, Dates, DataFrames, DataFramesMeta, MLJ, Chain
 
 data = get_data(["SPY", "AAPL", "MSFT", "TSLA", "NVDA", "AMZN", "NFLX"])
 big_data = vcat(fill(data, 500)...)

@@ -2,7 +2,7 @@ struct CPCV <: AbstractCrossValidation
     n_groups::Int
     n_test_groups::Int
     embargo::Int
-    n_folds::Int
+    n_splits::Int
 
     function CPCV(n_groups::Int, n_test_groups::Int, embargo::Int)
         _natural(n_groups)
@@ -12,9 +12,9 @@ struct CPCV <: AbstractCrossValidation
             ArgumentError("n_groups ($n_groups) must be >= n_test_groups ($n_test_groups)"),
         )
 
-        n_folds = binomial(n_groups, n_test_groups)
+        n_splits = binomial(n_groups, n_test_groups)
 
-        return new(n_groups, n_test_groups, embargo, n_folds)
+        return new(n_groups, n_test_groups, embargo, n_splits)
     end
 end
 
@@ -59,35 +59,35 @@ end
 
 function (cpcv::CPCV)(
     labels::LabelResults,
-    fold_num::Int;
+    split_num::Int;
     mask_type::Type{<:AbstractVector{Bool}}=Vector{Bool},
 )
-    return get_fold_data_masks(cpcv, labels, fold_num; mask_type)
+    return get_split_data_masks(cpcv, labels, split_num; mask_type)
 end
 
-function get_fold_data_masks(
+function get_split_data_masks(
     cpcv::CPCV,
     labels::LabelResults,
-    fold_num::Int;
+    split_num::Int;
     mask_type::Type{<:AbstractVector{Bool}}=Vector{Bool},
 )
     n_labels = length(labels)
     buf = CPCVBuffers(cpcv, n_labels, mask_type)
-    return _get_fold_data_masks!(cpcv, labels, buf, n_labels, fold_num)
+    return _get_split_data_masks!(cpcv, labels, buf, n_labels, split_num)
 end
 
 # ============================================================================
 # Internal
 # ============================================================================
 
-@inline function _get_fold_data_masks!(
-    cpcv::CPCV, labels::LabelResults, buf::CPCVBuffers, n_labels::Int, fold_num::Int
+@inline function _get_split_data_masks!(
+    cpcv::CPCV, labels::LabelResults, buf::CPCVBuffers, n_labels::Int, split_num::Int
 )
     n_groups = cpcv.n_groups
     trade_idx_ranges = labels.trade_idx_range
 
-    # 1. Unrank fold → test group mask
-    _get_fold_test_group_mask!(buf.test_group_mask, cpcv, fold_num)
+    # 1. Unrank split → test group mask
+    _get_split_test_group_mask!(buf.test_group_mask, cpcv, split_num)
 
     # 2. Build test observation windows from test groups
     @inbounds for group_id in 1:n_groups
@@ -125,13 +125,13 @@ end
     return (train=buf.train_data_mask, test=buf.test_data_mask)
 end
 
-@inline function _get_fold_test_group_mask!(mask::BitVector, cpcv::CPCV, fold_num::Int)
+@inline function _get_split_test_group_mask!(mask::BitVector, cpcv::CPCV, split_num::Int)
     fill!(mask, false)
 
     n = cpcv.n_groups - 1
     k = cpcv.n_test_groups
     group_id = 1
-    target_dist = cpcv.n_folds - fold_num + 1
+    target_dist = cpcv.n_splits - split_num + 1
 
     @inbounds for _ in 1:(cpcv.n_test_groups)
         binom = binomial(n, k)
