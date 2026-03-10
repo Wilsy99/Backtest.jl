@@ -172,7 +172,7 @@ Sort intervals, extend each **forward only** by `embargo` (the purge sweep
 already catches backward leakage), then merge overlapping or adjacent intervals
 in-place.
 """
-function _merge_intervals_with_embargo!(
+@inline function _merge_intervals_with_embargo!(
     intervals::Vector{UnitRange{Int}}, embargo::Int, max_idx::Int
 )
     isempty(intervals) && return intervals
@@ -201,4 +201,31 @@ function _merge_intervals_with_embargo!(
     resize!(intervals, write_idx)
 
     return intervals
+end
+
+@inline function _get_path_id(
+    n_groups::Int,
+    n_adj::Int,
+    k_adj::Int,
+    total_paths::Int,
+    target_group::Int,
+    test_group_mask::AbstractVector{Bool},
+)
+    subtrahend = 0
+    k_current = k_adj
+
+    # 3. Calculate the rank (Path ID) algebraically
+    for g in 1:n_groups
+        if test_group_mask[g] && g != target_group
+            # Shift the group ID down by 1 if it comes after the target group
+            c_i = g < target_group ? g : g - 1
+
+            # This is the exact mathematical inverse of your `target_dist -= binom`
+            subtrahend += binomial(n_adj - c_i, k_current)
+            k_current -= 1
+        end
+    end
+
+    # Subtracting the skipped blocks from the total gives the 1-based index
+    return total_paths - subtrahend
 end
