@@ -4,10 +4,10 @@ struct MetaLabeler{ML<:MLJModelInterface.Probalistic,CV<:AbstractCrossValidation
 end
 
 struct SplitMetrics{T<:AbstractFloat}
-    split_id::Int              # Which combinatoric split this is
-    score::T                      # Validation score (e.g., log-loss) for this split
+    split_id::Int
+    score::T
     purged_count::Int
-    embargo_count::Int             # Diagnostics: How many rows were dropped?
+    embargo_count::Int
 end
 
 struct MetaLabelResults{T<:AbstractFloat}
@@ -31,7 +31,7 @@ function run(
         Vector{SplitMetrics{T}}(undef, cpcv.n_splits),
     )
 
-    return _split_metrics!(
+    _split_metrics!(
         meta_labeler.model,
         cpcv,
         labels,
@@ -41,6 +41,8 @@ function run(
         meta_label_results,
         Val(multi_thread),
     )
+
+    return meta_label_results
 end
 
 function _split_metrics!(
@@ -80,11 +82,11 @@ function _split_metrics!(
     meta_label_results::MetaLabelResults,
     ::Val{true},
 ) where {ML<:MLJModelInterface.Probalistic,F,M<:AbstractVector{Bool}}
-    nt = Threads.nthreads()
-    cpcv_buf = [CPCVBuffers(cpcv, n_labels, mask_type) for _ in 1:nt]
+    nt = nthreads()
+    cpcv_bufs = [CPCVBuffers(cpcv, n_labels, mask_type) for _ in 1:nt]
 
-    Threads.@threads :static for split_num in 1:(cpcv.n_splits)
-        cpcv_buf = cpcv_buf[Threads.threadid()]
+    @inbounds @threads :static for split_num in 1:(cpcv.n_splits)
+        cpcv_buf = cpcv_bufs[threadid()]
         _reset!(cpcv_buf)
         _split_metrics!(
             model,
@@ -121,9 +123,11 @@ function _split_metrics!(
         meta_label_results.path_probs, cpcv, n_labels, cpcv_buf.test_group_mask, test_preds
     )
 
-    return meta_label_results.split_metrics[split_num] = SplitMetrics(
+    meta_label_results.split_metrics[split_num] = SplitMetrics(
         split_num, score, cpcv_masks.purged_count, cpcv_masks.embargo_count
     )
+
+    return nothing
 end
 
 function _train_model(
