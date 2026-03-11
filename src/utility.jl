@@ -8,6 +8,11 @@ function _natural(n::Int)
     return n
 end
 
+function _nonnegative_float(n::T) where {T<:Real}
+    n >= zero(T) || throw(ArgumentError("Value must be >= 0, got $n"))
+    return n
+end
+
 # Validates that a value belongs to the ternary set {-1, 0, 1}.
 # Used wherever a field must represent a signed classification label.
 function _ternary(n::Int)

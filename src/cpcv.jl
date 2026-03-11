@@ -3,6 +3,9 @@ struct CPCV <: AbstractCrossValidation
     n_test_groups::Int
     embargo::Int
     n_splits::Int
+    n_paths::Int
+    n_adj::Int
+    k_adj::Int
 
     function CPCV(n_groups::Int, n_test_groups::Int, embargo::Int)
         _natural(n_groups)
@@ -14,7 +17,11 @@ struct CPCV <: AbstractCrossValidation
 
         n_splits = binomial(n_groups, n_test_groups)
 
-        return new(n_groups, n_test_groups, embargo, n_splits)
+        n_adj = n_groups - 1
+        k_adj = n_test_groups - 1
+        n_paths = binomial(n_adj, k_adj)
+
+        return new(n_groups, n_test_groups, embargo, n_splits, n_paths, n_adj, k_adj)
     end
 end
 
@@ -57,14 +64,6 @@ end
 # Public API
 # ============================================================================
 
-function (cpcv::CPCV)(
-    labels::LabelResults,
-    split_num::Int;
-    mask_type::Type{<:AbstractVector{Bool}}=Vector{Bool},
-)
-    return get_split_data_masks(cpcv, labels, split_num; mask_type)
-end
-
 function get_split_data_masks(
     cpcv::CPCV,
     labels::LabelResults,
@@ -76,34 +75,44 @@ function get_split_data_masks(
     return _get_split_data_masks!(cpcv, labels, buf, n_labels, split_num)
 end
 
+function get_path_id(cpcv::CPCV, split_num::Int, target_group::Int)
+    test_group_mask = Vector{Bool}(undef, cpcv.n_groups)
+    _get_split_test_group_mask!(test_group_mask, cpcv, split_num)
+
+    # 1. Fast return: if group isn't tested in this split, path is 0
+    if !test_group_mask[target_group]
+        return 0
+    end
+
+    return _get_path_id(cpcv, target_group, test_group_mask)
+end
+
 # ============================================================================
 # Internal
 # ============================================================================
 
-@inline function _get_split_data_masks!(
+function _get_split_data_masks!(
     cpcv::CPCV, labels::LabelResults, buf::CPCVBuffers, n_labels::Int, split_num::Int
 )
-    n_groups = cpcv.n_groups
-    trade_idx_ranges = labels.trade_idx_range
 
     # 1. Unrank split → test group mask
     _get_split_test_group_mask!(buf.test_group_mask, cpcv, split_num)
 
     # 2. Build test observation windows from test groups
-    @inbounds for group_id in 1:n_groups
+    @inbounds for group_id in 1:(cpcv.n_groups)
         buf.test_group_mask[group_id] || continue
 
         label_idx_range = _get_group_idx_range(cpcv, n_labels, group_id)
         buf.test_data_mask[label_idx_range] .= true
 
-        trade_idx_range = @view trade_idx_ranges[label_idx_range]
+        trade_idx_range = @view labels.trade_idx_ranges[label_idx_range]
         obs_start = minimum(r.start for r in trade_idx_range)
         obs_stop = maximum(r.stop for r in trade_idx_range)
         push!(buf.test_ranges, obs_start:obs_stop)
     end
 
     # 3. Merge test windows and extend embargo forward into sorted forbidden zones
-    max_data_idx = maximum(r.stop for r in trade_idx_ranges)
+    max_data_idx = maximum(r.stop for r in labels.trade_idx_ranges)
     _merge_intervals_with_embargo!(buf.test_ranges, cpcv.embargo, max_data_idx)
 
     # 4. Single-pass sweep: both labels and forbidden intervals are sorted
@@ -111,7 +120,7 @@ end
     n_forbidden = length(buf.test_ranges)
 
     @inbounds for i in 1:n_labels
-        label_range = trade_idx_ranges[i]
+        label_range = labels.trade_idx_ranges[i]
 
         while fi <= n_forbidden && buf.test_ranges[fi].stop < label_range.start
             fi += 1
@@ -125,7 +134,9 @@ end
     return (train=buf.train_data_mask, test=buf.test_data_mask)
 end
 
-@inline function _get_split_test_group_mask!(mask::BitVector, cpcv::CPCV, split_num::Int)
+function _get_split_test_group_mask!(
+    mask::M, cpcv::CPCV, split_num::Int
+) where {M<:AbstractVector{Bool}}
     fill!(mask, false)
 
     n = cpcv.n_groups - 1
@@ -172,7 +183,7 @@ Sort intervals, extend each **forward only** by `embargo` (the purge sweep
 already catches backward leakage), then merge overlapping or adjacent intervals
 in-place.
 """
-@inline function _merge_intervals_with_embargo!(
+function _merge_intervals_with_embargo!(
     intervals::Vector{UnitRange{Int}}, embargo::Int, max_idx::Int
 )
     isempty(intervals) && return intervals
@@ -203,29 +214,22 @@ in-place.
     return intervals
 end
 
-@inline function _get_path_id(
-    n_groups::Int,
-    n_adj::Int,
-    k_adj::Int,
-    total_paths::Int,
-    target_group::Int,
-    test_group_mask::AbstractVector{Bool},
-)
+function _get_path_id(cpcv::CPCV, target_group::Int, test_group_mask::AbstractVector{Bool})
     subtrahend = 0
-    k_current = k_adj
+    k_current = cpcv.k_adj
 
     # 3. Calculate the rank (Path ID) algebraically
-    for g in 1:n_groups
+    for g in 1:(cpcv.n_groups)
         if test_group_mask[g] && g != target_group
             # Shift the group ID down by 1 if it comes after the target group
             c_i = g < target_group ? g : g - 1
 
             # This is the exact mathematical inverse of your `target_dist -= binom`
-            subtrahend += binomial(n_adj - c_i, k_current)
+            subtrahend += binomial(cpcv.n_adj - c_i, k_current)
             k_current -= 1
         end
     end
 
     # Subtracting the skipped blocks from the total gives the 1-based index
-    return total_paths - subtrahend
+    return cpcv.total_paths - subtrahend
 end

@@ -1,33 +1,18 @@
-struct MetaLabeler{M<:AbstractMLModel,CV<:AbstractCrossValidation}
-    model::M
+struct MetaLabeler{ML<:MLJModelInterface.Probalistic,CV<:AbstractCrossValidation}
+    model::ML
     cross_validation::CV
 end
 
-struct SingleSplitResults{M<:AbstractVector{Bool},T<:AbstractFloat}
+struct SplitMetrics{T<:AbstractFloat}
     split_id::Int              # Which combinatoric split this is
-    test_mask::M   # The exact chronological indices tested
-    prob::Vector{T}               # P(bin==1) for these specific test_indices
     score::T                      # Validation score (e.g., log-loss) for this split
     purged_count::Int
     embargo_count::Int             # Diagnostics: How many rows were dropped?
 end
 
 struct MetaLabelResults{T<:AbstractFloat}
-    # --- 1. CPCV Path Outputs (size = n_labels × n_paths) ---
-    # Built by stitching together SingleSplitResultss along valid paths
     path_probs::Matrix{T}
-    path_bet_sizes::Matrix{T}
-
-    # --- 2. Consensus / Ensemble Outputs (length = n_labels) ---
-    # Built by averaging overlapping predictions from SingleSplitResultss
-    mean_prob::Vector{T}
-    mean_bet_size::Vector{T}
-    oos_counts::Vector{Int}
-
-    # --- 3. Combinatorics & Diagnostics ---
-    split_matrix::BitMatrix
-    backtest_paths::Vector{Vector{Int}}
-    mean_split_score::T                   # Average performance across all splits
+    split_metrics::Vector{SplitMetrics{T}}
 end
 
 function run(
@@ -35,122 +20,95 @@ function run(
     labels::LabelResults,
     scoring_fn::F;
     multi_thread=false,
-) where {F}
-    cpcv = meta_labeler.cross_validation
+    mask_type::Type{<:M}=Vector{Bool},
+) where {F,M<:AbstractVector{Bool}}
     n_labels = length(labels)
-    n_splits = cpcv.n_splits
-    results_buf = Vector{SingleSplitResults}(undef, n_splits)
+    cpcv = meta_labeler.cross_validation
+    T = eltype(labels.ret)
 
-    n_adj = cpcv.n_groups - 1
-    k_adj = cpcv.n_test_groups - 1
-    total_paths = binomial(n_adj, k_adj)
-    path_probs = Matrix{Float64}(undef, n_labels, total_paths)
+    meta_label_results = MetaLabelResults{T}(
+        Matrix{T}(undef, n_labels, cpcv.n_paths),
+        Vector{SplitMetrics{T}}(undef, cpcv.n_splits),
+    )
 
-    return _single_split_results!(
+    return _split_metrics!(
         meta_labeler.model,
         cpcv,
         labels,
         scoring_fn,
         n_labels,
-        n_splits,
-        cpcv.mask_type,
-        results_buf,
-        n_adj,
-        k_adj,
-        total_paths,
-        path_probs,
+        mask_type,
+        meta_label_results,
         Val(multi_thread),
     )
 end
 
-function _single_split_results!(
-    model,
+function _split_metrics!(
+    model::ML,
     cpcv::CPCV,
     labels::LabelResults,
     scoring_fn::F,
     n_labels::Int,
-    n_splits::Int,
-    mask_type::Type{<:AbstractVector{Bool}},
-    results_buf::Vector{SingleSplitResults},
-    n_adj::Int,
-    k_adj::Int,
-    total_paths::Int,
-    path_probs::Matrix{T},
-    Val{false},
-) where {F,T<:AbstractFloat}
+    mask_type::Type{<:M},
+    meta_label_results::MetaLabelResults,
+    ::Val{false},
+) where {ML<:MLJModelInterface.Probalistic,F,M<:AbstractVector{Bool}}
     cpcv_buf = CPCVBuffers(cpcv, n_labels, mask_type)
 
-    @inbounds for split_num in 1:n_splits
+    @inbounds for split_num in 1:(cpcv.n_splits)
         _reset!(cpcv_buf)
-        _single_split_results!(
+        _split_metrics!(
             model,
             cpcv,
             labels,
             scoring_fn,
             n_labels,
+            meta_label_results,
             cpcv_buf,
-            results_buf,
             split_num,
-            n_adj,
-            k_adj,
-            total_paths,
-            path_probs,
         )
     end
 end
 
-function _single_split_results!(
-    model,
+function _split_metrics!(
+    model::ML,
     cpcv::CPCV,
     labels::LabelResults,
     scoring_fn::F,
     n_labels::Int,
-    n_splits::Int,
-    mask_type::Type{<:AbstractVector{Bool}},
-    results_buf::Vector{SingleSplitResults},
-    n_adj::Int,
-    k_adj::Int,
-    total_paths::Int,
-    path_probs::Matrix{T},
+    mask_type::Type{<:M},
+    meta_label_results::MetaLabelResults,
     ::Val{true},
-) where {F,T<:AbstractFloat}
+) where {ML<:MLJModelInterface.Probalistic,F,M<:AbstractVector{Bool}}
     nt = Threads.nthreads()
     cpcv_buf = [CPCVBuffers(cpcv, n_labels, mask_type) for _ in 1:nt]
 
-    Threads.@threads :static for split_num in 1:n_splits
-        cpcv_buf = cpcv_bufs[Threads.threadid()]
+    Threads.@threads :static for split_num in 1:(cpcv.n_splits)
+        cpcv_buf = cpcv_buf[Threads.threadid()]
         _reset!(cpcv_buf)
-        _single_split_results!(
+        _split_metrics!(
             model,
             cpcv,
             labels,
             scoring_fn,
             n_labels,
+            meta_label_results,
             cpcv_buf,
-            results_buf,
             split_num,
-            n_adj,
-            k_adj,
-            total_paths,
-            path_probs,
         )
     end
 end
 
-function _single_split_results!(
-    model,
+function _split_metrics!(
+    model::ML,
     cpcv::CPCV,
     labels::LabelResults,
     scoring_fn::F,
     n_labels::Int,
+    meta_label_results::MetaLabelResults,
     cpcv_buf::CPCVBuffers,
-    results_buf::Vector{SingleSplitResults},
     split_num::Int,
-    n_adj::Int,
-    k_adj::Int,
-    total_paths::Int,
-    path_probs::Matrix{T},
-) where {F,T<:AbstractFloat}
+) where {ML<:MLJModelInterface.Probalistic,F}
     cpcv_masks = _get_split_data_masks!(cpcv, labels, cpcv_buf, n_labels, split_num)
     mach = _train_model(model, labels, cpcv_masks.train)
 
@@ -160,29 +118,17 @@ function _single_split_results!(
     score = scoring_fn(test_true, test_preds)
 
     _fill_path_probs!(
-        path_probs,
-        cpcv,
-        n_labels,
-        n_adj,
-        k_adj,
-        total_paths,
-        cpcv_buf.test_group_mask,
-        test_preds,
+        meta_label_results.path_probs, cpcv, n_labels, cpcv_buf.test_group_mask, test_preds
     )
 
-    return results_buf[split_num] = SingleSplitResults(
-        split_num,
-        cpcv_masks.test,
-        test_preds,
-        score,
-        cpcv_masks.purged_count,
-        cpcv_masks.embargo_count,
+    return meta_label_results.split_metrics[split_num] = SplitMetrics(
+        split_num, score, cpcv_masks.purged_count, cpcv_masks.embargo_count
     )
 end
 
 function _train_model(
-    model, labels::LabelResults, train_mask::M
-) where {M<:AbstractVector{Bool}}
+    model::ML, labels::LabelResults, train_mask::M
+) where {ML<:MLJModelInterface.Probalistic,M<:AbstractVector{Bool}}
     train_feats = @view labels.feature[train_mask]
     train_bins = @view labels.bin[train_mask]
     train_weights = @view labels.weight[train_mask]
@@ -190,20 +136,18 @@ function _train_model(
     return fit!(mach)
 end
 
-@inline function _test_model(
+function _test_model(
     mach, labels::LabelResults, test_mask::M
 ) where {M<:AbstractVector{Bool}}
     test_feats = @view labels.feature[test_mask]
-    return predict(mach, test_feats)
+    preds = predict(mach, test_feats)
+    return pdf.(preds, 1)
 end
 
 function _fill_path_probs!(
     path_probs::Matrix{T},
     cpcv::CPCV,
     n_labels::Int,
-    n_adj::Int,
-    k_adj::Int,
-    total_paths::Int,
     test_group_mask::M,
     test_preds::AbstractVector{V},
 ) where {M<:AbstractVector{Bool},T<:AbstractFloat,V<:Real}
@@ -216,7 +160,7 @@ function _fill_path_probs!(
         i = _get_group_idx_range(cpcv, n_labels, group)
 
         # 2. Global column index (j) for the path
-        j = _get_path_id(cpcv.n_groups, n_adj, k_adj, total_paths, group, test_group_mask)
+        j = _get_path_id(cpcv, group, test_group_mask)
 
         # 3. Local range inside `test_preds` for this specific group
         group_len = length(i)
