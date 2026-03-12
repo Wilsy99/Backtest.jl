@@ -34,21 +34,25 @@ struct CPCVBuffers{T<:AbstractVector{Bool}}
     test_data_mask::T
     train_data_mask::T
     test_ranges::Vector{UnitRange{Int}}
+    purge_ranges::Vector{UnitRange{Int}}
 
-    # Version 1: Dispatch for Vector{Bool}
     function CPCVBuffers(cpcv::CPCV, n_labels::Int, ::Type{Vector{Bool}})
         return new{Vector{Bool}}(
             falses(cpcv.n_groups),
             fill(true, n_labels),
             fill(true, n_labels),
             UnitRange{Int}[],
+            UnitRange{Int}[],
         )
     end
 
-    # Version 2: Dispatch for BitVector
     function CPCVBuffers(cpcv::CPCV, n_labels::Int, ::Type{BitVector})
         return new{BitVector}(
-            falses(cpcv.n_groups), trues(n_labels), trues(n_labels), UnitRange{Int}[]
+            falses(cpcv.n_groups),
+            trues(n_labels),
+            trues(n_labels),
+            UnitRange{Int}[],
+            UnitRange{Int}[],
         )
     end
 end
@@ -58,8 +62,10 @@ function _reset!(buf::CPCVBuffers)
     fill!(buf.test_data_mask, false)
     fill!(buf.train_data_mask, true)
     empty!(buf.test_ranges)
+    empty!(buf.purge_ranges)
     return nothing
 end
+
 # ============================================================================
 # Public API
 # ============================================================================
@@ -79,7 +85,6 @@ function get_path_id(cpcv::CPCV, split_num::Int, target_group::Int)
     test_group_mask = Vector{Bool}(undef, cpcv.n_groups)
     _get_split_test_group_mask!(test_group_mask, cpcv, split_num)
 
-    # 1. Fast return: if group isn't tested in this split, path is 0
     if !test_group_mask[target_group]
         return 0
     end
@@ -111,13 +116,25 @@ function _get_split_data_masks!(
         push!(buf.test_ranges, obs_start:obs_stop)
     end
 
-    # 3. Merge test windows and extend embargo forward into sorted forbidden zones
+    # 3. Merge test windows, then snapshot purge zones before embargo extension
     max_data_idx = maximum(r.stop for r in labels.trade_idx_ranges)
-    _merge_intervals_with_embargo!(buf.test_ranges, cpcv.embargo, max_data_idx)
+    _merge_intervals!(buf.test_ranges)
 
-    # 4. Single-pass sweep: both labels and forbidden intervals are sorted
+    # Snapshot: purge_ranges = merged test windows (no embargo)
+    resize!(buf.purge_ranges, length(buf.test_ranges))
+    copyto!(buf.purge_ranges, buf.test_ranges)
+
+    # Extend test_ranges forward by embargo to create full forbidden zones
+    _apply_embargo!(buf.test_ranges, cpcv.embargo, max_data_idx)
+
+    # 4. Two-pointer sweep: classify each exclusion as purge or embargo
+    embargo_count = 0
+    purge_count = 0
+
     fi = 1
+    pi = 1
     n_forbidden = length(buf.test_ranges)
+    n_purge = length(buf.purge_ranges)
 
     @inbounds for i in 1:n_labels
         label_range = labels.trade_idx_ranges[i]
@@ -128,10 +145,25 @@ function _get_split_data_masks!(
 
         if fi <= n_forbidden && label_range.stop >= buf.test_ranges[fi].start
             buf.train_data_mask[i] = false
+
+            while pi <= n_purge && buf.purge_ranges[pi].stop < label_range.start
+                pi += 1
+            end
+
+            if pi <= n_purge && label_range.stop >= buf.purge_ranges[pi].start
+                purge_count += 1
+            else
+                embargo_count += 1
+            end
         end
     end
 
-    return (train=buf.train_data_mask, test=buf.test_data_mask)
+    return (
+        train=buf.train_data_mask,
+        test=buf.test_data_mask,
+        embargo_count=embargo_count,
+        purge_count=purge_count,
+    )
 end
 
 function _get_split_test_group_mask!(
@@ -177,33 +209,58 @@ end
 end
 
 """
-    _merge_intervals_with_embargo!(intervals, embargo, max_idx)
+    _merge_intervals!(intervals)
 
-Sort intervals, extend each **forward only** by `embargo` (the purge sweep
-already catches backward leakage), then merge overlapping or adjacent intervals
-in-place.
+Sort and merge overlapping/adjacent intervals in-place. No embargo extension.
 """
-function _merge_intervals_with_embargo!(
-    intervals::Vector{UnitRange{Int}}, embargo::Int, max_idx::Int
-)
+function _merge_intervals!(intervals::Vector{UnitRange{Int}})
     isempty(intervals) && return intervals
 
     sort!(intervals; by=r -> r.start)
 
     write_idx = 1
     merged_start = intervals[1].start
+    merged_stop = intervals[1].stop
+
+    @inbounds for i in 2:length(intervals)
+        if intervals[i].start <= merged_stop + 1
+            merged_stop = max(merged_stop, intervals[i].stop)
+        else
+            intervals[write_idx] = merged_start:merged_stop
+            write_idx += 1
+            merged_start = intervals[i].start
+            merged_stop = intervals[i].stop
+        end
+    end
+
+    intervals[write_idx] = merged_start:merged_stop
+    resize!(intervals, write_idx)
+
+    return intervals
+end
+
+"""
+    _apply_embargo!(intervals, embargo, max_idx)
+
+Extend each interval's stop forward by `embargo`, clamped to `max_idx`,
+then re-merge any newly overlapping intervals in-place.
+"""
+function _apply_embargo!(intervals::Vector{UnitRange{Int}}, embargo::Int, max_idx::Int)
+    isempty(intervals) && return intervals
+
+    write_idx = 1
+    merged_start = intervals[1].start
     merged_stop = min(max_idx, intervals[1].stop + embargo)
 
     @inbounds for i in 2:length(intervals)
-        ext_start = intervals[i].start
         ext_stop = min(max_idx, intervals[i].stop + embargo)
 
-        if ext_start <= merged_stop + 1
+        if intervals[i].start <= merged_stop + 1
             merged_stop = max(merged_stop, ext_stop)
         else
             intervals[write_idx] = merged_start:merged_stop
             write_idx += 1
-            merged_start = ext_start
+            merged_start = intervals[i].start
             merged_stop = ext_stop
         end
     end
@@ -218,18 +275,14 @@ function _get_path_id(cpcv::CPCV, target_group::Int, test_group_mask::AbstractVe
     subtrahend = 0
     k_current = cpcv.k_adj
 
-    # 3. Calculate the rank (Path ID) algebraically
     for g in 1:(cpcv.n_groups)
         if test_group_mask[g] && g != target_group
-            # Shift the group ID down by 1 if it comes after the target group
             c_i = g < target_group ? g : g - 1
 
-            # This is the exact mathematical inverse of your `target_dist -= binom`
             subtrahend += binomial(cpcv.n_adj - c_i, k_current)
             k_current -= 1
         end
     end
 
-    # Subtracting the skipped blocks from the total gives the 1-based index
     return cpcv.total_paths - subtrahend
 end
