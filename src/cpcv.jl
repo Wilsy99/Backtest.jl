@@ -284,5 +284,5 @@ function _get_path_id(cpcv::CPCV, target_group::Int, test_group_mask::AbstractVe
         end
     end
 
-    return cpcv.total_paths - subtrahend
+    return cpcv.n_paths - subtrahend
 end

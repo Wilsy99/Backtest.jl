@@ -6,7 +6,7 @@ end
 struct SplitMetrics{T<:AbstractFloat}
     split_id::Int
     score::T
-    purged_count::Int
+    purge_count::Int
     embargo_count::Int
 end
 
@@ -124,7 +124,7 @@ function _split_metrics!(
     )
 
     meta_label_results.split_metrics[split_num] = SplitMetrics(
-        split_num, score, cpcv_masks.purged_count, cpcv_masks.embargo_count
+        split_num, score, cpcv_masks.purge_count, cpcv_masks.embargo_count
     )
 
     return nothing
