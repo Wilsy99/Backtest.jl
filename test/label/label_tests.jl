@@ -352,6 +352,84 @@ end
     end
 end
 
+@testitem "Weights: Weights functor merges into NamedTuple" tags = [
+    :label, :weights, :unit
+] setup = [TestData] begin
+    using Backtest, Test, Dates
+
+    bars = TestData.make_pricebars(; n=200)
+    evt = Event(d -> trues(length(d.bars.close)))
+
+    pipe = bars >> evt >>
+        Label(
+            UpperBarrier(d -> d.entry_price * 1.03),
+            LowerBarrier(d -> d.entry_price * 0.97),
+            TimeBarrier(d -> d.entry_ts + Day(30)),
+        ) >>
+        Weights()
+
+    result = pipe()
+
+    @test result isa NamedTuple
+    @test haskey(result, :weights)
+    @test haskey(result, :labels)
+    @test haskey(result, :bars)
+    @test result.weights isa Vector{Float64}
+    @test length(result.weights) == length(result.labels)
+
+    n = length(result.weights)
+    if n > 0
+        @test sum(result.weights) ≈ n atol = 1e-6
+        @test all(w >= 0 for w in result.weights)
+    end
+end
+
+@testitem "Weights: Weights! returns raw weight vector" tags = [
+    :label, :weights, :unit
+] setup = [TestData] begin
+    using Backtest, Test, Dates
+
+    bars = TestData.make_pricebars(; n=200)
+    evt = Event(d -> trues(length(d.bars.close)))
+    pipe_data = (bars >> evt >>
+        Label(
+            UpperBarrier(d -> d.entry_price * 1.03),
+            LowerBarrier(d -> d.entry_price * 0.97),
+            TimeBarrier(d -> d.entry_ts + Day(30)),
+        ))()
+
+    weights = Weights!()(pipe_data)
+
+    @test weights isa Vector{Float64}
+    @test length(weights) == length(pipe_data.labels)
+end
+
+@testitem "Weights: time_decay_start kwarg propagates" tags = [
+    :label, :weights, :unit
+] setup = [TestData] begin
+    using Backtest, Test, Dates
+
+    bars = TestData.make_pricebars(; n=200)
+    evt = Event(d -> trues(length(d.bars.close)))
+    pipe_data = (bars >> evt >>
+        Label(
+            UpperBarrier(d -> d.entry_price * 1.03),
+            LowerBarrier(d -> d.entry_price * 0.97),
+            TimeBarrier(d -> d.entry_ts + Day(30)),
+        ))()
+
+    w_no_decay = Weights!()(pipe_data)
+    w_decay = Weights!(time_decay_start=0.5)(pipe_data)
+
+    @test length(w_no_decay) == length(w_decay)
+
+    if length(w_decay) >= 2
+        ratio_decay = w_decay[end] / w_decay[1]
+        ratio_none = w_no_decay[end] / w_no_decay[1]
+        @test ratio_decay != ratio_none
+    end
+end
+
 # ── Phase 3: Robustness — Edge Cases ──
 
 @testitem "Label: Empty event indices → empty LabelResults" tags = [:label, :edge] begin

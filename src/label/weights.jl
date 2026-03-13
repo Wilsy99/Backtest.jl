@@ -1,3 +1,99 @@
+# ── Weights Functors ──
+
+"""
+    Weights{E<:AbstractExecutionBasis} <: AbstractWeights
+
+Sample-weight functor that merges computed weights into the pipeline
+`NamedTuple`.
+
+When called on a pipeline `NamedTuple` containing `labels` and `bars`,
+compute uniqueness-weighted sample weights and return the input merged
+with `(; weights=Vector{T}(...))`.
+
+# Constructors
+    Weights(; kwargs...)
+
+# Keywords
+- `time_decay_start::Real = 1.0`: starting value for linear time
+    decay (`1.0` disables decay).
+- `entry_basis::AbstractExecutionBasis = NextOpen()`: execution basis
+    used during labelling.
+
+# Pipeline Data Flow
+
+## Input
+Expects a `NamedTuple` with at least:
+- `labels::LabelResults`: from an upstream [`Label`](@ref).
+- `bars::PriceBars`: the price data.
+
+## Output
+Returns the input merged with:
+- `weights::Vector{T}`: sample weights.
+
+# Examples
+```julia
+using Backtest, Dates
+
+result = (bars >> EMA(10, 50) >> Crossover(:ema_10, :ema_50) >>
+          Event(d -> d.bars.close .> 100.0) >>
+          Label(UpperBarrier(d -> d.entry_price * 1.05),
+                LowerBarrier(d -> d.entry_price * 0.95),
+                TimeBarrier(d -> d.entry_ts + Day(20))) >>
+          Weights(time_decay_start=0.5))()
+```
+
+# See also
+- [`Weights!`](@ref): variant that returns only the weight vector.
+- [`compute_weights`](@ref): the underlying computation function.
+"""
+struct Weights{E<:AbstractExecutionBasis} <: AbstractWeights
+    time_decay_start::Float64
+    entry_basis::E
+end
+
+function Weights(;
+    time_decay_start::Real=1.0,
+    entry_basis::AbstractExecutionBasis=NextOpen(),
+)
+    return Weights(float(time_decay_start), entry_basis)
+end
+
+"""
+    Weights!{E<:AbstractExecutionBasis} <: AbstractWeights
+
+Sample-weight functor that returns only the raw weight vector.
+
+Identical to [`Weights`](@ref) but returns `Vector{T}` instead of
+merging into the pipeline `NamedTuple`.
+
+# Examples
+```julia
+weights = Weights!(time_decay_start=0.5)(pipe_data)
+```
+"""
+struct Weights!{E<:AbstractExecutionBasis} <: AbstractWeights
+    time_decay_start::Float64
+    entry_basis::E
+end
+
+function var"Weights!"(;
+    time_decay_start::Real=1.0,
+    entry_basis::AbstractExecutionBasis=NextOpen(),
+)
+    return Weights!(float(time_decay_start), entry_basis)
+end
+
+function _run_weights(w::Union{Weights,Weights!}, d::NamedTuple)
+    return compute_weights(
+        d.labels, d.bars;
+        time_decay_start=w.time_decay_start,
+        entry_basis=w.entry_basis,
+    )
+end
+
+(w::Weights)(d::NamedTuple) = merge(d, (; weights=_run_weights(w, d)))
+(w::Weights!)(d::NamedTuple) = _run_weights(w, d)
+
 # ── Sample Weight Computation ──
 
 """
@@ -49,6 +145,7 @@ weights_decayed = compute_weights(labels, pb; time_decay_start=0.5)
 ```
 
 # See also
+- [`Weights`](@ref), [`Weights!`](@ref): pipeline functors.
 - [`LabelResults`](@ref): the input container.
 - [`calculate_label`](@ref): produces label results.
 """

@@ -34,6 +34,7 @@ Subtypes must implement the callable interface:
 abstract type AbstractEvent end
 abstract type AbstractBarrier end
 abstract type AbstractLabel end
+abstract type AbstractWeights end
 abstract type AbstractCrossValidation end
 abstract type AbstractMetaLabeler end
 abstract type AbstractBetSize end
@@ -45,7 +46,7 @@ struct LongOnly <: AbstractDirection end
 struct ShortOnly <: AbstractDirection end
 struct LongShort <: AbstractDirection end
 
-const PipelineObject = Union{AbstractFeature,AbstractSide,AbstractEvent,AbstractLabel}
+const PipelineObject = Union{AbstractFeature,AbstractSide,AbstractEvent,AbstractLabel,AbstractWeights}
 const PipeOrFunc = Union{PipelineObject,Function}
 
 struct Job{D,F}

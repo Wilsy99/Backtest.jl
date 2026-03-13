@@ -28,7 +28,8 @@ export AbstractBarrier,
     @UpperBarrier,
     @TimeBarrier,
     @ConditionBarrier
-export AbstractLabel, Label, Label!, calculate_label, compute_weights
+export AbstractLabel, Label, Label!, calculate_label
+export AbstractWeights, Weights, Weights!, compute_weights
 
 export get_data
 
