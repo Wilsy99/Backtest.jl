@@ -289,7 +289,6 @@ end
     @test length(result.trade_idx_range) == n
     @test length(result.side) == n
     @test length(result.bin) == n
-    @test length(result.weight) == n
     @test length(result.ret) == n
     @test length(result.log_ret) == n
 end
@@ -312,11 +311,12 @@ end
     )
 
     result = lab(pipe_data)
+    weights = compute_weights(result, bars)
 
-    n = length(result.weight)
+    n = length(weights)
     if n > 0
-        @test sum(result.weight) ≈ n atol = 1e-6
-        @test all(w >= 0 for w in result.weight)
+        @test sum(weights) ≈ n atol = 1e-6
+        @test all(w >= 0 for w in weights)
     end
 end
 
@@ -336,13 +336,14 @@ end
     )
 
     result = lab(pipe_data)
+    weights = compute_weights(result, bars)
 
     classes = unique(result.label)
     if length(classes) > 1
         class_weights = Dict{Int8,Float64}()
         for i in eachindex(result.label)
             c = result.label[i]
-            class_weights[c] = get(class_weights, c, 0.0) + result.weight[i]
+            class_weights[c] = get(class_weights, c, 0.0) + weights[i]
         end
 
         weights_per_class = collect(values(class_weights))
@@ -371,7 +372,6 @@ end
     @test length(result.label) == 0
     @test length(result) == 0
     @test length(result.ret) == 0
-    @test length(result.weight) == 0
 end
 
 @testitem "Label: Event on last bar — NextOpen entry out of bounds" tags = [
@@ -531,23 +531,23 @@ end
 
     tb = TimeBarrier(d -> d.entry_ts + Day(5))
 
+    result = calculate_label(
+        event_indices, bars, (tb,); side=zeros(Int8, n)
+    )
+
     # With time_decay_start=0.5, earlier events get lower weight
-    result_decay = calculate_label(
-        event_indices, bars, (tb,); side=zeros(Int8, n), time_decay_start=0.5
-    )
+    weights_decay = compute_weights(result, bars; time_decay_start=0.5)
     # With time_decay_start=1.0 (no decay), all events weighted equally
-    result_no_decay = calculate_label(
-        event_indices, bars, (tb,); side=zeros(Int8, n), time_decay_start=1.0
-    )
+    weights_no_decay = compute_weights(result, bars; time_decay_start=1.0)
 
     # Both should have the same number of results
-    @test length(result_decay.weight) == length(result_no_decay.weight)
+    @test length(weights_decay) == length(weights_no_decay)
 
-    if length(result_decay.weight) >= 2
+    if length(weights_decay) >= 2
         # With decay=0.5, the weight ratio between first and last should differ
         # from the no-decay case
-        decay_ratio = result_decay.weight[end] / result_decay.weight[1]
-        no_decay_ratio = result_no_decay.weight[end] / result_no_decay.weight[1]
+        decay_ratio = weights_decay[end] / weights_decay[1]
+        no_decay_ratio = weights_no_decay[end] / weights_no_decay[1]
         @test decay_ratio != no_decay_ratio
     end
 end
@@ -724,7 +724,8 @@ end
     # All should resolve within the data
     @test length(result.label) > 0
     @test all(result.label .== Int8(0))  # all time-barrier exits
-    @test sum(result.weight) ≈ length(result.weight) atol = 1e-6
+    weights = compute_weights(result, bars)
+    @test sum(weights) ≈ length(weights) atol = 1e-6
 end
 
 # ── Integration with Pipeline ──
