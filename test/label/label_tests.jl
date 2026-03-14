@@ -289,66 +289,8 @@ end
     @test length(result.trade_idx_range) == n
     @test length(result.side) == n
     @test length(result.bin) == n
-    @test length(result.weight) == n
     @test length(result.ret) == n
     @test length(result.log_ret) == n
-end
-
-# ── Phase 2: Core Correctness — Weight Properties ──
-
-@testitem "Label: Weight normalization — sum(weights) ≈ n_labels" tags = [
-    :label, :property
-] setup = [TestData] begin
-    using Backtest, Test, Dates
-
-    bars = TestData.make_pricebars(; n=200)
-    evt = Event(d -> trues(length(d.bars.close)))
-    pipe_data = merge(evt(bars), (; side=zeros(Int8, length(bars))))
-
-    lab = Label!(
-        UpperBarrier(d -> d.entry_price * 1.03),
-        LowerBarrier(d -> d.entry_price * 0.97),
-        TimeBarrier(d -> d.entry_ts + Day(30)),
-    )
-
-    result = lab(pipe_data)
-
-    n = length(result.weight)
-    if n > 0
-        @test sum(result.weight) ≈ n atol = 1e-6
-        @test all(w >= 0 for w in result.weight)
-    end
-end
-
-@testitem "Label: Class imbalance correction — equal weight per class" tags = [
-    :label, :property
-] setup = [TestData] begin
-    using Backtest, Test, Dates
-
-    bars = TestData.make_pricebars(; n=200)
-    evt = Event(d -> trues(length(d.bars.close)))
-    pipe_data = merge(evt(bars), (; side=zeros(Int8, length(bars))))
-
-    lab = Label!(
-        UpperBarrier(d -> d.entry_price * 1.03),
-        LowerBarrier(d -> d.entry_price * 0.97),
-        TimeBarrier(d -> d.entry_ts + Day(30)),
-    )
-
-    result = lab(pipe_data)
-
-    classes = unique(result.label)
-    if length(classes) > 1
-        class_weights = Dict{Int8,Float64}()
-        for i in eachindex(result.label)
-            c = result.label[i]
-            class_weights[c] = get(class_weights, c, 0.0) + result.weight[i]
-        end
-
-        weights_per_class = collect(values(class_weights))
-        # Class-imbalanced correction should make total weight per class roughly equal
-        @test maximum(weights_per_class) / minimum(weights_per_class) < 2.0
-    end
 end
 
 # ── Phase 3: Robustness — Edge Cases ──
@@ -371,7 +313,6 @@ end
     @test length(result.label) == 0
     @test length(result) == 0
     @test length(result.ret) == 0
-    @test length(result.weight) == 0
 end
 
 @testitem "Label: Event on last bar — NextOpen entry out of bounds" tags = [
@@ -509,47 +450,6 @@ end
     # Gap-through: exit price is the open price (Immediate with open_price arg),
     # because _record_exit! is called with open_price as the level
     @test result.ret[1] ≈ (115.0 / 100.0) - 1.0  # = 0.15
-end
-
-@testitem "Label: Time decay — earlier events get lower weight" tags = [
-    :label, :property
-] begin
-    using Backtest, Test, Dates
-
-    # Create enough bars and events to see time decay effect
-    n = 100
-    opens  = [100.0 + 0.05 * i for i in 1:n]
-    highs  = [101.0 + 0.05 * i for i in 1:n]
-    lows   = [99.0 + 0.05 * i for i in 1:n]
-    closes = [100.5 + 0.05 * i for i in 1:n]
-    vols   = fill(1000.0, n)
-    ts     = [DateTime(2024, 1, 1) + Day(i - 1) for i in 1:n]
-    bars   = PriceBars(opens, highs, lows, closes, vols, ts, TimeBar())
-
-    # Multiple events spread across time
-    event_indices = [1, 20, 40, 60]
-
-    tb = TimeBarrier(d -> d.entry_ts + Day(5))
-
-    # With time_decay_start=0.5, earlier events get lower weight
-    result_decay = calculate_label(
-        event_indices, bars, (tb,); side=zeros(Int8, n), time_decay_start=0.5
-    )
-    # With time_decay_start=1.0 (no decay), all events weighted equally
-    result_no_decay = calculate_label(
-        event_indices, bars, (tb,); side=zeros(Int8, n), time_decay_start=1.0
-    )
-
-    # Both should have the same number of results
-    @test length(result_decay.weight) == length(result_no_decay.weight)
-
-    if length(result_decay.weight) >= 2
-        # With decay=0.5, the weight ratio between first and last should differ
-        # from the no-decay case
-        decay_ratio = result_decay.weight[end] / result_decay.weight[1]
-        no_decay_ratio = result_no_decay.weight[end] / result_no_decay.weight[1]
-        @test decay_ratio != no_decay_ratio
-    end
 end
 
 @testitem "Label: multi_thread matches single_thread" tags = [:label, :unit] setup = [
@@ -697,34 +597,6 @@ end
     @test all(buf.exit_indices .== 0)
     @test all(buf.rets .== 0.0)
     @test all(buf.log_rets .== 0.0)
-end
-
-# ── Phase 3: Robustness — Multiple events, overlapping barriers ──
-
-@testitem "Label: Multiple events with overlapping trades" tags = [
-    :label, :property
-] begin
-    using Backtest, Test, Dates
-
-    n = 50
-    opens  = [100.0 + 0.1 * i for i in 1:n]
-    highs  = [102.0 + 0.1 * i for i in 1:n]
-    lows   = [98.0 + 0.1 * i for i in 1:n]
-    closes = [101.0 + 0.1 * i for i in 1:n]
-    vols   = fill(1000.0, n)
-    ts     = [DateTime(2024, 1, 1) + Day(i - 1) for i in 1:n]
-    bars   = PriceBars(opens, highs, lows, closes, vols, ts, TimeBar())
-
-    # Many events close together — causes overlapping trades
-    event_indices = collect(1:5:30)
-    tb = TimeBarrier(d -> d.entry_ts + Day(10))
-
-    result = calculate_label(event_indices, bars, (tb,); side=zeros(Int8, n))
-
-    # All should resolve within the data
-    @test length(result.label) > 0
-    @test all(result.label .== Int8(0))  # all time-barrier exits
-    @test sum(result.weight) ≈ length(result.weight) atol = 1e-6
 end
 
 # ── Integration with Pipeline ──

@@ -34,6 +34,36 @@ Subtypes must implement the callable interface:
 abstract type AbstractEvent end
 abstract type AbstractBarrier end
 abstract type AbstractLabel end
+
+"""
+    AbstractWeights
+
+Supertype for all sample-weight functors in the pipeline.
+
+A weight functor takes a pipeline `NamedTuple` containing
+[`LabelResults`](@ref) and [`PriceBars`](@ref), computes sample
+weights via uniqueness-weighted attribution returns with optional
+time decay and class-imbalance correction, and either merges
+them into the pipeline or returns the raw vector.
+
+# Interface
+
+Subtypes must implement the callable interface:
+
+- `(w::MyWeights)(d::NamedTuple) -> NamedTuple` or `Vector{T}`:
+    compute weights from `d.labels` and `d.bars`. Return either
+    the input merged with `(; weights=...)` or the raw vector.
+
+# Existing Subtypes
+
+- [`Weights`](@ref): merges weights into the pipeline `NamedTuple`.
+- [`Weights!`](@ref): returns only the raw weight vector.
+
+# See also
+- [`compute_weights`](@ref): the underlying computation function.
+- [`LabelResults`](@ref): the input container for weight computation.
+"""
+abstract type AbstractWeights end
 abstract type AbstractCrossValidation end
 abstract type AbstractMetaLabeler end
 abstract type AbstractBetSize end
@@ -45,7 +75,7 @@ struct LongOnly <: AbstractDirection end
 struct ShortOnly <: AbstractDirection end
 struct LongShort <: AbstractDirection end
 
-const PipelineObject = Union{AbstractFeature,AbstractSide,AbstractEvent,AbstractLabel}
+const PipelineObject = Union{AbstractFeature,AbstractSide,AbstractEvent,AbstractLabel,AbstractWeights}
 const PipeOrFunc = Union{PipelineObject,Function}
 
 struct Job{D,F}

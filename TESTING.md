@@ -83,6 +83,7 @@ The current component tags in use are:
 | `:barrier_args` | BarrierArgs mutable loop context |
 | `:execution` | Execution basis types |
 | `:pipeline` | Pipeline composition and `>>` operator |
+| `:weights` | Sample weight computation and functors |
 
 When you add a new module or type, register a new component tag by adding a row to the table above and using it in your `@testitem` blocks.
 
