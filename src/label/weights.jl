@@ -10,14 +10,43 @@ When called on a pipeline `NamedTuple` containing `labels` and `bars`,
 compute uniqueness-weighted sample weights and return the input merged
 with `(; weights=Vector{T}(...))`.
 
+# Type Parameters
+- `E<:AbstractExecutionBasis`: the execution basis type used during
+    labelling.
+
+# Fields
+- `time_decay_start::Float64`: starting value for linear time decay.
+    Ramps from this value to `1.0` across events in temporal order.
+    `1.0` disables decay.
+- `entry_basis::E`: execution basis used during labelling. Determines
+    the exposure offset for attribution.
+
 # Constructors
-    Weights(; kwargs...)
+    Weights(; time_decay_start=1.0, entry_basis=NextOpen())
 
 # Keywords
 - `time_decay_start::Real = 1.0`: starting value for linear time
     decay (`1.0` disables decay).
 - `entry_basis::AbstractExecutionBasis = NextOpen()`: execution basis
     used during labelling.
+
+# Examples
+```jldoctest
+julia> using Backtest
+
+julia> w = Weights();
+
+julia> w isa AbstractWeights
+true
+
+julia> w.time_decay_start
+1.0
+
+julia> w_decay = Weights(time_decay_start=0.5);
+
+julia> w_decay.time_decay_start
+0.5
+```
 
 # Pipeline Data Flow
 
@@ -27,22 +56,12 @@ Expects a `NamedTuple` with at least:
 - `bars::PriceBars`: the price data.
 
 ## Output
-Returns the input merged with:
-- `weights::Vector{T}`: sample weights.
-
-# Examples
-```julia
-using Backtest, Dates
-
-result = (bars >> EMA(10, 50) >> Crossover(:ema_10, :ema_50) >>
-          Event(d -> d.bars.close .> 100.0) >>
-          Label(UpperBarrier(d -> d.entry_price * 1.05),
-                LowerBarrier(d -> d.entry_price * 0.95),
-                TimeBarrier(d -> d.entry_ts + Day(20))) >>
-          Weights(time_decay_start=0.5))()
-```
+Return the input merged with:
+- `weights::Vector{T}`: sample weights where `sum(weights) ≈ n`
+    and each label class contributes roughly equal total weight.
 
 # See also
+- [`AbstractWeights`](@ref): parent abstract type.
 - [`Weights!`](@ref): variant that returns only the weight vector.
 - [`compute_weights`](@ref): the underlying computation function.
 """
@@ -63,13 +82,48 @@ end
 
 Sample-weight functor that returns only the raw weight vector.
 
-Identical to [`Weights`](@ref) but returns `Vector{T}` instead of
-merging into the pipeline `NamedTuple`.
+Identical to [`Weights`](@ref) in computation, but returns
+`Vector{T}` instead of merging into the pipeline `NamedTuple`.
+Useful when the upstream pipeline data is not needed downstream.
+
+# Type Parameters
+- `E<:AbstractExecutionBasis`: the execution basis type used during
+    labelling.
+
+# Fields
+- `time_decay_start::Float64`: starting value for linear time decay.
+- `entry_basis::E`: execution basis used during labelling.
+
+# Constructors
+    Weights!(; time_decay_start=1.0, entry_basis=NextOpen())
+
+Keywords are identical to [`Weights`](@ref).
 
 # Examples
-```julia
-weights = Weights!(time_decay_start=0.5)(pipe_data)
+```jldoctest
+julia> using Backtest
+
+julia> w = Weights!();
+
+julia> w isa AbstractWeights
+true
 ```
+
+# Pipeline Data Flow
+
+## Input
+Expects a `NamedTuple` with at least:
+- `labels::LabelResults`: from an upstream [`Label`](@ref).
+- `bars::PriceBars`: the price data.
+
+## Output
+Return a `Vector{T}` of sample weights (not merged into the
+pipeline).
+
+# See also
+- [`AbstractWeights`](@ref): parent abstract type.
+- [`Weights`](@ref): variant that merges weights into the pipeline.
+- [`compute_weights`](@ref): the underlying computation function.
 """
 struct Weights!{E<:AbstractExecutionBasis} <: AbstractWeights
     time_decay_start::Float64
@@ -127,21 +181,32 @@ the close price series used during labelling.
     (class-imbalance correction).
 
 # Examples
-```julia
-using Backtest, Dates
+```jldoctest
+julia> using Backtest, Dates
 
-bars = get_data("AAPL"; start_date="2020-01-01", end_date="2023-12-31")
-pb = PriceBars(bars.open, bars.high, bars.low, bars.close,
-               bars.volume, bars.timestamp, TimeBar())
+julia> n = 20;
 
-labels = (pb >> EMA(10, 50) >> Crossover(:ema_10, :ema_50) >>
-          Event(d -> d.bars.close .> 100.0) >>
-          Label!(UpperBarrier(d -> d.entry_price * 1.05),
-                 LowerBarrier(d -> d.entry_price * 0.95),
-                 TimeBarrier(d -> d.entry_ts + Day(20))))()
+julia> bars = PriceBars(
+           [100.0 + 0.5i for i in 1:n],
+           [102.0 + 0.5i for i in 1:n],
+           [98.0 + 0.5i for i in 1:n],
+           [101.0 + 0.5i for i in 1:n],
+           fill(1000.0, n),
+           [DateTime(2024, 1, 1) + Day(i-1) for i in 1:n],
+           TimeBar(),
+       );
 
-weights = compute_weights(labels, pb)
-weights_decayed = compute_weights(labels, pb; time_decay_start=0.5)
+julia> tb = TimeBarrier(d -> d.entry_ts + Day(3));
+
+julia> labels = calculate_label([1, 5], bars, (tb,); side=zeros(Int8, n));
+
+julia> w = compute_weights(labels, bars);
+
+julia> length(w) == length(labels)
+true
+
+julia> sum(w) ≈ length(labels)
+true
 ```
 
 # See also
