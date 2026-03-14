@@ -50,14 +50,16 @@ them into the pipeline or returns the raw vector.
 
 Subtypes must implement the callable interface:
 
-- `(w::MyWeights)(d::NamedTuple) -> NamedTuple` or `Vector{T}`:
-    compute weights from `d.labels` and `d.bars`. Return either
-    the input merged with `(; weights=...)` or the raw vector.
+- `(w::MyWeights)(d::NamedTuple) -> NamedTuple`: compute weights
+    from `d.labels` and `d.bars`. Return the input merged with
+    `(; weights=...)`.
+- `(w::MyWeights)(labels::LabelResults, bars::PriceBars) -> Vector{T}`:
+    compute and return the raw weight vector directly.
 
 # Existing Subtypes
 
-- [`Weights`](@ref): merges weights into the pipeline `NamedTuple`.
-- [`Weights!`](@ref): returns only the raw weight vector.
+- [`AttributionWeights`](@ref): uniqueness-weighted attribution with
+    time decay and class-imbalance correction.
 
 # See also
 - [`compute_weights`](@ref): the underlying computation function.

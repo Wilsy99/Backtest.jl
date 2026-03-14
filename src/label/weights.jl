@@ -1,14 +1,18 @@
 # ── Weights Functors ──
 
 """
-    Weights{E<:AbstractExecutionBasis} <: AbstractWeights
+    AttributionWeights{E<:AbstractExecutionBasis} <: AbstractWeights
 
-Sample-weight functor that merges computed weights into the pipeline
-`NamedTuple`.
+Sample-weight functor that computes uniqueness-weighted attribution
+weights with optional time decay and class-imbalance correction.
 
-When called on a pipeline `NamedTuple` containing `labels` and `bars`,
-compute uniqueness-weighted sample weights and return the input merged
-with `(; weights=Vector{T}(...))`.
+# Callable Signatures
+
+- `(w::AttributionWeights)(d::NamedTuple) -> NamedTuple`: compute
+    weights from `d.labels` and `d.bars`, return the input merged
+    with `(; weights=Vector{T}(...))`.
+- `(w::AttributionWeights)(labels::LabelResults, bars::PriceBars) -> Vector{T}`:
+    compute and return the raw weight vector directly.
 
 # Type Parameters
 - `E<:AbstractExecutionBasis`: the execution basis type used during
@@ -22,7 +26,7 @@ with `(; weights=Vector{T}(...))`.
     the exposure offset for attribution.
 
 # Constructors
-    Weights(; time_decay_start=1.0, entry_basis=NextOpen())
+    AttributionWeights(; time_decay_start=1.0, entry_basis=NextOpen())
 
 # Keywords
 - `time_decay_start::Real = 1.0`: starting value for linear time
@@ -34,7 +38,7 @@ with `(; weights=Vector{T}(...))`.
 ```jldoctest
 julia> using Backtest
 
-julia> w = Weights();
+julia> w = AttributionWeights();
 
 julia> w isa AbstractWeights
 true
@@ -42,7 +46,7 @@ true
 julia> w.time_decay_start
 1.0
 
-julia> w_decay = Weights(time_decay_start=0.5);
+julia> w_decay = AttributionWeights(time_decay_start=0.5);
 
 julia> w_decay.time_decay_start
 0.5
@@ -50,103 +54,55 @@ julia> w_decay.time_decay_start
 
 # Pipeline Data Flow
 
-## Input
+## Input (NamedTuple overload)
 Expects a `NamedTuple` with at least:
 - `labels::LabelResults`: from an upstream [`Label`](@ref).
 - `bars::PriceBars`: the price data.
 
-## Output
-Return the input merged with:
-- `weights::Vector{T}`: sample weights where `sum(weights) ≈ n`
-    and each label class contributes roughly equal total weight.
-
-# See also
-- [`AbstractWeights`](@ref): parent abstract type.
-- [`Weights!`](@ref): variant that returns only the weight vector.
-- [`compute_weights`](@ref): the underlying computation function.
-"""
-struct Weights{E<:AbstractExecutionBasis} <: AbstractWeights
-    time_decay_start::Float64
-    entry_basis::E
-end
-
-function Weights(;
-    time_decay_start::Real=1.0,
-    entry_basis::AbstractExecutionBasis=NextOpen(),
-)
-    return Weights(float(time_decay_start), entry_basis)
-end
-
-"""
-    Weights!{E<:AbstractExecutionBasis} <: AbstractWeights
-
-Sample-weight functor that returns only the raw weight vector.
-
-Identical to [`Weights`](@ref) in computation, but returns
-`Vector{T}` instead of merging into the pipeline `NamedTuple`.
-Useful when the upstream pipeline data is not needed downstream.
-
-# Type Parameters
-- `E<:AbstractExecutionBasis`: the execution basis type used during
-    labelling.
-
-# Fields
-- `time_decay_start::Float64`: starting value for linear time decay.
-- `entry_basis::E`: execution basis used during labelling.
-
-# Constructors
-    Weights!(; time_decay_start=1.0, entry_basis=NextOpen())
-
-Keywords are identical to [`Weights`](@ref).
-
-# Examples
-```jldoctest
-julia> using Backtest
-
-julia> w = Weights!();
-
-julia> w isa AbstractWeights
-true
-```
-
-# Pipeline Data Flow
-
-## Input
-Expects a `NamedTuple` with at least:
-- `labels::LabelResults`: from an upstream [`Label`](@ref).
+## Input (direct overload)
+- `labels::LabelResults`: label results.
 - `bars::PriceBars`: the price data.
 
 ## Output
-Return a `Vector{T}` of sample weights (not merged into the
-pipeline).
+- NamedTuple overload: return the input merged with
+  `weights::Vector{T}`.
+- Direct overload: return `Vector{T}` of sample weights.
+
+In both cases `sum(weights) ≈ n` and each label class contributes
+roughly equal total weight (class-imbalance correction).
 
 # See also
 - [`AbstractWeights`](@ref): parent abstract type.
-- [`Weights`](@ref): variant that merges weights into the pipeline.
 - [`compute_weights`](@ref): the underlying computation function.
 """
-struct Weights!{E<:AbstractExecutionBasis} <: AbstractWeights
+struct AttributionWeights{E<:AbstractExecutionBasis} <: AbstractWeights
     time_decay_start::Float64
     entry_basis::E
 end
 
-function var"Weights!"(;
+function AttributionWeights(;
     time_decay_start::Real=1.0,
     entry_basis::AbstractExecutionBasis=NextOpen(),
 )
-    return Weights!(float(time_decay_start), entry_basis)
+    return AttributionWeights(float(time_decay_start), entry_basis)
 end
 
-function _run_weights(w::Union{Weights,Weights!}, d::NamedTuple)
-    return compute_weights(
+function (w::AttributionWeights)(d::NamedTuple)
+    weights = compute_weights(
         d.labels, d.bars;
         time_decay_start=w.time_decay_start,
         entry_basis=w.entry_basis,
     )
+    return merge(d, (; weights=weights))
 end
 
-(w::Weights)(d::NamedTuple) = merge(d, (; weights=_run_weights(w, d)))
-(w::Weights!)(d::NamedTuple) = _run_weights(w, d)
+function (w::AttributionWeights)(labels::LabelResults, bars::PriceBars)
+    return compute_weights(
+        labels, bars;
+        time_decay_start=w.time_decay_start,
+        entry_basis=w.entry_basis,
+    )
+end
 
 # ── Sample Weight Computation ──
 
@@ -210,7 +166,7 @@ true
 ```
 
 # See also
-- [`Weights`](@ref), [`Weights!`](@ref): pipeline functors.
+- [`AttributionWeights`](@ref): pipeline functor.
 - [`LabelResults`](@ref): the input container.
 - [`calculate_label`](@ref): produces label results.
 """

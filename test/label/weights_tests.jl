@@ -299,7 +299,7 @@ end
 
 # ── Phase 2: Core Correctness — Functor Tests ──
 
-@testitem "Weights: Weights functor merges into NamedTuple" tags = [
+@testitem "Weights: AttributionWeights functor merges into NamedTuple" tags = [
     :weights, :unit
 ] setup = [TestData] begin
     using Backtest, Test, Dates
@@ -313,7 +313,7 @@ end
             LowerBarrier(d -> d.entry_price * 0.97),
             TimeBarrier(d -> d.entry_ts + Day(30)),
         ) >>
-        Weights()
+        AttributionWeights()
 
     result = pipe()
 
@@ -331,7 +331,7 @@ end
     end
 end
 
-@testitem "Weights: Weights! returns raw weight vector" tags = [
+@testitem "Weights: AttributionWeights direct call returns raw vector" tags = [
     :weights, :unit
 ] setup = [TestData] begin
     using Backtest, Test, Dates
@@ -345,7 +345,7 @@ end
             TimeBarrier(d -> d.entry_ts + Day(30)),
         ))()
 
-    weights = Weights!()(pipe_data)
+    weights = AttributionWeights()(pipe_data.labels, pipe_data.bars)
 
     @test weights isa Vector{Float64}
     @test length(weights) == length(pipe_data.labels)
@@ -365,8 +365,8 @@ end
             TimeBarrier(d -> d.entry_ts + Day(30)),
         ))()
 
-    w_no_decay = Weights!()(pipe_data)
-    w_decay = Weights!(time_decay_start=0.5)(pipe_data)
+    w_no_decay = AttributionWeights()(pipe_data.labels, pipe_data.bars)
+    w_decay = AttributionWeights(time_decay_start=0.5)(pipe_data.labels, pipe_data.bars)
 
     @test length(w_no_decay) == length(w_decay)
 
@@ -398,6 +398,28 @@ end
     w_closes = compute_weights(labels, bars.close)
 
     @test w_bars ≈ w_closes atol = 1e-15
+end
+
+@testitem "Weights: NamedTuple and direct functor calls agree" tags = [
+    :weights, :unit
+] setup = [TestData] begin
+    using Backtest, Test, Dates
+
+    bars = TestData.make_pricebars(; n=200)
+    evt = Event(d -> trues(length(d.bars.close)))
+    pipe_data = (bars >> evt >>
+        Label(
+            UpperBarrier(d -> d.entry_price * 1.03),
+            LowerBarrier(d -> d.entry_price * 0.97),
+            TimeBarrier(d -> d.entry_ts + Day(30)),
+        ))()
+
+    aw = AttributionWeights(time_decay_start=0.75)
+
+    w_pipe = aw(pipe_data).weights
+    w_direct = aw(pipe_data.labels, pipe_data.bars)
+
+    @test w_pipe ≈ w_direct atol = 1e-15
 end
 
 # ── Phase 3: Robustness — Edge Cases ──
@@ -565,7 +587,7 @@ end
 
 # ── Phase 3: Robustness — Integration ──
 
-@testitem "Weights: Full pipeline — Feature → Event → Label → Weights" tags = [
+@testitem "Weights: Full pipeline — Feature → Event → Label → AttributionWeights" tags = [
     :weights, :integration, :pipeline
 ] setup = [TestData] begin
     using Backtest, Test, Dates
@@ -579,7 +601,7 @@ end
             LowerBarrier(d -> d.entry_price * 0.95),
             TimeBarrier(d -> d.entry_ts + Day(20)),
         ) >>
-        Weights(time_decay_start=0.75)
+        AttributionWeights(time_decay_start=0.75)
 
     result = pipe()
 
