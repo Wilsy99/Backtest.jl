@@ -125,7 +125,7 @@ end
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=200)
-    nt = EMA(10, 50)(bars)
+    nt = (EMA(10) >> EMA(50))(bars)
 
     cond1 = d -> d.ema_10 .> d.ema_50
     cond2 = d -> d.bars.close .> 100.0
@@ -273,7 +273,7 @@ end
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=100)
-    nt = EMA(10, 50)(bars)
+    nt = (EMA(10) >> EMA(50))(bars)
 
     evt = Event(d -> d.ema_10 .> d.ema_50)
     result = evt(nt)
@@ -354,7 +354,7 @@ end
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=100)
-    nt = EMA(10, 50)(bars)
+    nt = (EMA(10) >> EMA(50))(bars)
 
     # @Event should produce the same indices as the manual form
     evt_manual = Event(d -> d.ema_10 .> d.ema_50; match=:all)
@@ -369,7 +369,7 @@ end
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=100)
-    nt = EMA(10, 50)(bars)
+    nt = (EMA(10) >> EMA(50))(bars)
 
     evt_manual = Event(d -> d.ema_10 .> d.ema_50; match=:any)
     evt_macro = @Event :ema_10 .> :ema_50 match = :any
@@ -382,7 +382,7 @@ end
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=100)
-    nt = EMA(10, 50)(bars)
+    nt = (EMA(10) >> EMA(50))(bars)
 
     evt_manual = Event(d -> d.ema_10 .> d.ema_50, d -> d.ema_10 .> 100.0; match=:all)
     evt_macro = @Event :ema_10 .> :ema_50 :ema_10 .> 100.0 match = :all
@@ -396,7 +396,7 @@ end
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=100)
-    nt = EMA(10, 50)(bars)
+    nt = (EMA(10) >> EMA(50))(bars)
 
     # Weighted average of two EMAs compared to a literal
     evt_manual = Event(d -> (d.ema_10 .* 0.5 .+ d.ema_50 .* 0.5) .> 100.0)
@@ -424,7 +424,7 @@ end
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=100)
-    nt = EMA(10, 50)(bars)
+    nt = (EMA(10) >> EMA(50))(bars)
 
     evt_implicit = @Event :ema_10 .> :ema_50
     evt_explicit = @Event :ema_10 .> :ema_50 match = :all
@@ -439,7 +439,7 @@ end
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=100)
-    nt = EMA(10, 50)(bars)
+    nt = (EMA(10) >> EMA(50))(bars)
 
     # Parenthesised sub-expression — Expr(:call,...) inside Expr(:comparison,...)
     evt_manual = Event(d -> (d.ema_10 .- d.ema_50) .> 0.0)

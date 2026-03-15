@@ -73,16 +73,16 @@ println(
 println("  overhead 200:  $(a_small - z_small) bytes")
 println("  overhead 2000: $(a_large - z_large) bytes")
 
-# ─── 5. calculate_feature wrapper overhead ────────────────────────────────
+# ─── 5. compute wrapper overhead ────────────────────────────────────────
 feat = CUSUM(1.0)
-alloc_calc(feat, p) = @allocated calculate_feature(feat, p)
-calculate_feature(feat, prices_small)
+alloc_calc(feat, p) = @allocated compute(feat, p)
+compute(feat, prices_small)
 alloc_calc(feat, prices_small)
 a_calc = alloc_calc(feat, prices_small)
 
-println("\n=== 5. calculate_feature vs _calculate_cusum (n=200) ===")
+println("\n=== 5. compute vs _calculate_cusum (n=200) ===")
 println("  _calculate_cusum:   $a_small bytes")
-println("  calculate_feature: $a_calc bytes")
+println("  compute:            $a_calc bytes")
 println("  wrapper overhead:    $(a_calc - a_small) bytes (should be 0)")
 
 # ─── 6. Functor / NamedTuple merge overhead ─────────────────────────────────

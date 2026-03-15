@@ -48,7 +48,7 @@ end
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=100)
-    ema_data = EMA(10, 50)(bars)
+    ema_data = (EMA(10) >> EMA(50))(bars)
 
     cross = Crossover(:ema_10, :ema_50)
     result = cross(ema_data)

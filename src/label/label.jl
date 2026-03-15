@@ -139,7 +139,7 @@ lab2 = Label(
 )
 
 # In a pipeline:
-# result = bars >> EMA(10, 50) >> Crossover(:ema_10, :ema_50) >> evt >> lab2
+# result = bars >> EMA(10) >> EMA(50) >> Crossover(:ema_10, :ema_50) >> evt >> lab2
 ```
 
 # Pipeline Data Flow

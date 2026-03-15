@@ -22,35 +22,37 @@ big_bars = PriceBars(
 
 #! format: off
 @time bars |>
-    EMA(10, 20) |>
+    EMA(10) |>
+    EMA(20) |>
     CUSUM(1) |>
     Crossover(:ema_10, :ema_20; direction=LongShort()) |>
-    @Event(:cusum .!= 0, :side .!= 0) |> 
+    @Event(:cusum .!= 0, :side .!= 0) |>
     Label!(
         @LowerBarrier(:entry_side == 1 ? :entry_price * 0.95 : :entry_price * 0.90, label=Int8(-1), exit_basis=Immediate()),
         @UpperBarrier(:entry_side == 1 ? :entry_price * 1.2 : :entry_price * 1.1, label=Int8(1), exit_basis=Immediate()),
         @TimeBarrier(:entry_ts + Day(10), label=Int8(0), exit_basis=NextOpen()),
         @ConditionBarrier(
-            :entry_side == 1 ? (:ema_10 < :ema_20 && :close <= :entry_price) : (:ema_10 > :ema_20 && :close < :entry_price), 
-            label=Int8(-1), 
+            :entry_side == 1 ? (:ema_10 < :ema_20 && :close <= :entry_price) : (:ema_10 > :ema_20 && :close < :entry_price),
+            label=Int8(-1),
             exit_basis=NextOpen()
             ), #long postion; if ema_10 crosses below ema_20, then exit trade, if trade closes in loss (close < entry price) then label as 1, the opposite for short
         @ConditionBarrier(
-            :entry_side == 1 ? (:ema_10 < :ema_20 && :close > :entry_price) : (:ema_10 > :ema_20 && :close >= :entry_price), 
-            label=Int8(1), 
+            :entry_side == 1 ? (:ema_10 < :ema_20 && :close > :entry_price) : (:ema_10 > :ema_20 && :close >= :entry_price),
+            label=Int8(1),
             exit_basis=NextOpen()
-            ); 
+            );
         entry_basis=NextOpen()
         )
 #! format: on
 
-strat(bars::PriceBars, multi_thread) = 
+strat(bars::PriceBars, multi_thread) =
 #! format: off
     bars >>
-    EMA(10, 20, multi_thread=multi_thread) >>
+    EMA(10) >>
+    EMA(20) >>
     CUSUM(1) >>
     Crossover(:ema_10, :ema_20; direction=LongOnly()) >>
-    @Event(:cusum .!= 0, :side .!= 0) >> 
+    @Event(:cusum .!= 0, :side .!= 0) >>
     Label!(
         @LowerBarrier(:entry_price * 0.95, label=Int8(-1), exit_basis=Immediate()),
         @UpperBarrier(:entry_price * 1.2, label=Int8(1), exit_basis=Immediate()),
@@ -71,7 +73,7 @@ strat(bars::PriceBars, multi_thread) =
 
 @benchmark $strat(big_bars, false)()
 
-feats = EMA(10, 20) >> CUSUM(1)
+feats = EMA(10) >> EMA(20) >> CUSUM(1)
 side = Crossover(:ema_10, :ema_20; wait_for_cross=false, direction=LongOnly())
 event = Event(d -> d.cusum .!= 0 .&& d.side .!= 0)
 label = Label(
@@ -91,9 +93,9 @@ benchmark_strat = big_bars >> feats >> side >> event >> label
 
 @chain data begin
     @transform(
-        :ema_10 = calculate_feature(EMA(10), :close),
-        :ema_20 = calculate_feature(EMA(20), :close),
-        :cusum = calculate_feature(CUSUM(1), :close)
+        :ema_10 = compute(EMA(10), :close),
+        :ema_20 = compute(EMA(20), :close),
+        :cusum = compute(CUSUM(1), :close)
     )
     @transform(:side = calculate_side(Crossover(), :ema_10, :ema_20))
     @transform(:event = Int8.(:cusum .≠ 0 .&& :side .≠ 0))
@@ -115,14 +117,14 @@ benchmark_strat = big_bars >> feats >> side >> event >> label
     )
 end
 
-@allocations bars |> EMA(5,10,15,20,3,4,6,1)
+@allocations bars |> EMA(5)
 
 # ── Fully Standalone Approach (no pipeline, no functors) ──
 
 # 1. Features — raw vectors in, raw vectors out
-ema_10 = calculate_feature(EMA(10), data.close)
-ema_20 = calculate_feature(EMA(20), data.close)
-cusum = calculate_feature(CUSUM(1), data.close)
+ema_10 = compute(EMA(10), data.close)
+ema_20 = compute(EMA(20), data.close)
+cusum = compute(CUSUM(1), data.close)
 
 # 2. Side — raw vectors in, Vector{Int8} out
 sides = calculate_side(Crossover(), ema_10, ema_20)
@@ -151,4 +153,3 @@ results = calculate_label(
     entry_basis=NextOpen(),
     barrier_args=(; ema_20=ema_20),
 )
-

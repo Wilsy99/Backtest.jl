@@ -86,7 +86,7 @@ When called with a `PriceBars` directly, returns a `NamedTuple` with:
 using Backtest, Dates
 
 bars = get_data("AAPL"; start_date="2020-01-01", end_date="2023-12-31")
-result = bars >> EMA(10, 50) >> Event(d -> d.ema_10 .> d.ema_50)
+result = bars >> EMA(10) >> EMA(50) >> Event(d -> d.ema_10 .> d.ema_50)
 ```
 """
 struct Event{T<:Tuple} <: AbstractEvent

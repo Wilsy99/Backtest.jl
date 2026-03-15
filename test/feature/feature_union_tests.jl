@@ -8,7 +8,7 @@
 @testitem "FeatureUnion: Construction" tags = [:feature, :feature_union, :unit] begin
     using Backtest, Test
 
-    fu = FeatureUnion(EMA(10, 20), CUSUM(1.0))
+    fu = FeatureUnion(EMA(10), CUSUM(1.0))
     @test fu isa AbstractFeature
     @test fu isa FeatureUnion
     @test length(fu.features) == 2
@@ -35,10 +35,10 @@ end
 
     bars = TestData.make_pricebars(; n=200)
 
-    fu = FeatureUnion(EMA(10, 20), CUSUM(1.0))
+    fu = FeatureUnion(EMA(10), EMA(20), CUSUM(1.0))
     fused = fu(bars)
 
-    sequential = CUSUM(1.0)(EMA(10, 20)(bars))
+    sequential = CUSUM(1.0)(EMA(20)(EMA(10)(bars)))
 
     @test haskey(fused, :bars)
     @test haskey(fused, :ema_10)
@@ -98,8 +98,8 @@ end
     @test result.bars === bars
 
     # Values match independent computation
-    independent_ema20 = calculate_feature(EMA(20), bars.close)
-    independent_cusum = calculate_feature(CUSUM(1.0), bars.close)
+    independent_ema20 = compute(EMA(20), bars.close)
+    independent_cusum = compute(CUSUM(1.0), bars.close)
     @test isequal(result.ema_20, independent_ema20)
     @test isequal(result.cusum, independent_cusum)
 end
@@ -129,7 +129,7 @@ end
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=200)
-    fu = FeatureUnion(EMA(10, 20), CUSUM(1.0))
+    fu = FeatureUnion(EMA(10), EMA(20), CUSUM(1.0))
 
     @test @inferred(fu(bars)) isa NamedTuple
 
@@ -167,14 +167,14 @@ end
     @test eltype(result.cusum) == Int8
 end
 
-@testitem "FeatureUnion: Multi-Period EMA + CUSUM" tags = [
+@testitem "FeatureUnion: Multiple EMAs + CUSUM" tags = [
     :feature, :feature_union, :edge
 ] setup = [TestData] begin
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=200)
 
-    fu = FeatureUnion(EMA(5, 10, 20, 50), CUSUM(1.0))
+    fu = FeatureUnion(EMA(5), EMA(10), EMA(20), EMA(50), CUSUM(1.0))
     result = fu(bars)
 
     @test haskey(result, :ema_5)
@@ -194,7 +194,7 @@ end
 
     bars = TestData.make_pricebars(; n=200)
 
-    job = bars >> FeatureUnion(EMA(10, 20), CUSUM(1.0))
+    job = bars >> FeatureUnion(EMA(10), EMA(20), CUSUM(1.0))
     result = job()
 
     @test result isa NamedTuple
@@ -212,7 +212,7 @@ end
 
     bars = TestData.make_pricebars(; n=200)
 
-    result = bars |> FeatureUnion(EMA(10, 20), CUSUM(1.0))
+    result = bars |> FeatureUnion(EMA(10), EMA(20), CUSUM(1.0))
 
     @test result isa NamedTuple
     @test haskey(result, :bars)
@@ -229,7 +229,7 @@ end
     bars = TestData.make_pricebars(; n=200)
 
     # FeatureUnion followed by another standalone feature
-    composed = FeatureUnion(EMA(10, 20), CUSUM(1.0)) >> EMA(50)
+    composed = FeatureUnion(EMA(10), EMA(20), CUSUM(1.0)) >> EMA(50)
     result = composed(bars)
 
     @test haskey(result, :ema_10)
@@ -265,8 +265,8 @@ end
 
     bars = TestData.make_pricebars(; n=200)
 
-    fu = FeatureUnion(EMA(10, 20), CUSUM(1.0))
-    sequential = EMA(10, 20) >> CUSUM(1.0)
+    fu = FeatureUnion(EMA(10), EMA(20), CUSUM(1.0))
+    sequential = EMA(10) >> EMA(20) >> CUSUM(1.0)
 
     fu(bars)
     sequential(bars)
@@ -284,11 +284,11 @@ end
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=200)
-    fu = FeatureUnion(EMA(10, 20), CUSUM(1.0))
+    fu = FeatureUnion(EMA(10), EMA(20), CUSUM(1.0))
 
     fu(bars)
 
-    # Budget: EMA matrix (Float64 × n × 2) + CUSUM result (Int8 × n) + 1024 bytes merge
+    # Budget: 2 EMA vectors (Float64 × n × 2) + CUSUM result (Int8 × n) + 1024 bytes merge
     ema_bytes = sizeof(Float64) * 200 * 2
     cusum_bytes = sizeof(Int8) * 200
     budget = ema_bytes + cusum_bytes + 1024

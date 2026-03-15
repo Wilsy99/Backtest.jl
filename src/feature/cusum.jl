@@ -43,7 +43,7 @@ true
 # See also
 - [`EMA`](@ref): a smoothing feature (contrast with CUSUM's
     change-detection approach).
-- [`calculate_feature`](@ref): the dispatch point for all features.
+- [`compute`](@ref): the dispatch point for all features.
 
 # Extended help
 
@@ -105,7 +105,7 @@ end
 _feature_field(feat::CUSUM) = feat.field
 
 """
-    calculate_feature(feat::CUSUM, prices::AbstractVector{T}) where {T<:AbstractFloat} -> Vector{Int8}
+    compute(feat::CUSUM, prices::AbstractVector{T}) where {T<:AbstractFloat} -> Vector{Int8}
 
 Compute CUSUM filter signals for `prices`.
 
@@ -131,7 +131,7 @@ julia> using Backtest
 
 julia> prices = vcat(fill(100.0, 11), [200.0]);
 
-julia> vals = calculate_feature(CUSUM(1.0; span=10), prices);
+julia> vals = compute(CUSUM(1.0; span=10), prices);
 
 julia> vals[12]
 1
@@ -140,12 +140,12 @@ julia> vals[12]
 # See also
 - [`CUSUM`](@ref): constructor and type documentation.
 """
-function calculate_feature(feat::CUSUM, prices::AbstractVector{T}) where {T<:AbstractFloat}
+function compute(feat::CUSUM, prices::AbstractVector{T}) where {T<:AbstractFloat}
     return _calculate_cusum(prices, feat.multiplier, feat.span, feat.expected_value)
 end
 
 """
-    calculate_feature!(dest::AbstractVector{Int8}, feat::CUSUM, prices::AbstractVector{T}) where {T<:AbstractFloat} -> dest
+    compute!(dest::AbstractVector{Int8}, feat::CUSUM, prices::AbstractVector{T}) where {T<:AbstractFloat} -> dest
 
 Compute CUSUM filter signals in-place, writing results into the
 pre-allocated vector `dest`. This avoids allocation for
@@ -167,10 +167,10 @@ performance-critical paths.
 - `DimensionMismatch`: if `length(dest) != length(prices)`.
 
 # See also
-- [`calculate_feature`](@ref): allocating version.
+- [`compute`](@ref): allocating version.
 - [`CUSUM`](@ref): constructor and type documentation.
 """
-function calculate_feature!(
+function compute!(
     dest::AbstractVector{Int8}, feat::CUSUM, prices::AbstractVector{T}
 ) where {T<:AbstractFloat}
     length(dest) == length(prices) ||
@@ -186,15 +186,21 @@ function calculate_feature!(
 end
 
 """
-    _feature_result(feat::CUSUM, prices) -> NamedTuple
+    _feature_result(feat::CUSUM, prices) -> Vector{Int8}
 
-Wrap the CUSUM output in a `NamedTuple` with key `:cusum` for
-pipeline composition.
+Compute the CUSUM and return the result vector for pipeline
+composition.
 """
 function _feature_result(feat::CUSUM, prices::AbstractVector{T}) where {T<:AbstractFloat}
-    vals = calculate_feature(feat, prices)
-    return (cusum=vals,)
+    return compute(feat, prices)
 end
+
+"""
+    _feature_names(feat::CUSUM) -> Tuple{Symbol}
+
+Return the named keys for this feature's pipeline output.
+"""
+_feature_names(::CUSUM) = (:cusum,)
 
 """
     _calculate_cusum(prices, multiplier, span, expected_value) -> Vector{Int8}
@@ -281,8 +287,8 @@ function _calculate_cusum!(
 end
 
 """Return zeros and warn when data is shorter than the warmup period"""
-# This helper is marked @noinline and separated from the main loop to prevent 
-# the compiler from allocating memory for the warning infrastructure (string 
+# This helper is marked @noinline and separated from the main loop to prevent
+# the compiler from allocating memory for the warning infrastructure (string
 # formatting, etc.) during the nominal execution path of `_calculate_cusum`.
 @noinline function _warn_and_return_zeros(n, warmup_idx)
     @warn "Data length ($n) is less than warmup ($warmup_idx). Returning zeros."

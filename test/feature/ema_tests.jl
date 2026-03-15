@@ -5,7 +5,7 @@
 
     # α = 2/(3+1) = 0.5, SMA seed = (10+11+12)/3 = 11.0
     prices = Float64[10, 11, 12, 13, 14, 15]
-    ema = calculate_feature(EMA(3), prices)
+    ema = compute(EMA(3), prices)
 
     @test length(ema) == 6
     @test all(isnan, ema[1:2])
@@ -20,7 +20,7 @@ end
 
     # α = 2/(5+1) = 1/3, β = 2/3, SMA seed = (2+4+6+8+10)/5 = 6.0
     prices = Float64[2, 4, 6, 8, 10, 12, 14, 16, 18, 20]
-    ema = calculate_feature(EMA(5), prices)
+    ema = compute(EMA(5), prices)
 
     @test length(ema) == 10
     @test all(isnan, ema[1:4])
@@ -54,7 +54,7 @@ end
 
     prices = TestData.make_trending_prices(:up; n=200, start=50.0, step=0.5)
 
-    ema = calculate_feature(EMA(10), prices)
+    ema = compute(EMA(10), prices)
     @test length(ema) == length(prices)
 
     valid = filter(!isnan, ema)
@@ -62,19 +62,19 @@ end
     @test maximum(valid) <= maximum(prices) + eps()
 
     flat = TestData.make_flat_prices(; price=42.0, n=200)
-    ema_flat = calculate_feature(EMA(10), flat)
+    ema_flat = compute(EMA(10), flat)
     @test all(ema_flat[10:end] .≈ 42.0)
 
     sine_prices = [100.0 + 10.0 * sin(2π * i / 20) for i in 1:200]
-    ema_short = calculate_feature(EMA(5), sine_prices)
-    ema_long = calculate_feature(EMA(20), sine_prices)
+    ema_short = compute(EMA(5), sine_prices)
+    ema_long = compute(EMA(20), sine_prices)
     @test var(diff(ema_long[21:end])) < var(diff(ema_short[21:end]))
 
-    ema_up = calculate_feature(EMA(5), prices)
+    ema_up = compute(EMA(5), prices)
     @test all(diff(ema_up[6:end]) .> 0)
 
     prices_down = TestData.make_trending_prices(:down; n=200, start=200.0, step=0.5)
-    ema_down = calculate_feature(EMA(5), prices_down)
+    ema_down = compute(EMA(5), prices_down)
     @test all(diff(ema_down[6:end]) .< 0)
 
     @test all(ema_up[11:end] .< prices[11:end])
@@ -87,14 +87,10 @@ end
     prices64 = Float64.(1:50)
     prices32 = Float32.(1:50)
 
-    @test @inferred(calculate_feature(EMA(5), prices64)) isa Vector{Float64}
-    @test @inferred(calculate_feature(EMA(5), prices32)) isa Vector{Float32}
+    @test @inferred(compute(EMA(5), prices64)) isa Vector{Float64}
+    @test @inferred(compute(EMA(5), prices32)) isa Vector{Float32}
 
-    @test @inferred(calculate_feature(EMA(5, 10), prices64)) isa Matrix{Float64}
-    @test @inferred(calculate_feature(EMA(5, 10), prices32)) isa Matrix{Float32}
-
-    @test @inferred(Backtest._feature_result(EMA(5), prices64)) isa NamedTuple
-    @test @inferred(Backtest._feature_result(EMA(5, 10), prices64)) isa NamedTuple
+    @test @inferred(Backtest._feature_result(EMA(5), prices64)) isa Vector{Float64}
 end
 
 # ── Phase 3: Robustness — Edge Cases ──
@@ -104,7 +100,7 @@ end
 
     # α = 1.0, β = 0.0 → EMA equals input exactly
     prices = Float64[5, 10, 15, 20, 25]
-    ema = calculate_feature(EMA(1), prices)
+    ema = compute(EMA(1), prices)
 
     @test length(ema) == 5
     @test ema ≈ prices
@@ -115,7 +111,7 @@ end
     using Backtest, Test
 
     prices = Float64[1, 2, 3]
-    ema = calculate_feature(EMA(5), prices)
+    ema = compute(EMA(5), prices)
 
     @test length(ema) == 3
     @test all(isnan, ema)
@@ -125,7 +121,7 @@ end
     using Backtest, Test
 
     prices = Float64[10, 20, 30]
-    ema = calculate_feature(EMA(3), prices)
+    ema = compute(EMA(3), prices)
 
     @test length(ema) == 3
     @test all(isnan, ema[1:2])
@@ -136,11 +132,11 @@ end
     using Backtest, Test
 
     prices = Float64[42.0]
-    ema = calculate_feature(EMA(1), prices)
+    ema = compute(EMA(1), prices)
     @test length(ema) == 1
     @test ema[1] ≈ 42.0
 
-    ema2 = calculate_feature(EMA(2), Float64[42.0])
+    ema2 = compute(EMA(2), Float64[42.0])
     @test length(ema2) == 1
     @test isnan(ema2[1])
 end
@@ -149,7 +145,7 @@ end
     using Backtest, Test
 
     flat = TestData.make_flat_prices(; price=100.0, n=200)
-    ema = calculate_feature(EMA(10), flat)
+    ema = compute(EMA(10), flat)
 
     @test all(isnan, ema[1:9])
     @test all(ema[10:end] .≈ 100.0)
@@ -159,7 +155,7 @@ end
     using Backtest, Test
 
     prices = TestData.make_step_prices(; n=200, low=100.0, high=200.0, step_at=101)
-    ema = calculate_feature(EMA(10), prices)
+    ema = compute(EMA(10), prices)
 
     valid = filter(!isnan, ema)
 
@@ -174,7 +170,7 @@ end
     using Backtest, Test
 
     prices = fill(50_000.0, 200)
-    ema = calculate_feature(EMA(10), prices)
+    ema = compute(EMA(10), prices)
 
     @test all(ema[10:end] .≈ 50_000.0)
     @test all(isfinite, filter(!isnan, ema))
@@ -184,7 +180,7 @@ end
     using Backtest, Test
 
     prices = fill(0.001, 200)
-    ema = calculate_feature(EMA(10), prices)
+    ema = compute(EMA(10), prices)
 
     @test all(ema[10:end] .≈ 0.001)
     @test all(isfinite, filter(!isnan, ema))
@@ -195,47 +191,21 @@ end
 
     prices32 = Float32.(1:100)
 
-    ema = calculate_feature(EMA(5), prices32)
+    ema = compute(EMA(5), prices32)
     @test eltype(ema) == Float32
     @test length(ema) == 100
-
-    result = calculate_feature(EMA(5, 10), prices32)
-    @test eltype(result) == Float32
-    @test size(result) == (100, 2)
 end
 
-# ── Phase 3: Robustness — Multi-Period & Interface ──
-
-@testitem "EMA: Multi-Period Matches Individual Calculations" tags = [:feature, :ema, :unit] begin
-    using Backtest, Test
-
-    prices = Float64.(1:100)
-    multi = calculate_feature(EMA(5, 10, 20), prices)
-
-    ema5 = calculate_feature(EMA(5), prices)
-    ema10 = calculate_feature(EMA(10), prices)
-    ema20 = calculate_feature(EMA(20), prices)
-
-    @test size(multi) == (100, 3)
-    @test isequal(multi[:, 1], ema5)
-    @test isequal(multi[:, 2], ema10)
-    @test isequal(multi[:, 3], ema20)
-end
+# ── Phase 3: Robustness — Interface ──
 
 @testitem "EMA: Named Result Builder (_feature_result)" tags = [:feature, :ema, :unit] begin
     using Backtest, Test
 
     prices = Float64.(1:50)
 
-    nt = Backtest._feature_result(EMA(10), prices)
-    @test nt isa NamedTuple
-    @test haskey(nt, :ema_10)
-    @test isequal(nt.ema_10, calculate_feature(EMA(10), prices))
-
-    nt2 = Backtest._feature_result(EMA(5, 20), prices)
-    @test haskey(nt2, :ema_5)
-    @test haskey(nt2, :ema_20)
-    @test length(keys(nt2)) == 2
+    result = Backtest._feature_result(EMA(10), prices)
+    @test result isa Vector{Float64}
+    @test isequal(result, compute(EMA(10), prices))
 end
 
 @testitem "EMA: Callable Interface with PriceBars" tags = [:feature, :ema, :unit] setup = [
@@ -251,11 +221,6 @@ end
     @test haskey(result, :ema_10)
     @test result.bars === bars
     @test length(result.ema_10) == 100
-
-    result2 = EMA(10, 20)(bars)
-    @test haskey(result2, :bars)
-    @test haskey(result2, :ema_10)
-    @test haskey(result2, :ema_20)
 end
 
 @testitem "EMA: Callable Interface with NamedTuple (chaining)" tags = [
@@ -283,12 +248,8 @@ end
     @test_throws ArgumentError EMA(-1)
     @test_throws ArgumentError EMA(-10)
 
-    @test_throws ArgumentError EMA(3, 3)
-    @test_throws ArgumentError EMA(5, 10, 5)
-
     @test EMA(1) isa EMA
     @test EMA(100) isa EMA
-    @test EMA(1, 2, 3) isa EMA
 end
 
 # ── Phase 3: Robustness — Performance ──
@@ -320,27 +281,6 @@ end
     @test actual_seed == 0
 end
 
-@testitem "EMA: Allocation — _calculate_emas (multi-period)" tags = [
-    :feature, :ema, :allocation
-] begin
-    using Backtest, Test
-
-    prices = collect(1.0:200.0)
-    periods = [5, 10, 20]
-
-    Backtest._calculate_emas(prices, periods)
-
-    expected_data = sizeof(Float64) * length(prices) * length(periods)
-    budget = expected_data + 512
-
-    allocs_emas(prices, periods) = @allocated Backtest._calculate_emas(prices, periods)
-
-    actual = minimum([@allocated(allocs_emas(prices, periods)) for _ in 1:3])
-
-    @test actual <= budget
-    @test actual > 0
-end
-
 @testitem "EMA: Kernel Unrolled Covers All Remainders" tags = [:feature, :ema, :unit] begin
     using Backtest, Test
 
@@ -350,7 +290,7 @@ end
 
     for n in 6:9
         prices = Float64.(1:n)
-        ema = calculate_feature(EMA(period), prices)
+        ema = compute(EMA(period), prices)
 
         @test length(ema) == n
         @test isnan(ema[1])
@@ -376,8 +316,8 @@ end
 
     prices = collect(1.0:100.0)
 
-    @test_opt target_modules = (Backtest,) calculate_feature(EMA(10), prices)
-    @test_call target_modules = (Backtest,) calculate_feature(EMA(10), prices)
+    @test_opt target_modules = (Backtest,) compute(EMA(10), prices)
+    @test_call target_modules = (Backtest,) compute(EMA(10), prices)
 end
 
 # ── Phase 5: Allocation Budget Tests ──
@@ -423,7 +363,7 @@ end
     @test actual <= budget
 end
 
-@testitem "EMA: Allocation — calculate_feature single period" tags = [
+@testitem "EMA: Allocation — compute single period" tags = [
     :feature, :ema, :allocation
 ] begin
     using Backtest, Test
@@ -431,33 +371,12 @@ end
     prices = collect(1.0:200.0)
     feat = EMA(10)
 
-    calculate_feature(feat, prices)
+    compute(feat, prices)
 
     expected_data = sizeof(Float64) * length(prices)
     budget = expected_data + 512
 
-    allocs_calc(feat, prices) = @allocated calculate_feature(feat, prices)
-
-    actual = minimum([@allocated(allocs_calc(feat, prices)) for _ in 1:3])
-
-    @test actual <= budget
-end
-
-@testitem "EMA: Allocation — calculate_feature multi-period" tags = [
-    :feature, :ema, :allocation
-] begin
-    using Backtest, Test
-
-    prices = collect(1.0:200.0)
-    feat = EMA(5, 10, 20)
-    n_periods = 3
-
-    calculate_feature(feat, prices)
-
-    expected_data = sizeof(Float64) * length(prices) * n_periods
-    budget = expected_data + 1536
-
-    allocs_calc(feat, prices) = @allocated calculate_feature(feat, prices)
+    allocs_calc(feat, prices) = @allocated compute(feat, prices)
 
     actual = minimum([@allocated(allocs_calc(feat, prices)) for _ in 1:3])
 
@@ -508,104 +427,12 @@ end
     @test actual <= budget
 end
 
-@testitem "EMA: Allocation — EMA functor multi-period with PriceBars" tags = [
-    :feature, :ema, :allocation
-] setup = [TestData] begin
-    using Backtest, Test
-
-    bars = TestData.make_pricebars(; n=200)
-    feat = EMA(5, 10, 20)
-
-    feat(bars)
-
-    expected_data = sizeof(Float64) * 200 * 3
-    budget = expected_data + 1024
-
-    allocs_functor(feat, bars) = @allocated feat(bars)
-
-    actual = minimum([@allocated(allocs_functor(feat, bars)) for _ in 1:3])
-
-    @test actual <= budget
-end
-
-# ── multi_thread=true path ──
-#
-# The @threads branch of _calculate_emas is a distinct code path from the
-# single-threaded for-loop. Allocation budget tests are excluded because
-# task-creation overhead is non-deterministic across Julia versions and thread
-# counts. JET tests are excluded because @threads closures produce false
-# positives for NTuple dynamic indexing. Correctness and type stability are
-# verified below.
-
-@testitem "EMA: multi_thread=true — constructor stores flag" tags = [:feature, :ema, :unit] begin
-    using Backtest, Test
-
-    ema_mt = EMA(5, 10; multi_thread=true)
-    @test ema_mt.multi_thread === true
-
-    ema_st = EMA(5, 10)
-    @test ema_st.multi_thread === false
-
-    @test EMA(5, 10, 20; multi_thread=true) isa EMA
-end
-
-@testitem "EMA: multi_thread=true matches single-threaded results" tags = [
-    :feature, :ema, :unit
-] begin
-    using Backtest, Test
-
-    prices = collect(1.0:200.0)
-
-    result_mt = calculate_feature(EMA(5, 10, 20; multi_thread=true), prices)
-    result_st = calculate_feature(EMA(5, 10, 20; multi_thread=false), prices)
-
-    @test isequal(result_mt, result_st)
-    @test size(result_mt) == (200, 3)
-    @test eltype(result_mt) == Float64
-end
-
-@testitem "EMA: multi_thread=true Type Stability" tags = [:feature, :ema, :stability] begin
-    using Backtest, Test
-
-    prices64 = Float64.(1:200)
-    prices32 = Float32.(1:200)
-
-    @test @inferred(calculate_feature(EMA(5, 10; multi_thread=true), prices64)) isa
-        Matrix{Float64}
-    @test @inferred(calculate_feature(EMA(5, 10; multi_thread=true), prices32)) isa
-        Matrix{Float32}
-end
-
-@testitem "EMA: multi_thread=true functor with PriceBars" tags = [
-    :feature, :ema, :unit
-] setup = [TestData] begin
-    using Backtest, Test
-
-    bars = TestData.make_pricebars(; n=200)
-    feat_mt = EMA(5, 10, 20; multi_thread=true)
-    feat_st = EMA(5, 10, 20; multi_thread=false)
-
-    result_mt = feat_mt(bars)
-    result_st = feat_st(bars)
-
-    @test haskey(result_mt, :bars)
-    @test haskey(result_mt, :ema_5)
-    @test haskey(result_mt, :ema_10)
-    @test haskey(result_mt, :ema_20)
-
-    # Threaded result must be numerically identical to single-threaded
-    @test isequal(result_mt.ema_5, result_st.ema_5)
-    @test isequal(result_mt.ema_10, result_st.ema_10)
-    @test isequal(result_mt.ema_20, result_st.ema_20)
-end
-
 # ── field keyword ──
 
 @testitem "EMA: field keyword defaults to :close" tags = [:feature, :ema, :unit] begin
     using Backtest, Test
 
     @test EMA(10).field === :close
-    @test EMA(10, 20).field === :close
 end
 
 @testitem "EMA: field keyword selects target series" tags = [:feature, :ema, :unit] setup = [
@@ -622,60 +449,44 @@ end
     @test !isequal(result_close.ema_10, result_volume.ema_10)
 
     # Volume-based EMA should match computing EMA directly on volume
-    expected = calculate_feature(EMA(10), bars.volume)
+    expected = compute(EMA(10), bars.volume)
     @test isequal(result_volume.ema_10, expected)
 end
 
-# ── calculate_feature! (in-place) ──
+# ── compute! (in-place) ──
 
-@testitem "EMA: calculate_feature! single period" tags = [:feature, :ema, :unit] begin
+@testitem "EMA: compute! single period" tags = [:feature, :ema, :unit] begin
     using Backtest, Test
 
     prices = Float64[10, 11, 12, 13, 14, 15]
     dest = similar(prices)
 
-    result = calculate_feature!(dest, EMA(3), prices)
+    result = compute!(dest, EMA(3), prices)
 
     @test result === dest
-    @test isequal(dest, calculate_feature(EMA(3), prices))
+    @test isequal(dest, compute(EMA(3), prices))
 end
 
-@testitem "EMA: calculate_feature! multi-period" tags = [:feature, :ema, :unit] begin
-    using Backtest, Test
-
-    prices = Float64.(1:100)
-    dest = Matrix{Float64}(undef, 100, 3)
-
-    result = calculate_feature!(dest, EMA(5, 10, 20), prices)
-
-    @test result === dest
-    @test isequal(dest, calculate_feature(EMA(5, 10, 20), prices))
-end
-
-@testitem "EMA: calculate_feature! dimension mismatch" tags = [:feature, :ema, :edge] begin
+@testitem "EMA: compute! dimension mismatch" tags = [:feature, :ema, :edge] begin
     using Backtest, Test
 
     prices = Float64[10, 11, 12, 13, 14, 15]
 
     # Vector too short
     dest_short = Vector{Float64}(undef, 3)
-    @test_throws DimensionMismatch calculate_feature!(dest_short, EMA(3), prices)
-
-    # Matrix wrong size
-    dest_bad = Matrix{Float64}(undef, 6, 2)
-    @test_throws DimensionMismatch calculate_feature!(dest_bad, EMA(5, 10, 20), prices)
+    @test_throws DimensionMismatch compute!(dest_short, EMA(3), prices)
 end
 
-@testitem "EMA: calculate_feature! zero allocations" tags = [:feature, :ema, :allocation] begin
+@testitem "EMA: compute! zero allocations" tags = [:feature, :ema, :allocation] begin
     using Backtest, Test
 
     prices = collect(1.0:200.0)
     dest = similar(prices)
     feat = EMA(10)
 
-    calculate_feature!(dest, feat, prices)
+    compute!(dest, feat, prices)
 
-    allocs_inplace(dest, feat, prices) = @allocated calculate_feature!(dest, feat, prices)
+    allocs_inplace(dest, feat, prices) = @allocated compute!(dest, feat, prices)
 
     actual = minimum([@allocated(allocs_inplace(dest, feat, prices)) for _ in 1:3])
     @test actual == 0

@@ -62,7 +62,7 @@ series by name, compute side signals, and merge the result:
 
 ```julia
 bars = get_data("AAPL")
-result = (bars >> EMA(10, 50) >> Crossover(:ema_10, :ema_50))()
+result = (bars >> EMA(10) >> EMA(50) >> Crossover(:ema_10, :ema_50))()
 # result is a NamedTuple with fields :bars, :ema_10, :ema_50, :side
 ```
 

@@ -594,7 +594,7 @@ end
 
     bars = TestData.make_pricebars(; n=200)
 
-    pipe = bars >> EMA(10, 50) >> Crossover(:ema_10, :ema_50) >>
+    pipe = bars >> EMA(10) >> EMA(50) >> Crossover(:ema_10, :ema_50) >>
         Event(d -> d.bars.close .> d.bars.open) >>
         Label(
             UpperBarrier(d -> d.entry_price * 1.05),

@@ -17,6 +17,17 @@ object that has the named column.
 end
 
 """
+    _wrap_result(feat::AbstractFeature, vec) -> NamedTuple
+
+Wrap a feature's result vector into a `NamedTuple` using the
+feature's `_feature_names`.
+"""
+@inline function _wrap_result(feat::AbstractFeature, vec)
+    names = _feature_names(feat)
+    return NamedTuple{names}((vec,))
+end
+
+"""
     (feat::AbstractFeature)(bars::PriceBars) -> NamedTuple
 
 Compute the feature on `bars` and return a `NamedTuple`
@@ -38,7 +49,8 @@ Return a `NamedTuple` with:
 """
 function (feat::AbstractFeature)(bars::PriceBars)
     series = _extract_series(bars, _feature_field(feat))
-    return merge((bars=bars,), _feature_result(feat, series))
+    result = _feature_result(feat, series)
+    return merge((bars=bars,), _wrap_result(feat, result))
 end
 
 """
@@ -62,7 +74,8 @@ from [`_feature_result`](@ref).
 """
 function (feat::AbstractFeature)(d::NamedTuple)
     series = _extract_series(d, _feature_field(feat))
-    return merge(d, _feature_result(feat, series))
+    result = _feature_result(feat, series)
+    return merge(d, _wrap_result(feat, result))
 end
 
 """
