@@ -14,15 +14,16 @@
 
     bars = TestData.make_pricebars(; n=200)
 
-    step1 = EMA(10, 50)(bars)
-    step2 = CUSUM(1.0)(step1)
+    step1 = EMA(10)(bars)
+    step2 = EMA(50)(step1)
+    step3 = CUSUM(1.0)(step2)
 
-    @test step2 isa NamedTuple
-    @test haskey(step2, :bars)
-    @test haskey(step2, :ema_10)
-    @test haskey(step2, :ema_50)
-    @test haskey(step2, :cusum)
-    @test length(keys(step2)) == 4
+    @test step3 isa NamedTuple
+    @test haskey(step3, :bars)
+    @test haskey(step3, :ema_10)
+    @test haskey(step3, :ema_50)
+    @test haskey(step3, :cusum)
+    @test length(keys(step3)) == 4
 end
 
 @testitem "Feature Interface: Data Preservation Through Chain" tags = [:feature, :property] setup = [
@@ -44,7 +45,7 @@ end
     @test isequal(step3.cusum, step2.cusum)
 
     # Feature values match independent computation
-    independent_ema20 = calculate_feature(EMA(20), bars.close)
+    independent_ema20 = compute(EMA(20), bars.close)
     @test isequal(step3.ema_20, independent_ema20)
 end
 
@@ -55,7 +56,7 @@ end
 
     bars = TestData.make_pricebars(; n=200)
 
-    composed = EMA(10, 50) >> CUSUM(1.0)
+    composed = EMA(10) >> EMA(50) >> CUSUM(1.0)
     result = composed(bars)
 
     @test result isa NamedTuple
@@ -65,7 +66,7 @@ end
     @test haskey(result, :cusum)
 
     # Composed result matches sequential calls
-    sequential = CUSUM(1.0)(EMA(10, 50)(bars))
+    sequential = CUSUM(1.0)(EMA(50)(EMA(10)(bars)))
     @test isequal(result.ema_10, sequential.ema_10)
     @test isequal(result.ema_50, sequential.ema_50)
     @test isequal(result.cusum, sequential.cusum)
@@ -78,7 +79,7 @@ end
 
     bars = TestData.make_pricebars(; n=200)
 
-    job = bars >> EMA(10, 50) >> CUSUM(1.0)
+    job = bars >> EMA(10) >> EMA(50) >> CUSUM(1.0)
     result = job()
 
     @test result isa NamedTuple
@@ -173,7 +174,7 @@ end
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=200)
-    ema_result = EMA(10, 50)(bars)
+    ema_result = EMA(10)(bars)
     feat = CUSUM(1.0)
 
     feat(ema_result)
@@ -213,19 +214,19 @@ end
     @test actual > 0
 end
 
-@testitem "Feature Interface: Allocation — EMA multi-period functor after EMA" tags = [
+@testitem "Feature Interface: Allocation — EMA functor after EMA" tags = [
     :feature, :allocation
 ] setup = [TestData] begin
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=200)
     step1 = EMA(10)(bars)
-    feat = EMA(5, 20, 50)
+    feat = EMA(20)
 
     feat(step1)
 
-    # Budget: EMA matrix (Float64 × n × 3) + 1024 bytes merge overhead
-    expected_data = sizeof(Float64) * 200 * 3
+    # Budget: EMA vector (Float64 × n) + 1024 bytes merge overhead
+    expected_data = sizeof(Float64) * 200
     budget = expected_data + 1024
 
     allocs_chain(feat, d) = @allocated feat(d)
@@ -265,7 +266,7 @@ end
 
     # EMA on volume via field keyword
     result = EMA(10; field=:volume)(bars)
-    expected = calculate_feature(EMA(10), bars.volume)
+    expected = compute(EMA(10), bars.volume)
     @test isequal(result.ema_10, expected)
 
     # Pipeline chaining with field keyword
@@ -274,8 +275,8 @@ end
     @test haskey(result2, :ema_20)
 
     # :ema_10 computed on close, :ema_20 computed on volume
-    ema_close = calculate_feature(EMA(10), bars.close)
-    ema_vol = calculate_feature(EMA(20), bars.volume)
+    ema_close = compute(EMA(10), bars.close)
+    ema_vol = compute(EMA(20), bars.volume)
     @test isequal(result2.ema_10, ema_close)
     @test isequal(result2.ema_20, ema_vol)
 end

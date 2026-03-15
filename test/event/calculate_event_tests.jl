@@ -83,7 +83,7 @@ end
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=100)
-    nt = EMA(10, 50)(bars)
+    nt = (EMA(10) >> EMA(50))(bars)
 
     evt = Event(d -> d.ema_10 .> d.ema_50)
     indices = calculate_event(evt, nt)

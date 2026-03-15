@@ -1,8 +1,7 @@
 """
-    EMA{Periods} <: AbstractFeature
+    EMA <: AbstractFeature
 
-Exponential moving average feature parameterised by one or more
-periods.
+Exponential moving average feature parameterised by a single period.
 
 Compute EMA values using the recursive formula
 `EMA[t] = α * price[t] + (1 - α) * EMA[t-1]` where
@@ -10,21 +9,14 @@ Compute EMA values using the recursive formula
 (warmup). The value at index `period` is the simple moving average
 seed.
 
-# Type Parameters
-- `Periods::Tuple{Vararg{Int}}`: the EMA periods. Must be unique
-    positive integers.
-
 # Fields
-- `multi_thread::Bool`: enable multi-threaded computation for
-    multi-period EMAs.
+- `period::Int`: the EMA period. Must be a positive integer.
 
 # Constructors
-    EMA(period::Int; multi_thread=false)
-    EMA(periods::Vararg{Int}; multi_thread=false)
+    EMA(period::Int)
 
 # Throws
-- `ArgumentError`: if any period is non-positive, periods are empty,
-    or periods are not unique.
+- `ArgumentError`: if period is non-positive.
 
 # Examples
 ```jldoctest
@@ -34,14 +26,11 @@ julia> ema = EMA(10);
 
 julia> ema isa AbstractFeature
 true
-
-julia> EMA(10, 50) isa AbstractFeature
-true
 ```
 
 # See also
 - [`CUSUM`](@ref): cumulative sum feature for structural breaks.
-- [`calculate_feature`](@ref): the dispatch point for all features.
+- [`compute`](@ref): the dispatch point for all features.
 
 # Extended help
 
@@ -53,8 +42,8 @@ EMA on `bars.close` and merge the result into the pipeline data:
 
 ```julia
 bars = get_data("AAPL")
-result = EMA(10, 50)(bars)
-# result is a NamedTuple with fields :bars, :ema_10, :ema_50
+result = EMA(10)(bars)
+# result is a NamedTuple with fields :bars, :ema_10
 ```
 
 The field names follow the pattern `:ema_<period>`.
@@ -64,7 +53,7 @@ The field names follow the pattern `:ema_<period>`.
 Use `>>` to compose into a pipeline:
 
 ```julia
-job = bars >> EMA(10, 50) >> evt >> lab
+job = bars >> EMA(10) >> evt >> lab
 result = job()
 ```
 
@@ -80,49 +69,33 @@ where `α = 2 / (period + 1)`.
 The kernel (`_ema_kernel_unrolled!`) processes 4 elements per
 iteration to improve instruction-level parallelism on modern CPUs.
 A scalar tail loop handles the remainder.
-
-## Multi-threading
-
-When `EMA` is constructed with `multi_thread=true` and has multiple
-periods, each period's computation runs on a separate thread via
-`Threads.@threads`. Single-period computation is always
-single-threaded.
 """
-struct EMA{Periods} <: AbstractFeature
-    multi_thread::Bool
+struct EMA <: AbstractFeature
+    period::Int
     field::Symbol
-    function EMA{Periods}(; multi_thread::Bool=false, field::Symbol=:close) where {Periods}
-        isempty(Periods) && throw(ArgumentError("At least one period is required"))
-        allunique(Periods) || throw(ArgumentError("Periods must be unique, got $Periods"))
-        foreach(_natural, Periods)
-        return new{Periods}(multi_thread, field)
+    function EMA(period::Int; field::Symbol=:close)
+        _natural(period)
+        return new(period, field)
     end
 end
-
-EMA(p::Int; multi_thread::Bool=false, field::Symbol=:close) = EMA{(p,)}(; multi_thread, field)
-EMA(ps::Vararg{Int}; multi_thread::Bool=false, field::Symbol=:close) = EMA{ps}(; multi_thread, field)
 
 _feature_field(feat::EMA) = feat.field
 
 """
-    calculate_feature(feat::EMA{Periods}, prices::AbstractVector{T}) where {Periods, T<:AbstractFloat} -> Union{Vector{T}, Matrix{T}}
+    compute(feat::EMA, prices::AbstractVector{T}) where {T<:AbstractFloat} -> Vector{T}
 
-Compute EMA values for `prices` at the periods specified in `feat`.
+Compute EMA values for `prices` at the period specified in `feat`.
 
-Return a `Vector{T}` when `Periods` contains a single period, or a
-`Matrix{T}` of size `(length(prices), length(Periods))` for multiple
-periods. The element type of the output matches the input.
+Return a `Vector{T}` of length `length(prices)`. The element type
+of the output matches the input.
 
 # Arguments
-- `feat::EMA{Periods}`: the EMA feature instance.
+- `feat::EMA`: the EMA feature instance.
 - `prices::AbstractVector{T}`: price series. Must have at least
-    `maximum(Periods)` elements for meaningful output.
+    `feat.period` elements for meaningful output.
 
 # Returns
-- `Vector{T}`: when `length(Periods) == 1`. First `period - 1`
-    entries are `NaN`.
-- `Matrix{T}`: when `length(Periods) > 1`. Column `j` corresponds
-    to `Periods[j]`.
+- `Vector{T}`: first `period - 1` entries are `NaN`.
 
 # Examples
 ```jldoctest
@@ -130,7 +103,7 @@ julia> using Backtest
 
 julia> prices = Float64[10, 11, 12, 13, 14, 15];
 
-julia> ema = calculate_feature(EMA(3), prices);
+julia> ema = compute(EMA(3), prices);
 
 julia> ema[3] ≈ 11.0
 true
@@ -156,26 +129,15 @@ where `α = 2 / (period + 1)`.
 The kernel (`_ema_kernel_unrolled!`) processes 4 elements per
 iteration to improve instruction-level parallelism on modern CPUs.
 A scalar tail loop handles the remainder.
-
-## Multi-threading
-
-When `EMA` is constructed with `multi_thread=true` and has multiple
-periods, each period's computation runs on a separate thread via
-`Threads.@threads`. Single-period computation is always
-single-threaded.
 """
-function calculate_feature(
-    feat::EMA{Periods}, prices::AbstractVector{T}
-) where {Periods,T<:AbstractFloat}
-    if length(Periods) == 1
-        return _calculate_ema(prices, Periods[1])
-    else
-        return _calculate_emas(prices, Periods, feat.multi_thread)
-    end
+function compute(
+    feat::EMA, prices::AbstractVector{T}
+) where {T<:AbstractFloat}
+    return _calculate_ema(prices, feat.period)
 end
 
 """
-    calculate_feature!(dest::AbstractVector{T}, feat::EMA{Periods}, prices::AbstractVector{T}) where {Periods, T<:AbstractFloat} -> dest
+    compute!(dest::AbstractVector{T}, feat::EMA, prices::AbstractVector{T}) where {T<:AbstractFloat} -> dest
 
 Compute a single-period EMA in-place, writing results into the
 pre-allocated vector `dest`. This avoids allocation for
@@ -185,7 +147,7 @@ high-frequency backtests.
 # Arguments
 - `dest::AbstractVector{T}`: output vector. Must have the same
     length as `prices`.
-- `feat::EMA{(p,)}`: a single-period EMA instance.
+- `feat::EMA`: the EMA feature instance.
 - `prices::AbstractVector{T}`: the input price series.
 
 # Returns
@@ -202,96 +164,43 @@ julia> prices = Float64[10, 11, 12, 13, 14, 15];
 
 julia> dest = similar(prices);
 
-julia> calculate_feature!(dest, EMA(3), prices);
+julia> compute!(dest, EMA(3), prices);
 
 julia> dest[3] ≈ 11.0
 true
 ```
 
 # See also
-- [`calculate_feature`](@ref): allocating version.
+- [`compute`](@ref): allocating version.
 - [`EMA`](@ref): constructor and type documentation.
 """
-function calculate_feature!(
-    dest::AbstractVector{T}, feat::EMA{Periods}, prices::AbstractVector{T}
-) where {Periods,T<:AbstractFloat}
+function compute!(
+    dest::AbstractVector{T}, feat::EMA, prices::AbstractVector{T}
+) where {T<:AbstractFloat}
     length(dest) == length(prices) ||
         throw(DimensionMismatch("dest length $(length(dest)) != prices length $(length(prices))"))
-    _single_ema!(dest, prices, Periods[1], length(prices))
+    _single_ema!(dest, prices, feat.period, length(prices))
     return dest
 end
 
 """
-    calculate_feature!(dest::AbstractMatrix{T}, feat::EMA{Periods}, prices::AbstractVector{T}) where {Periods, T<:AbstractFloat} -> dest
+    _feature_result(feat::EMA, prices) -> Vector
 
-Compute a multi-period EMA in-place, writing results into the
-pre-allocated matrix `dest`. Column `j` receives the EMA for
-`Periods[j]`.
-
-# Arguments
-- `dest::AbstractMatrix{T}`: output matrix of size
-    `(length(prices), length(Periods))`.
-- `feat::EMA{Periods}`: a multi-period EMA instance.
-- `prices::AbstractVector{T}`: the input price series.
-
-# Returns
-- `dest`: the mutated output matrix (returned for convenience).
-
-# Throws
-- `DimensionMismatch`: if `size(dest) != (length(prices), length(Periods))`.
-
-# See also
-- [`calculate_feature`](@ref): allocating version.
+Compute the EMA and return the result vector for pipeline
+composition.
 """
-function calculate_feature!(
-    dest::AbstractMatrix{T}, feat::EMA{Periods}, prices::AbstractVector{T}
-) where {Periods,T<:AbstractFloat}
-    n_prices = length(prices)
-    n_periods = length(Periods)
-    size(dest) == (n_prices, n_periods) ||
-        throw(DimensionMismatch("dest size $(size(dest)) != expected ($n_prices, $n_periods)"))
-    @views if feat.multi_thread
-        @threads for j in 1:n_periods
-            _single_ema!(dest[:, j], prices, Periods[j], n_prices)
-        end
-    else
-        for j in 1:n_periods
-            _single_ema!(dest[:, j], prices, Periods[j], n_prices)
-        end
-    end
-    return dest
+function _feature_result(
+    feat::EMA, prices::AbstractVector{T}
+) where {T<:AbstractFloat}
+    return compute(feat, prices)
 end
 
 """
-    _feature_result(feat::EMA{Periods}, prices) -> NamedTuple
+    _feature_names(feat::EMA) -> Tuple{Symbol}
 
-`@generated` function that return a `NamedTuple` with keys derived
-from the period values (e.g., `(:ema_10, :ema_50)`). Single-period
-EMAs return vectors as values; multi-period EMAs return column views
-into the result matrix.
-
-This is the bridge between [`calculate_feature`](@ref) (which returns
-raw arrays) and the callable/pipeline interface (which needs named
-fields for downstream access).
+Return the named keys for this feature's pipeline output.
 """
-@generated function _feature_result(
-    feat::EMA{Periods}, prices::AbstractVector{T}
-) where {Periods,T<:AbstractFloat}
-    names = Tuple(Symbol(:ema_, p) for p in Periods)
-    n = length(Periods)
-    if n == 1
-        quote
-            vals = calculate_feature(feat, prices)
-            NamedTuple{$names}((vals,))
-        end
-    else
-        col_exprs = [:(vals[:, $i]) for i in 1:n]
-        quote
-            vals = calculate_feature(feat, prices)
-            @views NamedTuple{$names}(($(col_exprs...),))
-        end
-    end
-end
+_feature_names(feat::EMA) = (Symbol(:ema_, feat.period),)
 
 """
     _calculate_ema(prices::AbstractVector{T}, period::Int) -> Vector{T}
@@ -303,31 +212,6 @@ function _calculate_ema(prices::AbstractVector{T}, period::Int) where {T<:Abstra
     n_prices = length(prices)
     results = Vector{T}(undef, n_prices)
     _single_ema!(results, prices, period, n_prices)
-    return results
-end
-
-"""
-    _calculate_emas(prices::AbstractVector{T}, periods, multi_thread::Bool) -> Matrix{T}
-
-Allocate a result matrix and compute EMAs for all `periods`. Column
-`j` holds the EMA for `periods[j]`. Dispatch to multi-threaded path
-when `multi_thread` is `true`.
-"""
-function _calculate_emas(
-    prices::AbstractVector{T}, periods, multi_thread::Bool=false
-) where {T<:AbstractFloat}
-    n_prices = length(prices)
-    n_emas = length(periods)
-    results = Matrix{T}(undef, n_prices, n_emas)
-    @views if multi_thread
-        @threads for j in 1:n_emas
-            _single_ema!(results[:, j], prices, periods[j], n_prices)
-        end
-    else
-        for j in 1:n_emas
-            _single_ema!(results[:, j], prices, periods[j], n_prices)
-        end
-    end
     return results
 end
 

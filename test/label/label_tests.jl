@@ -615,7 +615,7 @@ end
         TimeBarrier(d -> d.entry_ts + Day(20)),
     )
 
-    job = bars >> EMA(10, 50) >> Crossover(:ema_10, :ema_50) >> evt >> lab
+    job = bars >> EMA(10) >> EMA(50) >> Crossover(:ema_10, :ema_50) >> evt >> lab
     result = job()
 
     @test result isa NamedTuple

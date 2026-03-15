@@ -4,10 +4,10 @@
 Fused feature combinator that computes multiple features in a single
 pipeline step, reducing intermediate `NamedTuple` merge overhead.
 
-Instead of chaining `EMA(10, 20) >> CUSUM(1.0)` (two pipeline stages,
-two merges into the growing pipeline tuple), `FeatureUnion(EMA(10, 20),
-CUSUM(1.0))` computes both features and merges their results in one
-step.
+Instead of chaining `EMA(10) >> EMA(20) >> CUSUM(1.0)` (three pipeline
+stages, three merges into the growing pipeline tuple),
+`FeatureUnion(EMA(10), EMA(20), CUSUM(1.0))` computes all features
+and merges their results in one step.
 
 # Type Parameters
 - `F<:Tuple`: tuple of [`AbstractFeature`](@ref) instances.
@@ -22,7 +22,7 @@ step.
 ```jldoctest
 julia> using Backtest
 
-julia> fu = FeatureUnion(EMA(10, 20), CUSUM(1.0));
+julia> fu = FeatureUnion(EMA(10), EMA(20), CUSUM(1.0));
 
 julia> fu isa AbstractFeature
 true
@@ -48,11 +48,11 @@ feature computations.
 ## Pipeline Usage
 
 ```julia
-# Single pipeline step instead of two:
-bars |> FeatureUnion(EMA(10, 20), CUSUM(1.0)) |> Crossover(...) |> ...
+# Single pipeline step instead of three:
+bars |> FeatureUnion(EMA(10), EMA(20), CUSUM(1.0)) |> Crossover(...) |> ...
 
 # Works with the >> operator:
-job = bars >> FeatureUnion(EMA(10, 20), CUSUM(1.0)) >> side >> event >> label
+job = bars >> FeatureUnion(EMA(10), EMA(20), CUSUM(1.0)) >> side >> event >> label
 ```
 
 ## Callable Interface
@@ -69,8 +69,7 @@ from a previous pipeline stage, it computes all contained features on
 
 ### Output
 Return a `NamedTuple` with `bars` plus all keys from every contained
-feature's [`_feature_result`](@ref) (e.g., `:ema_10`, `:ema_20`,
-`:cusum`).
+feature's result (e.g., `:ema_10`, `:ema_20`, `:cusum`).
 """
 struct FeatureUnion{F<:Tuple} <: AbstractFeature
     features::F
@@ -85,22 +84,46 @@ end
     _feature_result(fu::FeatureUnion{F}, prices) -> NamedTuple
 
 `@generated` function that computes all contained features on the same
-`prices` vector, then merges their individual result `NamedTuple`s in a
+`prices` vector, then merges their individual wrapped `NamedTuple`s in a
 single `merge` call.
 
-Each feature's [`_feature_result`](@ref) is called independently
+Each feature's `_feature_result` is called independently
 (preserving the per-feature optimised kernels) and the results are
-combined at the end.  The generated code is fully unrolled at compile
-time for the concrete feature tuple type.
+wrapped via `_wrap_result` and combined at the end. The generated code
+is fully unrolled at compile time for the concrete feature tuple type.
 """
 @generated function _feature_result(
     fu::FeatureUnion{F}, prices::AbstractVector{T}
 ) where {F,T<:AbstractFloat}
     n = length(F.parameters)
     syms = [Symbol(:_r, i) for i in 1:n]
-    stmts = [:($(syms[i]) = _feature_result(fu.features[$i], prices)) for i in 1:n]
+    stmts = [:($(syms[i]) = _wrap_result(fu.features[$i], _feature_result(fu.features[$i], prices))) for i in 1:n]
     return quote
         $(stmts...)
         merge($(syms...))
     end
+end
+
+"""
+    (fu::FeatureUnion)(bars::PriceBars) -> NamedTuple
+
+Compute all contained features on `bars` and merge into a single
+pipeline `NamedTuple`.
+"""
+function (fu::FeatureUnion)(bars::PriceBars)
+    series = _extract_series(bars, :close)
+    nt = _feature_result(fu, series)
+    return merge((bars=bars,), nt)
+end
+
+"""
+    (fu::FeatureUnion)(d::NamedTuple) -> NamedTuple
+
+Compute all contained features on the pipeline data and merge results
+into the existing `NamedTuple`.
+"""
+function (fu::FeatureUnion)(d::NamedTuple)
+    series = _extract_series(d, :close)
+    nt = _feature_result(fu, series)
+    return merge(d, nt)
 end
