@@ -262,7 +262,7 @@ end
 ] begin
     using Backtest, Test, Dates
 
-    # :ema_10 in BarrierContext should rewrite to d.ema_10[d.idx]
+    # :ema_10 in BarrierContext should rewrite to d.features.ema_10[d.idx]
     ub = @UpperBarrier :entry_price + :ema_10
 
     bars = PriceBars(
@@ -274,7 +274,7 @@ end
 
     d = (;
         entry_price=100.0, entry_ts=DateTime(2024, 1, 1),
-        idx=5, bars=bars, ema_10=ema_10,
+        idx=5, bars=bars, features=(ema_10=ema_10,),
     )
 
     @test Backtest.barrier_level(ub, d) ≈ 100.0 + 5.0  # entry_price + ema_10[5]
@@ -297,7 +297,7 @@ end
 
     d = (;
         entry_price=100.0, entry_ts=DateTime(2024, 1, 1),
-        idx=3, bars=bars, ema_10=ema_10,
+        idx=3, bars=bars, features=(ema_10=ema_10,),
     )
 
     @test Backtest.barrier_level(ub, d) ≈ 100.0 * 0.5 + 200.0 * 0.5  # = 150.0

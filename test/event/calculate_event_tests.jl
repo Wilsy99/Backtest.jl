@@ -83,9 +83,9 @@ end
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=100)
-    nt = (EMA(10) >> EMA(50))(bars)
+    nt = Features(:ema_10 => EMA(10), :ema_50 => EMA(50))(bars)
 
-    evt = Event(d -> d.ema_10 .> d.ema_50)
+    evt = Event(d -> d.features.ema_10 .> d.features.ema_50)
     indices = calculate_event(evt, nt)
 
     @test indices isa Vector{Int}
@@ -132,8 +132,8 @@ end
     @test calculate_event(evt, bars) == evt(bars).event_indices
 
     # NamedTuple path
-    nt = EMA(10)(bars)
-    evt2 = Event(d -> d.ema_10 .> 100.0)
+    nt = Features(:ema_10 => EMA(10))(bars)
+    evt2 = Event(d -> d.features.ema_10 .> 100.0)
     @test calculate_event(evt2, nt) == evt2(nt).event_indices
 end
 
@@ -211,10 +211,10 @@ end
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=50)
-    nt = EMA(10)(bars)
+    nt = Features(:ema_10 => EMA(10))(bars)
 
     evt_bars = Event(d -> d.bars.close .> 100.0)
-    evt_nt = Event(d -> d.ema_10 .> 100.0)
+    evt_nt = Event(d -> d.features.ema_10 .> 100.0)
 
     @test @inferred(calculate_event(evt_bars, bars)) isa Vector{Int}
     @test @inferred(calculate_event(evt_nt, nt)) isa Vector{Int}

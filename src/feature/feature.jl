@@ -1,6 +1,6 @@
 include("ema.jl")
 include("cusum.jl")
-include("feature_union.jl")
+include("features.jl")
 
 """
     _extract_series(data, field::Symbol) -> AbstractVector

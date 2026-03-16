@@ -48,19 +48,18 @@ end
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=100)
-    ema_data = (EMA(10) >> EMA(50))(bars)
+    ema_data = Features(:ema_10 => EMA(10), :ema_50 => EMA(50))(bars)
 
     cross = Crossover(:ema_10, :ema_50)
     result = cross(ema_data)
 
     # Callable should preserve all upstream keys
     @test haskey(result, :bars)
-    @test haskey(result, :ema_10)
-    @test haskey(result, :ema_50)
+    @test haskey(result, :features)
     @test haskey(result, :side)
 
     # The side values should match direct calculate_side
-    expected = calculate_side(cross, ema_data.ema_10, ema_data.ema_50)
+    expected = calculate_side(cross, ema_data.features.ema_10, ema_data.features.ema_50)
     @test result.side == expected
 end
 
