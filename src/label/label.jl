@@ -415,7 +415,8 @@ when callers are inlined, achieving zero heap allocations per bar.
 
 Transparent field access via `Base.getproperty` makes this a drop-in
 replacement for the `NamedTuple` that barrier level functions expect:
-`d.entry_price`, `d.bars`, `d.ema_20[d.idx]` all work unchanged.
+`d.entry_price`, `d.bars`, `d.ema_20[d.idx]` all work
+unchanged.
 
 # Fields
 - `data::NT`: pipeline context (bars, side, barrier_args).

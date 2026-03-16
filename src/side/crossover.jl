@@ -62,7 +62,7 @@ series by name, compute side signals, and merge the result:
 
 ```julia
 bars = get_data("AAPL")
-result = (bars >> EMA(10) >> EMA(50) >> Crossover(:ema_10, :ema_50))()
+result = (bars >> Features(:ema_10 => EMA(10), :ema_50 => EMA(50)) >> Crossover(:ema_10, :ema_50))()
 # result is a NamedTuple with fields :bars, :ema_10, :ema_50, :side
 ```
 
@@ -70,8 +70,8 @@ result = (bars >> EMA(10) >> EMA(50) >> Crossover(:ema_10, :ema_50))()
 
 ### Input
 Expect a `NamedTuple` with at least:
-- `Fast::Symbol` key: the fast series (`AbstractVector{T}`).
-- `Slow::Symbol` key: the slow series (`AbstractVector{T}`).
+- `Fast::Symbol` and `Slow::Symbol` keys as `AbstractVector{T}`
+  feature vectors (e.g., `:ema_10`, `:ema_50`).
 
 ### Output
 Return the input `NamedTuple` merged with:
@@ -120,6 +120,9 @@ end
 Extract the fast and slow series from the pipeline `NamedTuple` by
 their bound names (`Fast`, `Slow`), compute crossover signals via
 [`calculate_side`](@ref), and return `(side=vals,)`.
+
+Feature vectors are expected as flat top-level keys in the pipeline
+`NamedTuple` (e.g., `d.ema_10`, `d.ema_50`).
 
 This is the bridge between the callable interface and the raw
 `calculate_side` function, analogous to `_feature_result` for

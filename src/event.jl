@@ -86,7 +86,7 @@ When called with a `PriceBars` directly, returns a `NamedTuple` with:
 using Backtest, Dates
 
 bars = get_data("AAPL"; start_date="2020-01-01", end_date="2023-12-31")
-result = bars >> EMA(10) >> EMA(50) >> Event(d -> d.ema_10 .> d.ema_50)
+result = bars >> Features(:ema_10 => EMA(10), :ema_50 => EMA(50)) >> Event(d -> d.ema_10 .> d.ema_50)
 ```
 """
 struct Event{T<:Tuple} <: AbstractEvent
@@ -404,20 +404,24 @@ end
 Rewrite a quoted symbol to a field access on the pipeline variable `d`.
 
 Price-bar field names (`:open`, `:high`, `:low`, `:close`, `:volume`,
-`:timestamp`) are routed through `d.bars.symbol` so that the same expression
-works regardless of whether `d` is a wrapped `PriceBars` (from the direct
-callable) or a pipeline `NamedTuple`. All other symbols (feature keys such
-as `:ema_10`) are rewritten to the flat form `d.symbol`.
+`:timestamp`) are routed through `d.bars.symbol` so that the same
+expression works regardless of whether `d` is a wrapped `PriceBars`
+(from the direct callable) or a pipeline `NamedTuple`. All other
+symbols (feature keys such as `:ema_10`) are rewritten to
+`d.symbol`, matching the flat layout produced by individual feature
+callables and [`Features`](@ref).
 
 # See also
-- `_replace_symbols(ctx, ex::Expr)`: recursive case for compound expressions.
-- `_replace_symbols(ctx, ex)`: fallback for literals and other non-symbol nodes.
+- `_replace_symbols(ctx, ex::Expr)`: recursive case for compound
+  expressions.
+- `_replace_symbols(ctx, ex)`: fallback for literals and other
+  non-symbol nodes.
 """
 function _replace_symbols(::EventContext, ex::QuoteNode)
     bars_fields = (:open, :high, :low, :close, :volume, :timestamp)
     if ex.value in bars_fields
         return :(d.bars.$(ex.value))
     else
-        return Expr(:., :d, ex)
+        return :(d.$(ex.value))
     end
 end

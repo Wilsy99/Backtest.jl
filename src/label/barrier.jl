@@ -344,7 +344,7 @@ Three routing categories:
     `:timestamp`): rewritten to `d.bars.field[d.idx]` — indexed into
     the price bar arrays at the current bar.
 - **All other symbols** (e.g., `:ema_10`): rewritten to
-    `d.symbol[d.idx]` — assumed to be feature vectors indexed at the
+    `d.symbol[d.idx]` — feature vectors at top level, indexed at the
     current bar.
 """
 function _replace_symbols(::BarrierContext, ex::QuoteNode)

@@ -1,6 +1,6 @@
 include("ema.jl")
 include("cusum.jl")
-include("feature_union.jl")
+include("features.jl")
 
 """
     _extract_series(data, field::Symbol) -> AbstractVector
@@ -76,6 +76,38 @@ function (feat::AbstractFeature)(d::NamedTuple)
     series = _extract_series(d, _feature_field(feat))
     result = _feature_result(feat, series)
     return merge(d, _wrap_result(feat, result))
+end
+
+"""
+    (feat::AbstractFeature)(prices::AbstractVector{T}) where {T<:AbstractFloat} -> NamedTuple
+
+Compute the feature on a raw price vector and return a `NamedTuple`
+with the named feature result.
+
+# Arguments
+- `prices::AbstractVector{T}`: the price series.
+
+# Returns
+- `NamedTuple`: a single-key `NamedTuple` with the feature result
+  keyed by [`_feature_names`](@ref) (e.g., `(ema_10=...,)`).
+
+# Examples
+```jldoctest
+julia> using Backtest
+
+julia> prices = Float64[10, 11, 12, 13, 14, 15];
+
+julia> result = EMA(3)(prices);
+
+julia> haskey(result, :ema_3)
+true
+```
+"""
+function (feat::AbstractFeature)(
+    prices::AbstractVector{T}
+) where {T<:AbstractFloat}
+    result = _feature_result(feat, prices)
+    return _wrap_result(feat, result)
 end
 
 """

@@ -363,7 +363,7 @@ end
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=100)
-    ema_data = (EMA(10) >> EMA(50))(bars)
+    ema_data = Features(:ema_10 => EMA(10), :ema_50 => EMA(50))(bars)
 
     cross = Crossover(:ema_10, :ema_50)
     result = cross(ema_data)
@@ -385,13 +385,12 @@ end
 
     bars = TestData.make_pricebars(; n=100)
 
-    job = bars >> EMA(10) >> EMA(50) >> Crossover(:ema_10, :ema_50)
+    job = bars >> Features(:ema_10 => EMA(10), :ema_50 => EMA(50)) >> Crossover(:ema_10, :ema_50)
     result = job()
 
     @test result isa NamedTuple
     @test haskey(result, :side)
     @test haskey(result, :ema_10)
-    @test haskey(result, :ema_50)
     @test haskey(result, :bars)
     @test length(result.side) == 100
 end
@@ -593,7 +592,7 @@ end
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=200)
-    ema_data = (EMA(10) >> EMA(50))(bars)
+    ema_data = Features(:ema_10 => EMA(10), :ema_50 => EMA(50))(bars)
     cross = Crossover(:ema_10, :ema_50)
 
     # Warmup

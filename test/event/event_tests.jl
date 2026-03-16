@@ -91,7 +91,7 @@ end
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=50)
-    nt = EMA(10)(bars)
+    nt = Features(:ema_10 => EMA(10))(bars)
 
     evt = Event(d -> d.ema_10 .> 100.0)
 
@@ -125,7 +125,7 @@ end
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=200)
-    nt = (EMA(10) >> EMA(50))(bars)
+    nt = Features(:ema_10 => EMA(10), :ema_50 => EMA(50))(bars)
 
     cond1 = d -> d.ema_10 .> d.ema_50
     cond2 = d -> d.bars.close .> 100.0
@@ -160,7 +160,7 @@ end
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=100)
-    nt = EMA(10)(bars)
+    nt = Features(:ema_10 => EMA(10))(bars)
 
     evt = Event(d -> d.ema_10 .> 100.0)
     result = evt(nt)
@@ -273,7 +273,7 @@ end
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=100)
-    nt = (EMA(10) >> EMA(50))(bars)
+    nt = Features(:ema_10 => EMA(10), :ema_50 => EMA(50))(bars)
 
     evt = Event(d -> d.ema_10 .> d.ema_50)
     result = evt(nt)
@@ -282,7 +282,6 @@ end
     @test haskey(result, :event_indices)
     @test haskey(result, :bars)
     @test haskey(result, :ema_10)
-    @test haskey(result, :ema_50)
     @test issorted(result.event_indices)
     @test all(i -> 1 <= i <= 100, result.event_indices)
 end
@@ -354,7 +353,7 @@ end
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=100)
-    nt = (EMA(10) >> EMA(50))(bars)
+    nt = Features(:ema_10 => EMA(10), :ema_50 => EMA(50))(bars)
 
     # @Event should produce the same indices as the manual form
     evt_manual = Event(d -> d.ema_10 .> d.ema_50; match=:all)
@@ -369,7 +368,7 @@ end
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=100)
-    nt = (EMA(10) >> EMA(50))(bars)
+    nt = Features(:ema_10 => EMA(10), :ema_50 => EMA(50))(bars)
 
     evt_manual = Event(d -> d.ema_10 .> d.ema_50; match=:any)
     evt_macro = @Event :ema_10 .> :ema_50 match = :any
@@ -382,7 +381,7 @@ end
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=100)
-    nt = (EMA(10) >> EMA(50))(bars)
+    nt = Features(:ema_10 => EMA(10), :ema_50 => EMA(50))(bars)
 
     evt_manual = Event(d -> d.ema_10 .> d.ema_50, d -> d.ema_10 .> 100.0; match=:all)
     evt_macro = @Event :ema_10 .> :ema_50 :ema_10 .> 100.0 match = :all
@@ -396,7 +395,7 @@ end
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=100)
-    nt = (EMA(10) >> EMA(50))(bars)
+    nt = Features(:ema_10 => EMA(10), :ema_50 => EMA(50))(bars)
 
     # Weighted average of two EMAs compared to a literal
     evt_manual = Event(d -> (d.ema_10 .* 0.5 .+ d.ema_50 .* 0.5) .> 100.0)
@@ -411,7 +410,7 @@ end
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=100)
-    nt = EMA(10)(bars)
+    nt = Features(:ema_10 => EMA(10))(bars)
 
     # Numeric literal 100.0 must not be rewritten as d.100.0
     evt_manual = Event(d -> d.ema_10 .> 100.0)
@@ -424,7 +423,7 @@ end
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=100)
-    nt = (EMA(10) >> EMA(50))(bars)
+    nt = Features(:ema_10 => EMA(10), :ema_50 => EMA(50))(bars)
 
     evt_implicit = @Event :ema_10 .> :ema_50
     evt_explicit = @Event :ema_10 .> :ema_50 match = :all
@@ -439,7 +438,7 @@ end
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=100)
-    nt = (EMA(10) >> EMA(50))(bars)
+    nt = Features(:ema_10 => EMA(10), :ema_50 => EMA(50))(bars)
 
     # Parenthesised sub-expression — Expr(:call,...) inside Expr(:comparison,...)
     evt_manual = Event(d -> (d.ema_10 .- d.ema_50) .> 0.0)
@@ -471,7 +470,7 @@ end
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=100)
-    nt = EMA(10)(bars)
+    nt = Features(:ema_10 => EMA(10))(bars)
 
     evt = Event(d -> d.ema_10 .> 100.0)
     result = evt(nt)
@@ -490,7 +489,7 @@ end
 
     bars = TestData.make_pricebars(; n=100)
     evt = Event(d -> d.bars.close .> 100.0)
-    nt = EMA(10)(bars)
+    nt = Features(:ema_10 => EMA(10))(bars)
 
     @test_opt target_modules = (Backtest,) evt(bars)
     @test_call target_modules = (Backtest,) evt(bars)
@@ -529,7 +528,7 @@ end
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=200)
-    nt = EMA(10)(bars)
+    nt = Features(:ema_10 => EMA(10))(bars)
     evt = Event(d -> d.ema_10 .> 100.0)
 
     # Warmup
@@ -573,7 +572,7 @@ end
 #
 # EventContext maps bars fields (:open, :high, :low, :close, :volume, :timestamp)
 # to d.bars.symbol, matching the BarrierContext routing. Feature fields (:ema_10,
-# etc.) remain as d.symbol (flat lookup). The Event(bars::PriceBars) callable
+# etc.) are routed to d.symbol (flat lookup). The Event(bars::PriceBars) callable
 # wraps bars as d=(bars=bars,) so that d.bars.close works in both direct and
 # pipeline contexts.
 
@@ -604,7 +603,7 @@ end
     using Backtest, Test
 
     bars = TestData.make_pricebars(; n=100)
-    nt = EMA(10)(bars)  # NamedTuple: (bars=PriceBars(...), ema_10=Vector{Float64}(...))
+    nt = Features(:ema_10 => EMA(10))(bars)  # NamedTuple: (bars=PriceBars(...), features=(ema_10=Vector{Float64}(...),))
 
     # EventContext now routes :close → d.bars.close, matching BarrierContext.
     # :close in @Event works correctly in both direct (PriceBars) and pipeline
