@@ -139,7 +139,7 @@ lab2 = Label(
 )
 
 # In a pipeline:
-# result = bars >> EMA(10) >> EMA(50) >> Crossover(:ema_10, :ema_50) >> evt >> lab2
+# result = bars >> Features(:ema_10 => EMA(10), :ema_50 => EMA(50)) >> Crossover(:ema_10, :ema_50) >> evt >> lab2
 ```
 
 # Pipeline Data Flow
@@ -415,7 +415,7 @@ when callers are inlined, achieving zero heap allocations per bar.
 
 Transparent field access via `Base.getproperty` makes this a drop-in
 replacement for the `NamedTuple` that barrier level functions expect:
-`d.entry_price`, `d.bars`, `d.ema_20[d.idx]` all work unchanged.
+`d.entry_price`, `d.bars`, `d.features.ema_20[d.idx]` all work unchanged.
 
 # Fields
 - `data::NT`: pipeline context (bars, side, barrier_args).

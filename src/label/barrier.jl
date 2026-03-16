@@ -138,7 +138,7 @@ next bar's open.
 # Examples
 ```julia
 # Exit when short EMA crosses below long EMA
-cb = ConditionBarrier(d -> d.ema_10[d.idx] < d.ema_50[d.idx])
+cb = ConditionBarrier(d -> d.features.ema_10[d.idx] < d.features.ema_50[d.idx])
 ```
 
 # See also
@@ -245,7 +245,7 @@ barrier loop context `d`:
 - `:entry_price`, `:entry_ts`, `:idx` → `d.field`
 - `:open`, `:high`, `:low`, `:close`, `:volume`, `:timestamp` →
     `d.bars.field[d.idx]`
-- All other symbols (e.g., `:ema_10`) → `d.symbol[d.idx]`
+- All other symbols (e.g., `:ema_10`) → `d.features.symbol[d.idx]`
 
 Default label is `Int8(1)`.
 
@@ -336,25 +336,30 @@ end
 Rewrite a quoted symbol to a field access on the barrier loop
 variable `d`.
 
-Three routing categories:
+Four routing categories:
 - **Direct fields** (`:entry_price`, `:entry_ts`, `:entry_side`,
     `:idx`): rewritten to `d.field` — these are scalar values in the
     loop context.
 - **Bar fields** (`:open`, `:high`, `:low`, `:close`, `:volume`,
     `:timestamp`): rewritten to `d.bars.field[d.idx]` — indexed into
     the price bar arrays at the current bar.
+- **Pipeline fields** (`:side`): rewritten to `d.symbol[d.idx]` —
+    top-level pipeline vectors indexed at the current bar.
 - **All other symbols** (e.g., `:ema_10`): rewritten to
-    `d.symbol[d.idx]` — assumed to be feature vectors indexed at the
-    current bar.
+    `d.features.symbol[d.idx]` — feature vectors live under the
+    `d.features` `NamedTuple`, indexed at the current bar.
 """
 function _replace_symbols(::BarrierContext, ex::QuoteNode)
     direct_fields = (:entry_price, :entry_ts, :idx, :entry_side)
     bars_fields = (:open, :high, :low, :close, :volume, :timestamp)
+    pipeline_fields = (:side,)
     if ex.value in direct_fields
         return :(d.$(ex.value))
     elseif ex.value in bars_fields
         return :(d.bars.$(ex.value)[d.idx])
-    else
+    elseif ex.value in pipeline_fields
         return :(d.$(ex.value)[d.idx])
+    else
+        return :(d.features.$(ex.value)[d.idx])
     end
 end

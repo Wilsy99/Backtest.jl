@@ -22,9 +22,7 @@ big_bars = PriceBars(
 
 #! format: off
 @time bars |>
-    EMA(10) |>
-    EMA(20) |>
-    CUSUM(1) |>
+    Features(:ema_10 => EMA(10), :ema_20 => EMA(20), :cusum => CUSUM(1)) |>
     Crossover(:ema_10, :ema_20; direction=LongShort()) |>
     @Event(:cusum .!= 0, :side .!= 0) |>
     Label!(
@@ -48,9 +46,7 @@ big_bars = PriceBars(
 strat(bars::PriceBars, multi_thread) =
 #! format: off
     bars >>
-    EMA(10) >>
-    EMA(20) >>
-    CUSUM(1) >>
+    Features(:ema_10 => EMA(10), :ema_20 => EMA(20), :cusum => CUSUM(1)) >>
     Crossover(:ema_10, :ema_20; direction=LongOnly()) >>
     @Event(:cusum .!= 0, :side .!= 0) >>
     Label!(
@@ -73,12 +69,12 @@ strat(bars::PriceBars, multi_thread) =
 
 @benchmark $strat(big_bars, false)()
 
-feats = EMA(10) >> EMA(20) >> CUSUM(1)
+feats = Features(:ema_10 => EMA(10), :ema_20 => EMA(20), :cusum => CUSUM(1))
 side = Crossover(:ema_10, :ema_20; wait_for_cross=false, direction=LongOnly())
-event = Event(d -> d.cusum .!= 0 .&& d.side .!= 0)
+event = Event(d -> d.features.cusum .!= 0 .&& d.side .!= 0)
 label = Label(
-    ConditionBarrier(a -> a.ema_10[a.idx] < a.ema_20[a.idx], Int8(-1), NextOpen()),
-    LowerBarrier(a -> a.ema_20[a.idx], Int8(-1), NextOpen()),
+    ConditionBarrier(a -> a.features.ema_10[a.idx] < a.features.ema_20[a.idx], Int8(-1), NextOpen()),
+    LowerBarrier(a -> a.features.ema_20[a.idx], Int8(-1), NextOpen()),
     UpperBarrier(a -> a.entry_price * 1.2, Int8(1), NextOpen()),
     TimeBarrier(a -> a.entry_ts + Day(10), Int8(0), NextOpen());
     entry_basis=NextOpen(),
@@ -108,16 +104,16 @@ benchmark_strat = big_bars >> feats >> side >> event >> label
         _.close,
         _.volume,
         (
-            LowerBarrier(a -> a.ema_20[a.idx], Int8(-1), NextOpen()),
+            LowerBarrier(a -> a.features.ema_20[a.idx], Int8(-1), NextOpen()),
             UpperBarrier(a -> a.entry_price * 1.2, Int8(1), Immediate()),
             TimeBarrier(a -> a.entry_ts + Day(10), Int8(0), NextOpen()),
         );
         entry_basis=NextOpen(),
-        barrier_args=(; ema_20=_.ema_20),
+        barrier_args=(; features=(ema_20=_.ema_20,)),
     )
 end
 
-@allocations bars |> EMA(5)
+@allocations bars |> Features(:ema_5 => EMA(5))
 
 # ── Fully Standalone Approach (no pipeline, no functors) ──
 
@@ -131,8 +127,8 @@ sides = calculate_side(Crossover(), ema_10, ema_20)
 
 # 3. Event — standalone calculation using calculate_event
 #    Conditions reference pipeline data, so we build a minimal NamedTuple
-evt = Event(d -> d.cusum .!= 0 .&& d.side .!= 0)
-event_indices = calculate_event(evt, (bars=bars, cusum=cusum, side=sides))
+evt = Event(d -> d.features.cusum .!= 0 .&& d.side .!= 0)
+event_indices = calculate_event(evt, (bars=bars, features=(cusum=cusum,), side=sides))
 
 # 4. Label — raw vectors + barriers in, LabelResults out
 results = calculate_label(
@@ -146,10 +142,10 @@ results = calculate_label(
     (
         LowerBarrier(a -> a.entry_price * 0.95, Int8(-1), Immediate()),
         UpperBarrier(a -> a.entry_price * 1.2, Int8(1), Immediate()),
-        LowerBarrier(a -> a.ema_20[a.idx], Int8(-1), NextOpen()),
+        LowerBarrier(a -> a.features.ema_20[a.idx], Int8(-1), NextOpen()),
         TimeBarrier(a -> a.entry_ts + Day(10), Int8(0), NextOpen()),
     );
     side=sides,
     entry_basis=NextOpen(),
-    barrier_args=(; ema_20=ema_20),
+    barrier_args=(; features=(ema_20=ema_20,)),
 )

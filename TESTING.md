@@ -76,7 +76,7 @@ The current component tags in use are:
 | `:feature` | Feature module |
 | `:ema` | EMA feature |
 | `:cusum` | CUSUM feature |
-| `:feature_union` | FeatureUnion fused feature combinator |
+| `:features` | Features named feature collection |
 | `:event` | Event detection module |
 | `:label` | Label module |
 | `:barrier` | Barrier types and dispatch |
@@ -540,7 +540,7 @@ end
 | EMA functor chaining | Result vector + NamedTuple merge | 1024 bytes |
 | EMA functor multi-period | Result matrix + NamedTuple merge | 1024 bytes |
 | CUSUM functor with PriceBars | Result vector + NamedTuple merge | 1024 bytes |
-| FeatureUnion functor with PriceBars | Combined feature results + single merge | 1024 bytes |
+| Features functor with PriceBars | Combined feature results + single merge | 1024 bytes |
 
 **Overhead constant rationale:**
 
@@ -675,7 +675,7 @@ test/
 │   ├── ema_tests.jl
 │   ├── cusum_tests.jl
 │   ├── feature_interface_tests.jl
-│   └── feature_union_tests.jl
+│   └── features_tests.jl
 ├── side/
 │   ├── crossover_tests.jl
 │   └── side_tests.jl

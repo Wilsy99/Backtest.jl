@@ -65,8 +65,8 @@ julia> result.event_indices
 ### Input (NamedTuple form)
 Expects a `NamedTuple` with at least:
 - `bars::PriceBars`: the price data.
-- Any additional keys referenced by condition expressions (e.g., `:ema_10`,
-    `:ema_50`).
+- `features::NamedTuple`: (optional) feature vectors referenced by condition
+    expressions (e.g., `features=(ema_10=..., ema_50=...)`).
 
 ### Output
 Returns the input `NamedTuple` merged with:
@@ -86,7 +86,7 @@ When called with a `PriceBars` directly, returns a `NamedTuple` with:
 using Backtest, Dates
 
 bars = get_data("AAPL"; start_date="2020-01-01", end_date="2023-12-31")
-result = bars >> EMA(10) >> EMA(50) >> Event(d -> d.ema_10 .> d.ema_50)
+result = bars >> Features(:ema_10 => EMA(10), :ema_50 => EMA(50)) >> Event(d -> d.features.ema_10 .> d.features.ema_50)
 ```
 """
 struct Event{T<:Tuple} <: AbstractEvent
@@ -353,9 +353,10 @@ Construct an [`Event`](@ref) using a DSL expression with automatic symbol
 rewriting.
 
 Symbols prefixed with `:` in `expr` are rewritten to access fields of the
-pipeline `NamedTuple` `d`. For example, `:ema_10` becomes `d.ema_10`.
-Each positional expression becomes one condition function; keyword arguments
-are forwarded to the [`Event`](@ref) constructor.
+pipeline `NamedTuple` `d`. Bar fields (`:close`, etc.) become `d.bars.close`;
+feature keys (`:ema_10`, etc.) become `d.features.ema_10`. Each positional
+expression becomes one condition function; keyword arguments are forwarded
+to the [`Event`](@ref) constructor.
 
 # Arguments
 - `expr`: a Julia expression using `:symbol` notation for pipeline fields.
@@ -403,11 +404,14 @@ end
 
 Rewrite a quoted symbol to a field access on the pipeline variable `d`.
 
-Price-bar field names (`:open`, `:high`, `:low`, `:close`, `:volume`,
-`:timestamp`) are routed through `d.bars.symbol` so that the same expression
-works regardless of whether `d` is a wrapped `PriceBars` (from the direct
-callable) or a pipeline `NamedTuple`. All other symbols (feature keys such
-as `:ema_10`) are rewritten to the flat form `d.symbol`.
+Three routing categories:
+- **Bar fields** (`:open`, `:high`, `:low`, `:close`, `:volume`,
+    `:timestamp`): rewritten to `d.bars.symbol`.
+- **Pipeline fields** (`:side`, `:event_indices`): rewritten to
+    `d.symbol` — these are top-level pipeline keys, not features.
+- **All other symbols** (feature keys such as `:ema_10`): rewritten to
+    `d.features.symbol`, accessing the nested `:features` `NamedTuple`
+    produced by [`Features`](@ref).
 
 # See also
 - `_replace_symbols(ctx, ex::Expr)`: recursive case for compound expressions.
@@ -415,9 +419,12 @@ as `:ema_10`) are rewritten to the flat form `d.symbol`.
 """
 function _replace_symbols(::EventContext, ex::QuoteNode)
     bars_fields = (:open, :high, :low, :close, :volume, :timestamp)
+    pipeline_fields = (:side, :event_indices)
     if ex.value in bars_fields
         return :(d.bars.$(ex.value))
-    else
+    elseif ex.value in pipeline_fields
         return Expr(:., :d, ex)
+    else
+        return :(d.features.$(ex.value))
     end
 end

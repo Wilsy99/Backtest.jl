@@ -62,16 +62,16 @@ series by name, compute side signals, and merge the result:
 
 ```julia
 bars = get_data("AAPL")
-result = (bars >> EMA(10) >> EMA(50) >> Crossover(:ema_10, :ema_50))()
-# result is a NamedTuple with fields :bars, :ema_10, :ema_50, :side
+result = (bars >> Features(:ema_10 => EMA(10), :ema_50 => EMA(50)) >> Crossover(:ema_10, :ema_50))()
+# result is a NamedTuple with fields :bars, :features, :side
 ```
 
 ## Pipeline Data Flow
 
 ### Input
 Expect a `NamedTuple` with at least:
-- `Fast::Symbol` key: the fast series (`AbstractVector{T}`).
-- `Slow::Symbol` key: the slow series (`AbstractVector{T}`).
+- `features::NamedTuple`: containing `Fast` and `Slow` keys
+    (e.g., `features=(ema_10=..., ema_50=...)`).
 
 ### Output
 Return the input `NamedTuple` merged with:
@@ -117,18 +117,28 @@ end
 """
     _side_result(side::Crossover{D,Fast,Slow,Wait}, d::NamedTuple) -> NamedTuple
 
-Extract the fast and slow series from the pipeline `NamedTuple` by
-their bound names (`Fast`, `Slow`), compute crossover signals via
-[`calculate_side`](@ref), and return `(side=vals,)`.
+Extract the fast and slow series from `d.features` by their bound names
+(`Fast`, `Slow`), compute crossover signals via [`calculate_side`](@ref),
+and return `(side=vals,)`.
 
 This is the bridge between the callable interface and the raw
 `calculate_side` function, analogous to `_feature_result` for
 features.
+
+# Pipeline Data Flow
+
+## Input
+Expect a `NamedTuple` with at least:
+- `features::NamedTuple`: containing `Fast` and `Slow` keys
+    (e.g., `features=(ema_10=..., ema_50=...)`).
+
+## Output
+Return `(side=vals,)` where `vals::Vector{Int8}`.
 """
 function _side_result(
     side::Crossover{D,Fast,Slow,Wait}, d::NamedTuple
 ) where {D,Fast,Slow,Wait}
-    vals = calculate_side(side, d[Fast], d[Slow])
+    vals = calculate_side(side, d.features[Fast], d.features[Slow])
     return (side=vals,)
 end
 

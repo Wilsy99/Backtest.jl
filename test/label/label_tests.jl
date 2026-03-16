@@ -830,7 +830,7 @@ end
 
     # Construct a BarrierArgs with representative pipeline data
     ts = DateTime(2024, 1, 1)
-    data = (; bars=:placeholder, side=Int8[1, -1, 1], ema_10=[10.0, 20.0, 30.0])
+    data = (; bars=:placeholder, side=Int8[1, -1, 1], features=(ema_10=[10.0, 20.0, 30.0],))
 
     ba = Backtest.BarrierArgs(data, 2, 100.0, ts, Int8(1))
 
@@ -843,15 +843,15 @@ end
     # Delegated fields go through the underlying NamedTuple
     @test ba.bars === :placeholder
     @test ba.side === data.side
-    @test ba.ema_10 === data.ema_10
+    @test ba.features === data.features
 
-    # Indexed access pattern used by barrier functions: d.ema_10[d.idx]
-    @test ba.ema_10[ba.idx] == 20.0
+    # Indexed access pattern used by barrier functions: d.features.ema_10[d.idx]
+    @test ba.features.ema_10[ba.idx] == 20.0
 
     # New instance with different idx — mirrors per-bar loop pattern
     ba2 = Backtest.BarrierArgs(data, 3, 100.0, ts, Int8(1))
     @test ba2.idx == 3
-    @test ba2.ema_10[ba2.idx] == 30.0
+    @test ba2.features.ema_10[ba2.idx] == 30.0
 
     # New instance with different entry scalars
     ba3 = Backtest.BarrierArgs(data, 2, 200.0, ts, Int8(-1))
