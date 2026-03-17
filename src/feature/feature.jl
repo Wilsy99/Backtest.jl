@@ -79,6 +79,23 @@ function (feat::AbstractFeature)(d::NamedTuple)
 end
 
 """
+    (feat::AbstractFeature)(prices::AbstractVector{T}) where {T<:AbstractFloat} -> NamedTuple
+
+Compute the feature directly on a price vector and return a `NamedTuple`
+with the named result.
+
+# Arguments
+- `prices::AbstractVector{T}`: the input price series.
+
+# Returns
+- `NamedTuple`: single-key result using `_feature_names(feat)`.
+"""
+function (feat::AbstractFeature)(prices::AbstractVector{T}) where {T<:AbstractFloat}
+    result = _feature_result(feat, prices)
+    return _wrap_result(feat, result)
+end
+
+"""
     _feature_field(feat::AbstractFeature) -> Symbol
 
 Return the field name of the target series for `feat`. Defaults to
@@ -86,3 +103,12 @@ Return the field name of the target series for `feat`. Defaults to
 (e.g., `:volume`, `:high`).
 """
 _feature_field(::AbstractFeature) = :close
+
+"""
+    _feature_result(feat::AbstractFeature, prices) -> Vector
+
+Compute the feature and return the raw result vector for pipeline
+composition. Default delegates to `compute(feat, prices)`. Override
+only when the pipeline result differs from `compute`.
+"""
+_feature_result(feat::AbstractFeature, prices) = compute(feat, prices)

@@ -186,23 +186,6 @@ function compute(
     return NamedTuple{(name,)}((result,))
 end
 
-"""
-    (feat::AbstractFeature)(prices::AbstractVector{T}) where {T<:AbstractFloat} -> NamedTuple
-
-Compute the feature directly on a price vector and return a `NamedTuple`
-with the named result.
-
-# Arguments
-- `prices::AbstractVector{T}`: the input price series.
-
-# Returns
-- `NamedTuple`: single-key result using `_feature_names(feat)`.
-"""
-function (feat::AbstractFeature)(prices::AbstractVector{T}) where {T<:AbstractFloat}
-    result = _feature_result(feat, prices)
-    return _wrap_result(feat, result)
-end
-
 # ── Pipeline operator support for Features ──
 # Features is not a subtype of AbstractFeature, so it needs its own >>
 # overloads to integrate with the pipeline operator defined in types.jl.

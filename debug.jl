@@ -23,17 +23,17 @@ println("  delta:  $(z_large - z_small) bytes (should ≈ 1800 = pure data growt
 
 # ─── 2. Full function at both sizes ────────────────────────────────────────
 # If overhead is constant, delta ≈ data growth. If it scales, there's a bug.
-alloc_cusum_small(p) = @allocated Backtest._calculate_cusum(p, 1.0, 100, 0.0)
-Backtest._calculate_cusum(prices_small, 1.0, 100, 0.0)
+alloc_cusum_small(p) = @allocated Backtest._compute_cusum(p, 1.0, 100, 0.0)
+Backtest._compute_cusum(prices_small, 1.0, 100, 0.0)
 alloc_cusum_small(prices_small)
 a_small = alloc_cusum_small(prices_small)
 
-alloc_cusum_large(p) = @allocated Backtest._calculate_cusum(p, 1.0, 100, 0.0)
-Backtest._calculate_cusum(prices_large, 1.0, 100, 0.0)
+alloc_cusum_large(p) = @allocated Backtest._compute_cusum(p, 1.0, 100, 0.0)
+Backtest._compute_cusum(prices_large, 1.0, 100, 0.0)
 alloc_cusum_large(prices_large)
 a_large = alloc_cusum_large(prices_large)
 
-println("\n=== 2. _calculate_cusum (full) ===")
+println("\n=== 2. _compute_cusum (full) ===")
 println("  n=200:  $a_small bytes")
 println("  n=2000: $a_large bytes")
 println("  delta:  $(a_large - a_small) bytes (should ≈ 1800)")
@@ -43,8 +43,8 @@ println("  overhead n=2000: $(a_large - z_large) bytes")
 # ─── 3. Isolate the @warn macro ────────────────────────────────────────────
 # Call with n > 101 (no warn) vs n <= 101 (warn fires)
 prices_short = fill(100.0, 50)
-alloc_short(p) = @allocated Backtest._calculate_cusum(p, 1.0, 100, 0.0)
-Backtest._calculate_cusum(prices_short, 1.0, 100, 0.0)  # warmup (triggers warn)
+alloc_short(p) = @allocated Backtest._compute_cusum(p, 1.0, 100, 0.0)
+Backtest._compute_cusum(prices_short, 1.0, 100, 0.0)  # warmup (triggers warn)
 alloc_short(prices_short)
 a_short = alloc_short(prices_short)
 
@@ -57,8 +57,8 @@ println(
 # ─── 4. Isolate warmup loop vs post-warmup loop ────────────────────────────
 # n=102 (1 post-warmup iteration) vs n=200 (99 iterations) vs n=2000 (1899)
 prices_102 = fill(100.0, 102)
-alloc_102(p) = @allocated Backtest._calculate_cusum(p, 1.0, 100, 0.0)
-Backtest._calculate_cusum(prices_102, 1.0, 100, 0.0)
+alloc_102(p) = @allocated Backtest._compute_cusum(p, 1.0, 100, 0.0)
+Backtest._compute_cusum(prices_102, 1.0, 100, 0.0)
 alloc_102(prices_102)
 a_102 = alloc_102(prices_102)
 
@@ -80,8 +80,8 @@ compute(feat, prices_small)
 alloc_calc(feat, prices_small)
 a_calc = alloc_calc(feat, prices_small)
 
-println("\n=== 5. compute vs _calculate_cusum (n=200) ===")
-println("  _calculate_cusum:   $a_small bytes")
+println("\n=== 5. compute vs _compute_cusum (n=200) ===")
+println("  _compute_cusum:   $a_small bytes")
 println("  compute:            $a_calc bytes")
 println("  wrapper overhead:    $(a_calc - a_small) bytes (should be 0)")
 
@@ -106,7 +106,7 @@ a_func = alloc_functor(feat, bars)
 
 println("\n=== 6. Functor with PriceBars (n=200) ===")
 println("  functor:            $a_func bytes")
-println("  _calculate_cusum:   $a_small bytes")
+println("  _compute_cusum:   $a_small bytes")
 println("  merge overhead:     $(a_func - a_small) bytes")
 
 # ─── Summary ────────────────────────────────────────────────────────────────

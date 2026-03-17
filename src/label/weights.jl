@@ -118,7 +118,7 @@ a post-processing step that operates on [`LabelResults`](@ref) and
 the close price series used during labelling.
 
 # Arguments
-- `labels::LabelResults`: output from [`calculate_label`](@ref).
+- `labels::LabelResults`: output from [`compute_label`](@ref).
 - `closes::AbstractVector{T}`: close price series (same series used
     for labelling).
 - `bars::PriceBars`: alternatively pass the price bars directly.
@@ -154,7 +154,7 @@ julia> bars = PriceBars(
 
 julia> tb = TimeBarrier(d -> d.entry_ts + Day(3));
 
-julia> labels = calculate_label([1, 5], bars, (tb,); side=zeros(Int8, n));
+julia> labels = compute_label([1, 5], bars, (tb,); side=zeros(Int8, n));
 
 julia> w = compute_weights(labels, bars);
 
@@ -168,7 +168,7 @@ true
 # See also
 - [`AttributionWeights`](@ref): pipeline functor.
 - [`LabelResults`](@ref): the input container.
-- [`calculate_label`](@ref): produces label results.
+- [`compute_label`](@ref): produces label results.
 """
 function compute_weights(
     labels::LabelResults,

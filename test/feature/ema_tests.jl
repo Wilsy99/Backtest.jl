@@ -326,19 +326,19 @@ end
 # See TESTING.md §6b for rationale on overhead constants and the
 # Min-of-N measurement pattern.
 
-@testitem "EMA: Allocation — _calculate_ema (single period)" tags = [
+@testitem "EMA: Allocation — _compute_ema (single period)" tags = [
     :feature, :ema, :allocation
 ] begin
     using Backtest, Test
 
     prices = collect(1.0:200.0)
 
-    Backtest._calculate_ema(prices, 10)
+    Backtest._compute_ema(prices, 10)
 
     expected_data = sizeof(Float64) * length(prices)
     budget = expected_data + 512
 
-    allocs_ema(prices) = @allocated Backtest._calculate_ema(prices, 10)
+    allocs_ema(prices) = @allocated Backtest._compute_ema(prices, 10)
 
     actual = minimum([@allocated(allocs_ema(prices)) for _ in 1:3])
 
@@ -346,17 +346,17 @@ end
     @test actual > 0
 end
 
-@testitem "EMA: Allocation — _calculate_ema Float32" tags = [:feature, :ema, :allocation] begin
+@testitem "EMA: Allocation — _compute_ema Float32" tags = [:feature, :ema, :allocation] begin
     using Backtest, Test
 
     prices = collect(Float32.(1:200))
 
-    Backtest._calculate_ema(prices, 10)
+    Backtest._compute_ema(prices, 10)
 
     expected_data = sizeof(Float32) * length(prices)
     budget = expected_data + 512
 
-    allocs_ema(prices) = @allocated Backtest._calculate_ema(prices, 10)
+    allocs_ema(prices) = @allocated Backtest._compute_ema(prices, 10)
 
     actual = minimum([@allocated(allocs_ema(prices)) for _ in 1:3])
 

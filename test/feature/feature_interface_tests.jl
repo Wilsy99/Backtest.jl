@@ -255,9 +255,10 @@ end
     result = EMA(3)(data)
 
     @test result isa NamedTuple
-    @test haskey(result, :bars)
+    @test haskey(result, :close)
+    @test haskey(result, :volume)
     @test haskey(result, :ema_3)
-    @test result.bars === data
+    @test result.close === close
     @test result.ema_3[3] ≈ 11.0
 end
 

@@ -16,8 +16,8 @@ include("label/label.jl")
 export PriceBars, TimeBar
 export AbstractFeature, EMA, CUSUM, Features, compute, compute!
 export AbstractDirection, LongOnly, ShortOnly, LongShort
-export AbstractSide, Crossover, calculate_side
-export AbstractEvent, Event, @Event, calculate_event
+export AbstractSide, Crossover, compute_side
+export AbstractEvent, Event, @Event, compute_event
 export AbstractExecutionBasis, CurrentOpen, CurrentClose, NextOpen, NextClose, Immediate
 export AbstractBarrier,
     LowerBarrier,
@@ -28,7 +28,7 @@ export AbstractBarrier,
     @UpperBarrier,
     @TimeBarrier,
     @ConditionBarrier
-export AbstractLabel, Label, Label!, calculate_label
+export AbstractLabel, Label, Label!, compute_label
 export AbstractWeights, AttributionWeights, compute_weights
 
 export get_data

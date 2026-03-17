@@ -93,9 +93,9 @@ benchmark_strat = big_bars >> feats >> side >> event >> label
         :ema_20 = compute(EMA(20), :close),
         :cusum = compute(CUSUM(1), :close)
     )
-    @transform(:side = calculate_side(Crossover(), :ema_10, :ema_20))
+    @transform(:side = compute_side(Crossover(), :ema_10, :ema_20))
     @transform(:event = Int8.(:cusum .≠ 0 .&& :side .≠ 0))
-    calculate_label(
+    compute_label(
         findall(_.event .!= 0),
         _.timestamp,
         _.open,
@@ -123,15 +123,15 @@ ema_20 = compute(EMA(20), data.close)
 cusum = compute(CUSUM(1), data.close)
 
 # 2. Side — raw vectors in, Vector{Int8} out
-sides = calculate_side(Crossover(), ema_10, ema_20)
+sides = compute_side(Crossover(), ema_10, ema_20)
 
-# 3. Event — standalone calculation using calculate_event
+# 3. Event — standalone calculation using compute_event
 #    Conditions reference pipeline data, so we build a minimal NamedTuple
 evt = Event(d -> d.features.cusum .!= 0 .&& d.side .!= 0)
-event_indices = calculate_event(evt, (bars=bars, features=(cusum=cusum,), side=sides))
+event_indices = compute_event(evt, (bars=bars, features=(cusum=cusum,), side=sides))
 
 # 4. Label — raw vectors + barriers in, LabelResults out
-results = calculate_label(
+results = compute_label(
     event_indices,
     data.timestamp,
     data.open,

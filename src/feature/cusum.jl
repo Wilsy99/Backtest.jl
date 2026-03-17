@@ -141,7 +141,7 @@ julia> vals[12]
 - [`CUSUM`](@ref): constructor and type documentation.
 """
 function compute(feat::CUSUM, prices::AbstractVector{T}) where {T<:AbstractFloat}
-    return _calculate_cusum(prices, feat.multiplier, feat.span, feat.expected_value)
+    return _compute_cusum(prices, feat.multiplier, feat.span, feat.expected_value)
 end
 
 """
@@ -181,18 +181,8 @@ function compute!(
     if n <= warmup_idx
         return dest
     end
-    _calculate_cusum!(dest, prices, feat.multiplier, feat.span, feat.expected_value)
+    _compute_cusum!(dest, prices, feat.multiplier, feat.span, feat.expected_value)
     return dest
-end
-
-"""
-    _feature_result(feat::CUSUM, prices) -> Vector{Int8}
-
-Compute the CUSUM and return the result vector for pipeline
-composition.
-"""
-function _feature_result(feat::CUSUM, prices::AbstractVector{T}) where {T<:AbstractFloat}
-    return compute(feat, prices)
 end
 
 """
@@ -203,14 +193,14 @@ Return the named keys for this feature's pipeline output.
 _feature_names(::CUSUM) = (:cusum,)
 
 """
-    _calculate_cusum(prices, multiplier, span, expected_value) -> Vector{Int8}
+    _compute_cusum(prices, multiplier, span, expected_value) -> Vector{Int8}
 
 Core CUSUM computation. Allocate a result vector and run the
 two-accumulator filter with adaptive volatility threshold.
 
 Assume all prices are strictly positive (caller must validate).
 """
-function _calculate_cusum(
+function _compute_cusum(
     prices::AbstractVector{T}, multiplier::T, span::Int, expected_value::T
 ) where {T<:AbstractFloat}
     n = length(prices)
@@ -219,12 +209,12 @@ function _calculate_cusum(
         return _warn_and_return_zeros(n, warmup_idx)
     end
     cusum_values = zeros(Int8, n)
-    _calculate_cusum!(cusum_values, prices, multiplier, span, expected_value)
+    _compute_cusum!(cusum_values, prices, multiplier, span, expected_value)
     return cusum_values
 end
 
 """
-    _calculate_cusum!(dest, prices, multiplier, span, expected_value) -> Nothing
+    _compute_cusum!(dest, prices, multiplier, span, expected_value) -> Nothing
 
 In-place CUSUM computation. `dest` must be pre-zeroed and have
 length `>= span + 2`.
@@ -234,7 +224,7 @@ warmup, each bar updates the positive and negative accumulators. When
 either exceeds the adaptive threshold (`sqrt(ema_sq_mean) * mult`),
 a signal is recorded and the accumulator resets.
 """
-function _calculate_cusum!(
+function _compute_cusum!(
     dest::AbstractVector{Int8}, prices::AbstractVector{T},
     multiplier::T, span::Int, expected_value::T
 ) where {T<:AbstractFloat}
@@ -289,7 +279,7 @@ end
 """Return zeros and warn when data is shorter than the warmup period"""
 # This helper is marked @noinline and separated from the main loop to prevent
 # the compiler from allocating memory for the warning infrastructure (string
-# formatting, etc.) during the nominal execution path of `_calculate_cusum`.
+# formatting, etc.) during the nominal execution path of `_compute_cusum`.
 @noinline function _warn_and_return_zeros(n, warmup_idx)
     @warn "Data length ($n) is less than warmup ($warmup_idx). Returning zeros."
     return zeros(Int8, n)

@@ -15,10 +15,10 @@ signal is produced.
     [`ShortOnly`](@ref), or [`LongShort`](@ref)).
 - `Fast::Symbol`: name of the fast series key in the pipeline
     `NamedTuple` (e.g., `:ema_10`). `nothing` when using the
-    positional `calculate_side` interface.
+    positional `compute_side` interface.
 - `Slow::Symbol`: name of the slow series key in the pipeline
     `NamedTuple` (e.g., `:ema_50`). `nothing` when using the
-    positional `calculate_side` interface.
+    positional `compute_side` interface.
 - `Wait::Bool`: if `true`, output zeros until the first actual
     crossover occurs. If `false`, start emitting signals from the
     first valid index.
@@ -29,7 +29,7 @@ signal is produced.
 
 The two-argument form binds the fast/slow series names for pipeline
 use. The zero-argument form creates a `Crossover` with
-`Fast=nothing, Slow=nothing` for use with `calculate_side` directly.
+`Fast=nothing, Slow=nothing` for use with `compute_side` directly.
 
 # Examples
 ```jldoctest
@@ -47,7 +47,7 @@ true
 ```
 
 # See also
-- [`calculate_side`](@ref): compute crossover signals from two
+- [`compute_side`](@ref): compute crossover signals from two
     series.
 - [`LongOnly`](@ref), [`ShortOnly`](@ref), [`LongShort`](@ref):
     direction filters.
@@ -118,11 +118,11 @@ end
     _side_result(side::Crossover{D,Fast,Slow,Wait}, d::NamedTuple) -> NamedTuple
 
 Extract the fast and slow series from `d.features` by their bound names
-(`Fast`, `Slow`), compute crossover signals via [`calculate_side`](@ref),
+(`Fast`, `Slow`), compute crossover signals via [`compute_side`](@ref),
 and return `(side=vals,)`.
 
 This is the bridge between the callable interface and the raw
-`calculate_side` function, analogous to `_feature_result` for
+`compute_side` function, analogous to `_feature_result` for
 features.
 
 # Pipeline Data Flow
@@ -138,12 +138,12 @@ Return `(side=vals,)` where `vals::Vector{Int8}`.
 function _side_result(
     side::Crossover{D,Fast,Slow,Wait}, d::NamedTuple
 ) where {D,Fast,Slow,Wait}
-    vals = calculate_side(side, d.features[Fast], d.features[Slow])
+    vals = compute_side(side, d.features[Fast], d.features[Slow])
     return (side=vals,)
 end
 
 """
-    calculate_side(::Crossover{D,Fast,Slow,Wait}, fast_series::AbstractVector{T}, slow_series::AbstractVector{T}) where {D,Fast,Slow,Wait,T<:AbstractFloat} -> Vector{Int8}
+    compute_side(::Crossover{D,Fast,Slow,Wait}, fast_series::AbstractVector{T}, slow_series::AbstractVector{T}) where {D,Fast,Slow,Wait,T<:AbstractFloat} -> Vector{Int8}
 
 Compute crossover side signals by comparing `fast_series` against
 `slow_series`.
@@ -172,7 +172,7 @@ julia> fast = Float64[1, 2, 3, 4, 5];
 
 julia> slow = Float64[5, 4, 3, 2, 1];
 
-julia> sides = calculate_side(Crossover(), fast, slow);
+julia> sides = compute_side(Crossover(), fast, slow);
 
 julia> sides[end]
 1
@@ -181,16 +181,16 @@ julia> sides[end]
 # See also
 - [`Crossover`](@ref): constructor and type documentation.
 """
-function calculate_side(
+function compute_side(
     ::Crossover{D,Fast,Slow,Wait},
     fast_series::AbstractVector{T},
     slow_series::AbstractVector{T},
 ) where {D<:AbstractDirection,Fast,Slow,Wait,T<:AbstractFloat}
-    return _calculate_cross_sides(fast_series, slow_series, Val(Wait), D())
+    return _compute_cross_sides(fast_series, slow_series, Val(Wait), D())
 end
 
 """
-    _calculate_cross_sides(fast_series, slow_series, ::Val{Wait}, dir) -> Vector{Int8}
+    _compute_cross_sides(fast_series, slow_series, ::Val{Wait}, dir) -> Vector{Int8}
 
 Core crossover computation. Allocate a result vector of `Int8(0)`,
 find the first valid (non-NaN) index in `slow_series`, then fill
@@ -199,7 +199,7 @@ side signals using direction-dispatched condition functions.
 When `Wait=true`, skip to the first actual crossover before emitting
 signals. When `Wait=false`, emit from the first valid index.
 """
-function _calculate_cross_sides(
+function _compute_cross_sides(
     fast_series::AbstractVector{T}, slow_series::AbstractVector{T}, ::Val{Wait}, dir::D
 ) where {T<:AbstractFloat,Wait,D<:AbstractDirection}
     n = length(fast_series)

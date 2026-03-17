@@ -49,7 +49,7 @@ end
 Shared storage for [`Label`](@ref) and [`Label!`](@ref) functors.
 
 Both functor types delegate to `_run_label` which calls
-[`calculate_label`](@ref) with the settings stored here. The only
+[`compute_label`](@ref) with the settings stored here. The only
 difference is how the result is returned: `Label` merges it into the
 pipeline `NamedTuple`, while `Label!` returns the raw
 [`LabelResults`](@ref).
@@ -158,7 +158,7 @@ Return the input merged with:
 
 # See also
 - [`Label!`](@ref): variant that returns only `LabelResults`.
-- [`calculate_label`](@ref): the underlying computation function.
+- [`compute_label`](@ref): the underlying computation function.
 - [`LabelResults`](@ref): the output container.
 """
 struct Label{C<:_LabelCore} <: AbstractLabel
@@ -221,7 +221,7 @@ have the same length (one entry per resolved event, or per event if
 
 # See also
 - [`Label`](@ref), [`Label!`](@ref): functors that produce this.
-- [`calculate_label`](@ref): the computation function.
+- [`compute_label`](@ref): the computation function.
 - [`compute_weights`](@ref): compute sample weights from label results.
 """
 struct LabelResults{I<:Int,T<:AbstractFloat}
@@ -238,7 +238,7 @@ Base.length(r::LabelResults) = length(r.trade_idx_range)
 # ── Functors ──
 
 @inline function _run_label(core::_LabelCore, d::NamedTuple)
-    return calculate_label(
+    return compute_label(
         d.event_indices,
         d.bars,
         core.barriers;
@@ -256,8 +256,8 @@ end
 # ── Main Label Calculation ──
 
 """
-    calculate_label(event_indices, timestamps, opens, highs, lows, closes, volumes, barriers; kwargs...) -> LabelResults
-    calculate_label(event_indices, price_bars, barriers; kwargs...) -> LabelResults
+    compute_label(event_indices, timestamps, opens, highs, lows, closes, volumes, barriers; kwargs...) -> LabelResults
+    compute_label(event_indices, price_bars, barriers; kwargs...) -> LabelResults
 
 Compute triple-barrier labels for a set of event indices.
 
@@ -291,7 +291,7 @@ bar, label, and return.
 - [`Label`](@ref), [`Label!`](@ref): functor wrappers for pipeline use.
 - [`compute_weights`](@ref): compute sample weights from label results.
 """
-function calculate_label(
+function compute_label(
     event_indices::AbstractVector{Int},
     timestamps::AbstractVector,
     opens::AbstractVector{T},
@@ -307,7 +307,7 @@ function calculate_label(
     barrier_args::NamedTuple=(;),
 ) where {T<:AbstractFloat}
     price_bars = PriceBars(opens, highs, lows, closes, volumes, timestamps, TimeBar())
-    return calculate_label(
+    return compute_label(
         event_indices,
         price_bars,
         barriers;
@@ -319,7 +319,7 @@ function calculate_label(
     )
 end
 
-function calculate_label(
+function compute_label(
     event_indices::AbstractVector{Int},
     price_bars::PriceBars,
     barriers::Tuple;

@@ -235,7 +235,7 @@ end
     @test feat.multiplier isa Float32
     @test feat.expected_value isa Float32
 
-    # Float32 CUSUM with Float64 prices is a type mismatch in _calculate_cusum
+    # Float32 CUSUM with Float64 prices is a type mismatch in _compute_cusum
     prices64 = collect(100.0:300.0)
     @test_throws MethodError compute(feat, prices64)
 
@@ -328,18 +328,18 @@ end
 # Float64 vectors. See TESTING.md §6b for the Min-of-N pattern and
 # overhead constant rationale.
 
-@testitem "CUSUM: Allocation — _calculate_cusum" tags = [:feature, :cusum, :allocation] begin
+@testitem "CUSUM: Allocation — _compute_cusum" tags = [:feature, :cusum, :allocation] begin
     using Backtest, Test
 
     prices = collect(100.0:299.0)
     n = length(prices)
 
-    Backtest._calculate_cusum(prices, 1.0, 100, 0.0)
+    Backtest._compute_cusum(prices, 1.0, 100, 0.0)
 
     expected_data = sizeof(Int8) * n
     budget = expected_data + 512
 
-    allocs_cusum(prices) = @allocated Backtest._calculate_cusum(prices, 1.0, 100, 0.0)
+    allocs_cusum(prices) = @allocated Backtest._compute_cusum(prices, 1.0, 100, 0.0)
 
     actual = minimum([@allocated(allocs_cusum(prices)) for _ in 1:3])
 

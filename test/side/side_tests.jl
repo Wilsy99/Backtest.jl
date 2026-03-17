@@ -58,8 +58,8 @@ end
     @test haskey(result, :features)
     @test haskey(result, :side)
 
-    # The side values should match direct calculate_side
-    expected = calculate_side(cross, ema_data.features.ema_10, ema_data.features.ema_50)
+    # The side values should match direct compute_side
+    expected = compute_side(cross, ema_data.features.ema_10, ema_data.features.ema_50)
     @test result.side == expected
 end
 

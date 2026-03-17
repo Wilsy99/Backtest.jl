@@ -133,7 +133,7 @@ A scalar tail loop handles the remainder.
 function compute(
     feat::EMA, prices::AbstractVector{T}
 ) where {T<:AbstractFloat}
-    return _calculate_ema(prices, feat.period)
+    return _compute_ema(prices, feat.period)
 end
 
 """
@@ -184,18 +184,6 @@ function compute!(
 end
 
 """
-    _feature_result(feat::EMA, prices) -> Vector
-
-Compute the EMA and return the result vector for pipeline
-composition.
-"""
-function _feature_result(
-    feat::EMA, prices::AbstractVector{T}
-) where {T<:AbstractFloat}
-    return compute(feat, prices)
-end
-
-"""
     _feature_names(feat::EMA) -> Tuple{Symbol}
 
 Return the named keys for this feature's pipeline output.
@@ -203,12 +191,12 @@ Return the named keys for this feature's pipeline output.
 _feature_names(feat::EMA) = (Symbol(:ema_, feat.period),)
 
 """
-    _calculate_ema(prices::AbstractVector{T}, period::Int) -> Vector{T}
+    _compute_ema(prices::AbstractVector{T}, period::Int) -> Vector{T}
 
 Allocate a result vector and compute a single EMA of `period` over
 `prices`.
 """
-function _calculate_ema(prices::AbstractVector{T}, period::Int) where {T<:AbstractFloat}
+function _compute_ema(prices::AbstractVector{T}, period::Int) where {T<:AbstractFloat}
     n_prices = length(prices)
     results = Vector{T}(undef, n_prices)
     _single_ema!(results, prices, period, n_prices)

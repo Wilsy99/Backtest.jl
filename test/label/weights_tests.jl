@@ -177,7 +177,7 @@ end
     bars64 = PriceBars(opens, highs, lows, closes64, vols, ts, TimeBar())
 
     tb = TimeBarrier(d -> d.entry_ts + Day(3))
-    labels = calculate_label([1, 5, 10], bars64, (tb,); side=zeros(Int8, n))
+    labels = compute_label([1, 5, 10], bars64, (tb,); side=zeros(Int8, n))
 
     @test @inferred(compute_weights(labels, bars64)) isa Vector{Float64}
     @test @inferred(compute_weights(labels, closes64)) isa Vector{Float64}
@@ -257,7 +257,7 @@ end
 
     event_indices = [1, 20, 40, 60]
     tb = TimeBarrier(d -> d.entry_ts + Day(5))
-    result = calculate_label(event_indices, bars, (tb,); side=zeros(Int8, n))
+    result = compute_label(event_indices, bars, (tb,); side=zeros(Int8, n))
 
     weights_decay = compute_weights(result, bars; time_decay_start=0.5)
     weights_no_decay = compute_weights(result, bars; time_decay_start=1.0)
@@ -289,7 +289,7 @@ end
 
     event_indices = collect(1:5:30)
     tb = TimeBarrier(d -> d.entry_ts + Day(10))
-    result = calculate_label(event_indices, bars, (tb,); side=zeros(Int8, n))
+    result = compute_label(event_indices, bars, (tb,); side=zeros(Int8, n))
 
     @test length(result.label) > 0
     @test all(result.label .== Int8(0))
@@ -392,7 +392,7 @@ end
     bars   = PriceBars(opens, highs, lows, closes, vols, ts, TimeBar())
 
     tb = TimeBarrier(d -> d.entry_ts + Day(5))
-    labels = calculate_label([1, 10, 20], bars, (tb,); side=zeros(Int8, n))
+    labels = compute_label([1, 10, 20], bars, (tb,); side=zeros(Int8, n))
 
     w_bars = compute_weights(labels, bars)
     w_closes = compute_weights(labels, bars.close)
@@ -561,7 +561,7 @@ end
     bars   = PriceBars(opens, highs, lows, closes, vols, ts, TimeBar())
 
     tb = TimeBarrier(d -> d.entry_ts + Day(5))
-    labels = calculate_label(collect(1:10:100), bars, (tb,); side=zeros(Int8, n))
+    labels = compute_label(collect(1:10:100), bars, (tb,); side=zeros(Int8, n))
 
     # Warmup
     compute_weights(labels, bars)

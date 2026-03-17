@@ -21,7 +21,7 @@
     event_indices = [1]
 
     ub = UpperBarrier(d -> d.entry_price * 1.10)
-    result = calculate_label(event_indices, bars, (ub,); side=zeros(Int8, n))
+    result = compute_label(event_indices, bars, (ub,); side=zeros(Int8, n))
 
     @test result isa Backtest.LabelResults
     @test length(result.label) == 1
@@ -54,7 +54,7 @@ end
     event_indices = [1]
 
     lb = LowerBarrier(d -> d.entry_price * 0.95)
-    result = calculate_label(event_indices, bars, (lb,); side=zeros(Int8, n))
+    result = compute_label(event_indices, bars, (lb,); side=zeros(Int8, n))
 
     @test length(result.label) == 1
     @test result.label[1] == Int8(-1)
@@ -89,7 +89,7 @@ end
     lb = LowerBarrier(d -> d.entry_price * 0.5)
     tb = TimeBarrier(d -> d.entry_ts + Day(3))
 
-    result = calculate_label(event_indices, bars, (ub, lb, tb); side=zeros(Int8, n))
+    result = compute_label(event_indices, bars, (ub, lb, tb); side=zeros(Int8, n))
 
     @test length(result.label) == 1
     @test result.label[1] == Int8(0)  # TimeBarrier default label
@@ -118,7 +118,7 @@ end
     event_indices = [1]
     cb = ConditionBarrier(d -> d.signal[d.idx]; exit_basis=NextOpen())
 
-    result = calculate_label(
+    result = compute_label(
         event_indices, bars, (cb,);
         side=zeros(Int8, n),
         barrier_args=(; signal=signal),
@@ -307,7 +307,7 @@ end
     event_indices = Int[]
     ub = UpperBarrier(d -> d.entry_price * 1.10)
 
-    result = calculate_label(event_indices, bars, (ub,); side=zeros(Int8, 10))
+    result = compute_label(event_indices, bars, (ub,); side=zeros(Int8, 10))
 
     @test result isa Backtest.LabelResults
     @test length(result.label) == 0
@@ -331,7 +331,7 @@ end
     event_indices = [n]
     ub = UpperBarrier(d -> d.entry_price * 1.10)
 
-    result = calculate_label(event_indices, bars, (ub,); side=zeros(Int8, n), drop_unfinished=true)
+    result = compute_label(event_indices, bars, (ub,); side=zeros(Int8, n), drop_unfinished=true)
     @test length(result.label) == 0  # dropped because entry is out of bounds
 end
 
@@ -353,7 +353,7 @@ end
     event_indices = [n - 1]
     ub = UpperBarrier(d -> d.entry_price * 1.10)
 
-    result = calculate_label(event_indices, bars, (ub,); side=zeros(Int8, n), drop_unfinished=true)
+    result = compute_label(event_indices, bars, (ub,); side=zeros(Int8, n), drop_unfinished=true)
     @test length(result.label) == 0  # unfinished, dropped
 end
 
@@ -372,7 +372,7 @@ end
     ub = UpperBarrier(d -> d.entry_price * 2.0)
     lb = LowerBarrier(d -> d.entry_price * 0.5)
 
-    result = calculate_label(
+    result = compute_label(
         event_indices, bars, (ub, lb); side=zeros(Int8, n), drop_unfinished=false
     )
 
@@ -398,7 +398,7 @@ end
     event_indices = [10, 5, 15]
 
     tb = TimeBarrier(d -> d.entry_ts + Day(3))
-    result = calculate_label(event_indices, bars, (tb,); side=zeros(Int8, n))
+    result = compute_label(event_indices, bars, (tb,); side=zeros(Int8, n))
 
     # Results should be in caller's order (10, 5, 15), not sorted (5, 10, 15)
     # Entry indices with NextOpen: 11, 6, 16
@@ -441,7 +441,7 @@ end
     # Upper barrier = 110.0. Bar 4: open=115 >= 110 → gap hit
     ub = UpperBarrier(d -> d.entry_price * 1.10)
 
-    result = calculate_label(event_indices, bars, (ub,); side=zeros(Int8, n))
+    result = compute_label(event_indices, bars, (ub,); side=zeros(Int8, n))
 
     @test length(result.label) == 1
     @test result.label[1] == Int8(1)
@@ -494,8 +494,8 @@ end
     tb = TimeBarrier(d -> d.entry_ts + Day(3))
 
     s = zeros(Int8, n)
-    result_raw = calculate_label(event_indices, ts, opens, highs, lows, closes, vols, (tb,); side=s)
-    result_bars = calculate_label(event_indices, bars, (tb,); side=s)
+    result_raw = compute_label(event_indices, ts, opens, highs, lows, closes, vols, (tb,); side=s)
+    result_bars = compute_label(event_indices, bars, (tb,); side=s)
 
     @test result_raw.label == result_bars.label
     @test result_raw.trade_idx_range == result_bars.trade_idx_range
@@ -521,7 +521,7 @@ end
     event_indices = [1]
     ub = UpperBarrier(d -> d.entry_price * 1.05)
 
-    result = calculate_label(event_indices, bars, (ub,); side=zeros(Int8, 3))
+    result = compute_label(event_indices, bars, (ub,); side=zeros(Int8, 3))
 
     @test length(result.label) == 1
     @test result.label[1] == Int8(1)
@@ -549,11 +549,11 @@ end
     ub = UpperBarrier(d -> d.entry_price * 1.10)
     lb = LowerBarrier(d -> d.entry_price * 0.90)
 
-    result_ub_first = calculate_label(event_indices, bars, (ub, lb); side=zeros(Int8, n))
+    result_ub_first = compute_label(event_indices, bars, (ub, lb); side=zeros(Int8, n))
     @test result_ub_first.label[1] == Int8(1)  # upper wins
 
     # LowerBarrier listed first → should win instead
-    result_lb_first = calculate_label(event_indices, bars, (lb, ub); side=zeros(Int8, n))
+    result_lb_first = compute_label(event_indices, bars, (lb, ub); side=zeros(Int8, n))
     @test result_lb_first.label[1] == Int8(-1)  # lower wins
 end
 
@@ -573,7 +573,7 @@ end
     ub = UpperBarrier(d -> d.entry_price * 1.10)
 
     # CurrentClose: entry at event bar itself (idx_adj=0), price = close
-    result = calculate_label(
+    result = compute_label(
         event_indices, bars, (ub,); side=zeros(Int8, n), entry_basis=CurrentClose()
     )
 
@@ -663,7 +663,7 @@ end
     lb = LowerBarrier(d -> d.entry_side == Int8(1) ? d.entry_price * 0.95 : d.entry_price * 0.90)
     tb = TimeBarrier(d -> d.entry_ts + Day(8))
 
-    result = calculate_label(
+    result = compute_label(
         event_indices, bars, (lb, tb);
         side=side,
     )
@@ -702,8 +702,8 @@ end
     event_indices = [1]
     tb = TimeBarrier(d -> d.entry_ts + Day(5))
 
-    # Calling calculate_label without the required side keyword must fail
-    @test_throws UndefKeywordError calculate_label(event_indices, bars, (tb,))
+    # Calling compute_label without the required side keyword must fail
+    @test_throws UndefKeywordError compute_label(event_indices, bars, (tb,))
 end
 
 @testitem "Label: entry_side is constant across holding period" tags = [
@@ -734,7 +734,7 @@ end
     cb = ConditionBarrier(d -> d.entry_side != Int8(1); exit_basis=NextOpen())
     tb = TimeBarrier(d -> d.entry_ts + Day(10))
 
-    result = calculate_label(
+    result = compute_label(
         event_indices, bars, (cb, tb);
         side=side,
     )
@@ -765,7 +765,7 @@ end
     side = fill(Int8(1), n)  # long signal everywhere
 
     ub = UpperBarrier(d -> d.entry_price * 1.10)
-    result = calculate_label(event_indices, bars, (ub,); side=side)
+    result = compute_label(event_indices, bars, (ub,); side=side)
 
     @test result.side[1] == Int8(1)
     @test result.label[1] == Int8(1)  # upper barrier hit
@@ -789,7 +789,7 @@ end
     side = fill(Int8(1), n)  # long signal
 
     lb = LowerBarrier(d -> d.entry_price * 0.95)
-    result = calculate_label(event_indices, bars, (lb,); side=side)
+    result = compute_label(event_indices, bars, (lb,); side=side)
 
     @test result.side[1] == Int8(1)
     @test result.label[1] == Int8(-1)  # lower barrier hit
@@ -813,7 +813,7 @@ end
     side = fill(Int8(-1), n)  # short signal
 
     lb = LowerBarrier(d -> d.entry_price * 0.95)
-    result = calculate_label(event_indices, bars, (lb,); side=side)
+    result = compute_label(event_indices, bars, (lb,); side=side)
 
     @test result.side[1] == Int8(-1)
     @test result.label[1] == Int8(-1)  # lower barrier hit

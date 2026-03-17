@@ -9,7 +9,7 @@
     fast = Float64[1, 2, 3, 5, 6, 7, 2, 1, 0]
     slow = Float64[3, 3, 3, 3, 3, 3, 3, 3, 3]
 
-    sides = calculate_side(Crossover(; wait_for_cross=true), fast, slow)
+    sides = compute_side(Crossover(; wait_for_cross=true), fast, slow)
 
     @test length(sides) == 9
     # Indices 1-3: fast <= slow, no cross yet → 0
@@ -32,7 +32,7 @@ end
     fast = Float64[1, 2, 3, 5, 6, 7, 2, 1, 0]
     slow = Float64[3, 3, 3, 3, 3, 3, 3, 3, 3]
 
-    sides = calculate_side(Crossover(; wait_for_cross=false), fast, slow)
+    sides = compute_side(Crossover(; wait_for_cross=false), fast, slow)
 
     @test length(sides) == 9
     # No waiting — signals start immediately from first valid index
@@ -55,7 +55,7 @@ end
     fast = Float64[1, 2, 5, 6, 2, 1, 5, 6]
     slow = Float64[3, 3, 3, 3, 3, 3, 3, 3]
 
-    sides = calculate_side(
+    sides = compute_side(
         Crossover(; wait_for_cross=true, direction=LongOnly()), fast, slow
     )
 
@@ -81,7 +81,7 @@ end
     fast = Float64[5, 4, 1, 0, 4, 5, 1, 0]
     slow = Float64[3, 3, 3, 3, 3, 3, 3, 3]
 
-    sides = calculate_side(
+    sides = compute_side(
         Crossover(; wait_for_cross=true, direction=ShortOnly()), fast, slow
     )
 
@@ -111,14 +111,14 @@ end
     cross_lo = Crossover(; direction=LongOnly())
     cross_so = Crossover(; direction=ShortOnly())
 
-    @test @inferred(calculate_side(cross_ls, fast64, slow64)) isa Vector{Int8}
-    @test @inferred(calculate_side(cross_ls, fast32, slow32)) isa Vector{Int8}
-    @test @inferred(calculate_side(cross_lo, fast64, slow64)) isa Vector{Int8}
-    @test @inferred(calculate_side(cross_so, fast64, slow64)) isa Vector{Int8}
+    @test @inferred(compute_side(cross_ls, fast64, slow64)) isa Vector{Int8}
+    @test @inferred(compute_side(cross_ls, fast32, slow32)) isa Vector{Int8}
+    @test @inferred(compute_side(cross_lo, fast64, slow64)) isa Vector{Int8}
+    @test @inferred(compute_side(cross_so, fast64, slow64)) isa Vector{Int8}
 
     # wait_for_cross=false
     cross_nw = Crossover(; wait_for_cross=false)
-    @test @inferred(calculate_side(cross_nw, fast64, slow64)) isa Vector{Int8}
+    @test @inferred(compute_side(cross_nw, fast64, slow64)) isa Vector{Int8}
 end
 
 @testitem "Crossover: Mathematical Properties" tags = [:side, :crossover, :property] setup = [
@@ -130,34 +130,34 @@ end
     prices_down = TestData.make_trending_prices(:down; n=200, start=200.0, step=0.3)
 
     # Boundedness: all outputs must be in {-1, 0, 1}
-    sides = calculate_side(Crossover(), prices_up, prices_down)
+    sides = compute_side(Crossover(), prices_up, prices_down)
     @test all(s -> s ∈ Int8.([-1, 0, 1]), sides)
 
     # Monotone diverging series: fast always above slow after some point
     # → should produce all +1 after first cross
     fast_diverge = Float64[i * 1.0 for i in 1:100]
     slow_diverge = Float64[i * 0.5 for i in 1:100]
-    sides_div = calculate_side(
+    sides_div = compute_side(
         Crossover(; wait_for_cross=false), fast_diverge, slow_diverge
     )
     # fast[1]=1 > slow[1]=0.5, so always long from start
     @test all(sides_div .== Int8(1))
 
     # LongOnly never produces -1
-    sides_lo = calculate_side(
+    sides_lo = compute_side(
         Crossover(; direction=LongOnly(), wait_for_cross=false), prices_up, prices_down
     )
     @test all(s -> s ∈ Int8.([0, 1]), sides_lo)
 
     # ShortOnly never produces +1
-    sides_so = calculate_side(
+    sides_so = compute_side(
         Crossover(; direction=ShortOnly(), wait_for_cross=false), prices_up, prices_down
     )
     @test all(s -> s ∈ Int8.([-1, 0]), sides_so)
 
     # Equal series → all zeros
     flat = TestData.make_flat_prices(; price=100.0, n=100)
-    sides_flat = calculate_side(Crossover(; wait_for_cross=false), flat, flat)
+    sides_flat = compute_side(Crossover(; wait_for_cross=false), flat, flat)
     @test all(sides_flat .== Int8(0))
 end
 
@@ -169,7 +169,7 @@ end
     fast = Float64[1, 2, 3, 4, 5]
     slow = fill(NaN, 5)
 
-    sides = calculate_side(Crossover(), fast, slow)
+    sides = compute_side(Crossover(), fast, slow)
     @test length(sides) == 5
     @test all(sides .== Int8(0))
 end
@@ -183,7 +183,7 @@ end
     fast = Float64[1, 2, 3, 5, 6, 7, 2, 1]
     slow = Float64[NaN, NaN, NaN, 3, 3, 3, 3, 3]
 
-    sides = calculate_side(Crossover(; wait_for_cross=false), fast, slow)
+    sides = compute_side(Crossover(; wait_for_cross=false), fast, slow)
 
     # First 3 indices: slow is NaN → 0
     @test all(sides[1:3] .== Int8(0))
@@ -197,11 +197,11 @@ end
     fast = Float64[5.0]
     slow = Float64[3.0]
 
-    sides = calculate_side(Crossover(; wait_for_cross=true), fast, slow)
+    sides = compute_side(Crossover(; wait_for_cross=true), fast, slow)
     @test length(sides) == 1
     @test sides[1] == Int8(0)  # No cross can occur with 1 element
 
-    sides_nw = calculate_side(Crossover(; wait_for_cross=false), fast, slow)
+    sides_nw = compute_side(Crossover(; wait_for_cross=false), fast, slow)
     @test length(sides_nw) == 1
     @test sides_nw[1] == Int8(1)  # fast > slow → long
 end
@@ -213,7 +213,7 @@ end
     fast = Float64[1.0, 5.0]
     slow = Float64[3.0, 3.0]
 
-    sides = calculate_side(Crossover(; wait_for_cross=true), fast, slow)
+    sides = compute_side(Crossover(; wait_for_cross=true), fast, slow)
     @test length(sides) == 2
     @test sides[1] == Int8(0)  # Before cross
     @test sides[2] == Int8(1)  # Cross detected at index 2
@@ -223,10 +223,10 @@ end
     using Backtest, Test
 
     flat = fill(100.0, 200)
-    sides = calculate_side(Crossover(; wait_for_cross=false), flat, flat)
+    sides = compute_side(Crossover(; wait_for_cross=false), flat, flat)
     @test all(sides .== Int8(0))
 
-    sides_wait = calculate_side(Crossover(; wait_for_cross=true), flat, flat)
+    sides_wait = compute_side(Crossover(; wait_for_cross=true), flat, flat)
     @test all(sides_wait .== Int8(0))
 end
 
@@ -238,7 +238,7 @@ end
     fast = Float64[10, 11, 12, 13, 14]
     slow = Float64[1, 2, 3, 4, 5]
 
-    sides = calculate_side(Crossover(; wait_for_cross=true), fast, slow)
+    sides = compute_side(Crossover(; wait_for_cross=true), fast, slow)
     # LongShort: fast starts above slow at index 1, no change in relative
     # position → no crossover detected → all zeros
     @test all(sides .== Int8(0))
@@ -250,7 +250,7 @@ end
     fast = Float64[50_000.0 + i for i in 1:100]
     slow = fill(50_000.0, 100)
 
-    sides = calculate_side(Crossover(; wait_for_cross=false), fast, slow)
+    sides = compute_side(Crossover(; wait_for_cross=false), fast, slow)
     @test all(isfinite.(Float64.(sides)))
     @test all(sides .== Int8(1))  # fast always above slow
 end
@@ -261,7 +261,7 @@ end
     fast = Float64[0.001 + 0.0001 * i for i in 1:100]
     slow = fill(0.001, 100)
 
-    sides = calculate_side(Crossover(; wait_for_cross=false), fast, slow)
+    sides = compute_side(Crossover(; wait_for_cross=false), fast, slow)
     @test all(sides .== Int8(1))
 end
 
@@ -271,7 +271,7 @@ end
     fast32 = Float32[1, 2, 3, 5, 6]
     slow32 = Float32[3, 3, 3, 3, 3]
 
-    sides = calculate_side(Crossover(), fast32, slow32)
+    sides = compute_side(Crossover(), fast32, slow32)
     @test eltype(sides) == Int8
     @test length(sides) == 5
 end
@@ -283,7 +283,7 @@ end
     fast = Float64[1, 5, 1, 5, 1, 5, 1, 5]
     slow = Float64[3, 3, 3, 3, 3, 3, 3, 3]
 
-    sides = calculate_side(Crossover(; wait_for_cross=false), fast, slow)
+    sides = compute_side(Crossover(; wait_for_cross=false), fast, slow)
 
     @test sides[1] == Int8(-1)
     @test sides[2] == Int8(1)
@@ -303,7 +303,7 @@ end
     fast = Float64[3, 3, 3, 3, 5, 6, 7]
     slow = Float64[3, 3, 3, 3, 3, 3, 3]
 
-    sides = calculate_side(Crossover(; wait_for_cross=true), fast, slow)
+    sides = compute_side(Crossover(; wait_for_cross=true), fast, slow)
 
     # Equal → 0, then cross up at index 5
     @test all(sides[1:4] .== Int8(0))
@@ -354,7 +354,7 @@ end
     @test result isa NamedTuple
     @test haskey(result, :side)
     @test length(result.side) == 5
-    @test result.side == calculate_side(cross, fast, slow)
+    @test result.side == compute_side(cross, fast, slow)
 end
 
 @testitem "Crossover: Callable Interface with NamedTuple" tags = [:side, :crossover, :unit] setup = [
@@ -511,13 +511,13 @@ end
     fast = collect(1.0:100.0)
     slow = fill(50.0, 100)
 
-    @test_opt target_modules = (Backtest,) calculate_side(Crossover(), fast, slow)
-    @test_call target_modules = (Backtest,) calculate_side(Crossover(), fast, slow)
+    @test_opt target_modules = (Backtest,) compute_side(Crossover(), fast, slow)
+    @test_call target_modules = (Backtest,) compute_side(Crossover(), fast, slow)
 end
 
 # ── Phase 5: Allocation Budget Tests ──
 
-@testitem "Crossover: Allocation — calculate_side (LongShort)" tags = [
+@testitem "Crossover: Allocation — compute_side (LongShort)" tags = [
     :side, :crossover, :allocation
 ] begin
     using Backtest, Test
@@ -527,13 +527,13 @@ end
     cross = Crossover()
 
     # Warmup
-    calculate_side(cross, fast, slow)
+    compute_side(cross, fast, slow)
 
     # Budget: Vector{Int8}(undef, n)
     expected_data = sizeof(Int8) * length(fast)
     budget = expected_data + 512
 
-    allocs_calc(cross, fast, slow) = @allocated calculate_side(cross, fast, slow)
+    allocs_calc(cross, fast, slow) = @allocated compute_side(cross, fast, slow)
 
     actual = minimum([@allocated(allocs_calc(cross, fast, slow)) for _ in 1:3])
 
@@ -541,7 +541,7 @@ end
     @test actual > 0
 end
 
-@testitem "Crossover: Allocation — calculate_side (LongOnly)" tags = [
+@testitem "Crossover: Allocation — compute_side (LongOnly)" tags = [
     :side, :crossover, :allocation
 ] begin
     using Backtest, Test
@@ -550,12 +550,12 @@ end
     slow = fill(100.0, 200)
     cross = Crossover(; direction=LongOnly())
 
-    calculate_side(cross, fast, slow)
+    compute_side(cross, fast, slow)
 
     expected_data = sizeof(Int8) * length(fast)
     budget = expected_data + 512
 
-    allocs_calc(cross, fast, slow) = @allocated calculate_side(cross, fast, slow)
+    allocs_calc(cross, fast, slow) = @allocated compute_side(cross, fast, slow)
 
     actual = minimum([@allocated(allocs_calc(cross, fast, slow)) for _ in 1:3])
 
@@ -563,7 +563,7 @@ end
     @test actual > 0
 end
 
-@testitem "Crossover: Allocation — calculate_side (ShortOnly)" tags = [
+@testitem "Crossover: Allocation — compute_side (ShortOnly)" tags = [
     :side, :crossover, :allocation
 ] begin
     using Backtest, Test
@@ -572,12 +572,12 @@ end
     slow = fill(100.0, 200)
     cross = Crossover(; direction=ShortOnly())
 
-    calculate_side(cross, fast, slow)
+    compute_side(cross, fast, slow)
 
     expected_data = sizeof(Int8) * length(fast)
     budget = expected_data + 512
 
-    allocs_calc(cross, fast, slow) = @allocated calculate_side(cross, fast, slow)
+    allocs_calc(cross, fast, slow) = @allocated compute_side(cross, fast, slow)
 
     actual = minimum([@allocated(allocs_calc(cross, fast, slow)) for _ in 1:3])
 
@@ -616,12 +616,12 @@ end
     slow = fill(Float32(100), 200)
     cross = Crossover()
 
-    calculate_side(cross, fast, slow)
+    compute_side(cross, fast, slow)
 
     expected_data = sizeof(Int8) * length(fast)
     budget = expected_data + 512
 
-    allocs_calc(cross, fast, slow) = @allocated calculate_side(cross, fast, slow)
+    allocs_calc(cross, fast, slow) = @allocated compute_side(cross, fast, slow)
 
     actual = minimum([@allocated(allocs_calc(cross, fast, slow)) for _ in 1:3])
 
@@ -631,7 +631,7 @@ end
 # ── wait_for_cross=false reference values for LongOnly and ShortOnly ──
 #
 # The existing reference tests only cover wait_for_cross=false for LongShort.
-# With wait_for_cross=false, _calculate_cross_sides skips _find_first_cross
+# With wait_for_cross=false, _compute_cross_sides skips _find_first_cross
 # and calls _fill_sides_generic! from the first valid (non-NaN) index directly.
 # The direction filter then determines what signal to emit at each bar.
 
@@ -644,7 +644,7 @@ end
     fast = Float64[1, 2, 5, 6, 2, 1, 5, 6]
     slow = Float64[3, 3, 3, 3, 3, 3, 3, 3]
 
-    sides = calculate_side(
+    sides = compute_side(
         Crossover(; wait_for_cross=false, direction=LongOnly()), fast, slow
     )
 
@@ -670,7 +670,7 @@ end
     fast = Float64[5, 4, 1, 0, 4, 5, 1, 0]
     slow = Float64[3, 3, 3, 3, 3, 3, 3, 3]
 
-    sides = calculate_side(
+    sides = compute_side(
         Crossover(; wait_for_cross=false, direction=ShortOnly()), fast, slow
     )
 

@@ -28,7 +28,7 @@ Subtypes must implement the callable interface:
 
 # See also
 - [`Event`](@ref): the standard event detector.
-- [`calculate_event`](@ref): standalone computation function.
+- [`compute_event`](@ref): standalone computation function.
 - [`@Event`](@ref): DSL macro for constructing `Event` instances.
 """
 abstract type AbstractEvent end

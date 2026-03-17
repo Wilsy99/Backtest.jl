@@ -54,7 +54,7 @@ julia> result.event_indices
 ```
 
 # See also
-- [`calculate_event`](@ref): standalone computation function.
+- [`compute_event`](@ref): standalone computation function.
 - [`@Event`](@ref): DSL macro for constructing `Event` with symbol rewriting.
 - [`AbstractEvent`](@ref): supertype and interface contract.
 
@@ -134,7 +134,7 @@ true
 ```
 
 # See also
-- [`calculate_event`](@ref): standalone computation function.
+- [`compute_event`](@ref): standalone computation function.
 - [`@Event`](@ref): DSL macro that constructs `Event` with symbol rewriting.
 """
 function Event(cond_funcs::Function...; match::Symbol=:all)
@@ -142,10 +142,10 @@ function Event(cond_funcs::Function...; match::Symbol=:all)
     return Event(cond_funcs, op)
 end
 
-# ── Standalone Calculation ──
+# ── Standalone Computation ──
 
 """
-    calculate_event(event::Event, data) -> Vector{Int}
+    compute_event(event::Event, data) -> Vector{Int}
 
 Evaluate the event detector against `data` and return the bar indices
 where the combined condition mask is `true`.
@@ -182,20 +182,20 @@ bars = PriceBars(
 )
 
 evt = Event(d -> d.bars.close .> 100.0)
-indices = calculate_event(evt, (bars=bars,))  # [2, 3]
+indices = compute_event(evt, (bars=bars,))  # [2, 3]
 ```
 
 # See also
 - [`Event`](@ref): constructor and type documentation.
-- [`calculate_event(::Event, ::PriceBars)`](@ref): convenience overload.
+- [`compute_event(::Event, ::PriceBars)`](@ref): convenience overload.
 """
-function calculate_event(event::Event, data)
+function compute_event(event::Event, data)
     n = length(data.bars.close)
     return _resolve_indices(event, data, n)
 end
 
 """
-    calculate_event(event::Event, bars::PriceBars) -> Vector{Int}
+    compute_event(event::Event, bars::PriceBars) -> Vector{Int}
 
 Convenience overload that wraps `bars` as `(bars=bars,)` before
 evaluating.
@@ -225,15 +225,15 @@ bars = PriceBars(
 )
 
 evt = Event(d -> d.bars.close .> 100.0)
-indices = calculate_event(evt, bars)  # [2, 3]
+indices = compute_event(evt, bars)  # [2, 3]
 ```
 
 # See also
 - [`Event`](@ref): constructor and type documentation.
-- [`calculate_event(::Event, data)`](@ref): general overload for pipeline data.
+- [`compute_event(::Event, data)`](@ref): general overload for pipeline data.
 """
-function calculate_event(event::Event, bars::PriceBars)
-    return calculate_event(event, (bars=bars,))
+function compute_event(event::Event, bars::PriceBars)
+    return compute_event(event, (bars=bars,))
 end
 
 """
@@ -284,7 +284,7 @@ julia> r.event_indices
 
 # See also
 - [`Event`](@ref): constructor and type documentation.
-- [`calculate_event`](@ref): standalone computation function.
+- [`compute_event`](@ref): standalone computation function.
 - [`_resolve_indices`](@ref): the underlying index-resolution kernel.
 
 # Pipeline Data Flow
@@ -298,12 +298,12 @@ Returns the input merged with `event_indices::Vector{Int}`.
 """
 function (e::Event)(bars::PriceBars)
     d = (bars=bars,)
-    indices = calculate_event(e, d)
+    indices = compute_event(e, d)
     return (; bars=bars, event_indices=indices)
 end
 
 function (e::Event)(d::NamedTuple)
-    indices = calculate_event(e, d)
+    indices = compute_event(e, d)
     return merge(d, (; event_indices=indices))
 end
 
@@ -390,7 +390,7 @@ evt = @Event :ema_10 .> :ema_50 :close .> 100.0 match=:any
 
 # See also
 - [`Event`](@ref): the underlying type constructed by this macro.
-- [`calculate_event`](@ref): standalone computation function.
+- [`compute_event`](@ref): standalone computation function.
 - [`@UpperBarrier`](@ref), [`@LowerBarrier`](@ref): barrier macros using the
     same symbol-rewriting rules.
 """
