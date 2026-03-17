@@ -172,11 +172,12 @@ end
     compute(op::Pair{Symbol,<:AbstractFeature}, prices) -> NamedTuple
 
 Compute a single named feature on `prices` and wrap the result in a
-single-key `NamedTuple`.
+single-key `NamedTuple`. Delegates to `compute(feature, prices)` which
+handles field extraction for PriceBars inputs.
 
 # Arguments
 - `op::Pair{Symbol, <:AbstractFeature}`: the name and feature to compute.
-- `prices`: `PriceBars`, `NamedTuple`, or `AbstractVector{T}` input data.
+- `prices`: `PriceBars` or `AbstractVector{T}` input data.
 
 # Returns
 - `NamedTuple{(name,)}((result,))`: the feature result keyed by `name`.
@@ -185,17 +186,8 @@ function compute(
     op::Pair{Symbol,<:AbstractFeature},
     prices::Union{PriceBars,AbstractVector{T}},
 ) where {T<:AbstractFloat}
-    name = op.first
-    feature = op.second
-
-    series = if prices isa PriceBars
-        _extract_series(prices, _feature_field(feature))
-    else
-        prices
-    end
-
-    result = _feature_result(feature, series)
-    return NamedTuple{(name,)}((result,))
+    result = compute(op.second, prices)
+    return NamedTuple{(op.first,)}((result,))
 end
 
 # ── Pipeline operator support for Features ──
