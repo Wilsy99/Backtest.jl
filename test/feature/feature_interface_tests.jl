@@ -274,3 +274,46 @@ end
     expected = compute(EMA(10), bars.volume)
     @test isequal(result.ema_10, expected)
 end
+
+# ── compute with PriceBars and NamedTuple ──
+
+@testitem "Feature Interface: compute(feat, PriceBars) uses field" tags = [
+    :feature, :unit
+] setup = [TestData] begin
+    using Backtest, Test
+
+    bars = TestData.make_pricebars(; n=200)
+
+    # Default field=:close
+    result_close = compute(EMA(10), bars)
+    @test isequal(result_close, compute(EMA(10), bars.close))
+
+    # Custom field=:volume
+    result_vol = compute(EMA(10; field=:volume), bars)
+    @test isequal(result_vol, compute(EMA(10), bars.volume))
+
+    # CUSUM on PriceBars
+    result_cusum = compute(CUSUM(1.0), bars)
+    @test isequal(result_cusum, compute(CUSUM(1.0), bars.close))
+
+    # CUSUM with field=:high
+    result_cusum_high = compute(CUSUM(1.0; field=:high), bars)
+    @test isequal(result_cusum_high, compute(CUSUM(1.0), bars.high))
+end
+
+@testitem "Feature Interface: compute(feat, NamedTuple) uses bars.field" tags = [
+    :feature, :unit
+] setup = [TestData] begin
+    using Backtest, Test
+
+    bars = TestData.make_pricebars(; n=200)
+    data = (bars=bars, ema_10=compute(EMA(10), bars.close))
+
+    # compute on NamedTuple extracts from data.bars.close
+    result = compute(EMA(20), data)
+    @test isequal(result, compute(EMA(20), bars.close))
+
+    # field=:volume routes to data.bars.volume
+    result_vol = compute(EMA(20; field=:volume), data)
+    @test isequal(result_vol, compute(EMA(20), bars.volume))
+end

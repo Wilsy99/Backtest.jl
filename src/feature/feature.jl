@@ -96,6 +96,45 @@ function (feat::AbstractFeature)(prices::AbstractVector{T}) where {T<:AbstractFl
 end
 
 """
+    compute(feat::AbstractFeature, bars::PriceBars)
+
+Compute the feature on `bars`, extracting the target series via
+`_feature_field(feat)` (e.g., `:close`, `:volume`).
+
+Returns the raw result vector (same as the vector overload).
+
+# Examples
+```julia
+compute(EMA(10), bars)                    # uses bars.close
+compute(EMA(10; field=:volume), bars)     # uses bars.volume
+```
+"""
+function compute(feat::AbstractFeature, bars::PriceBars)
+    series = _extract_series(bars, _feature_field(feat))
+    return compute(feat, series)
+end
+
+"""
+    compute(feat::AbstractFeature, d::NamedTuple)
+
+Compute the feature on a pipeline `NamedTuple`, extracting the target
+series from `d.bars.<field>` via `_feature_field(feat)`.
+
+Returns the raw result vector (same as the vector overload).
+
+# Examples
+```julia
+data = (bars=bars, ema_10=vec)
+compute(EMA(20), data)                    # uses data.bars.close
+compute(EMA(20; field=:high), data)       # uses data.bars.high
+```
+"""
+function compute(feat::AbstractFeature, d::NamedTuple)
+    series = _extract_series(d, _feature_field(feat))
+    return compute(feat, series)
+end
+
+"""
     _feature_field(feat::AbstractFeature) -> Symbol
 
 Return the field name of the target series for `feat`. Defaults to
