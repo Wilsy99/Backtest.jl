@@ -130,9 +130,8 @@ The kernel (`_ema_kernel_unrolled!`) processes 4 elements per
 iteration to improve instruction-level parallelism on modern CPUs.
 A scalar tail loop handles the remainder.
 """
-function compute(
-    feat::EMA, prices::AbstractVector{T}
-) where {T<:AbstractFloat}
+
+function compute(feat::EMA, prices::AbstractVector{T}) where {T<:AbstractFloat}
     return _calculate_ema(prices, feat.period)
 end
 
@@ -177,8 +176,9 @@ true
 function compute!(
     dest::AbstractVector{T}, feat::EMA, prices::AbstractVector{T}
 ) where {T<:AbstractFloat}
-    length(dest) == length(prices) ||
-        throw(DimensionMismatch("dest length $(length(dest)) != prices length $(length(prices))"))
+    length(dest) == length(prices) || throw(
+        DimensionMismatch("dest length $(length(dest)) != prices length $(length(prices))"),
+    )
     _single_ema!(dest, prices, feat.period, length(prices))
     return dest
 end
@@ -189,9 +189,7 @@ end
 Compute the EMA and return the result vector for pipeline
 composition.
 """
-function _feature_result(
-    feat::EMA, prices::AbstractVector{T}
-) where {T<:AbstractFloat}
+function _feature_result(feat::EMA, prices::AbstractVector{T}) where {T<:AbstractFloat}
     return compute(feat, prices)
 end
 
