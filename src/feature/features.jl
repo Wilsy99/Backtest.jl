@@ -157,6 +157,18 @@ feature computation independently.
 end
 
 """
+    compute(feats::Features, d::NamedTuple) -> NamedTuple
+
+Compute all features on a pipeline `NamedTuple` by extracting
+`d.bars` and delegating to the PriceBars overload. Each feature's
+`field` keyword routes to the correct series (e.g., `:close`,
+`:volume`).
+"""
+function compute(feats::Features, d::NamedTuple)
+    return compute(feats, d.bars)
+end
+
+"""
     compute(op::Pair{Symbol,<:AbstractFeature}, prices) -> NamedTuple
 
 Compute a single named feature on `prices` and wrap the result in a
@@ -164,7 +176,7 @@ single-key `NamedTuple`.
 
 # Arguments
 - `op::Pair{Symbol, <:AbstractFeature}`: the name and feature to compute.
-- `prices`: `PriceBars` or `AbstractVector{T}` input data.
+- `prices`: `PriceBars`, `NamedTuple`, or `AbstractVector{T}` input data.
 
 # Returns
 - `NamedTuple{(name,)}((result,))`: the feature result keyed by `name`.

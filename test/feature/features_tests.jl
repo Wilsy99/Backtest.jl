@@ -171,6 +171,48 @@ end
     @test isequal(result.ema_10, compute(EMA(10), prices))
 end
 
+# ── compute(Features(...), data) with field routing ──
+
+@testitem "Features: compute with PriceBars uses field" tags = [
+    :feature, :features, :unit
+] setup = [TestData] begin
+    using Backtest, Test
+
+    bars = TestData.make_pricebars(; n=200)
+
+    f = Features(:ema_close => EMA(10), :ema_vol => EMA(10; field=:volume))
+    result = compute(f, bars)
+
+    @test result isa NamedTuple
+    @test haskey(result, :ema_close)
+    @test haskey(result, :ema_vol)
+
+    # :ema_close uses bars.close, :ema_vol uses bars.volume
+    @test isequal(result.ema_close, compute(EMA(10), bars.close))
+    @test isequal(result.ema_vol, compute(EMA(10), bars.volume))
+    @test !isequal(result.ema_close, result.ema_vol)
+end
+
+@testitem "Features: compute with NamedTuple uses bars.field" tags = [
+    :feature, :features, :unit
+] setup = [TestData] begin
+    using Backtest, Test
+
+    bars = TestData.make_pricebars(; n=200)
+    data = (bars=bars, side=zeros(Int8, 200))
+
+    f = Features(:ema_close => EMA(10), :ema_high => EMA(10; field=:high))
+    result = compute(f, data)
+
+    @test result isa NamedTuple
+    @test haskey(result, :ema_close)
+    @test haskey(result, :ema_high)
+
+    # Routes through data.bars.close and data.bars.high
+    @test isequal(result.ema_close, compute(EMA(10), bars.close))
+    @test isequal(result.ema_high, compute(EMA(10), bars.high))
+end
+
 # ── Phase 3: Robustness — Pipeline Operator Integration ──
 
 @testitem "Features: Pipeline Operator >>" tags = [:feature, :features, :unit] setup = [
