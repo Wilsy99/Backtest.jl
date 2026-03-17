@@ -1,88 +1,40 @@
 include("ema.jl")
 include("cusum.jl")
-include("features.jl")
 
-"""
-    _extract_series(data, field::Symbol) -> AbstractVector
-
-Extract the target series from `data` by field name.
-
-When `data` has a `bars` property (pipeline `NamedTuple`), the field
-is looked up on `data.bars`. Otherwise, it is looked up directly on
-`data` — this allows passing a `PriceBars`, `DataFrame`, or any
-object that has the named column.
-"""
-@inline function _extract_series(data, field::Symbol)
-    return hasproperty(data, :bars) ? getproperty(data.bars, field) : getproperty(data, field)
+struct Features{T<:Tuple}
+    operations::T
+    function Features(ops::Pair{Symbol,<:AbstractFeature}...)
+        return new{typeof(ops)}(ops)
+    end
 end
 
-"""
-    _wrap_result(feat::AbstractFeature, vec) -> NamedTuple
-
-Wrap a feature's result vector into a `NamedTuple` using the
-feature's `_feature_names`.
-"""
-@inline function _wrap_result(feat::AbstractFeature, vec)
-    names = _feature_names(feat)
-    return NamedTuple{names}((vec,))
+function (feats::Features)(d::NamedTuple)
+    feats_results = compute(feats, d.bars)
+    return merge(d, (features=feats_results,))
 end
 
-"""
-    (feat::AbstractFeature)(bars::PriceBars) -> NamedTuple
-
-Compute the feature on `bars` and return a `NamedTuple`
-containing `bars` and the named feature results.
-
-The target series is determined by `_feature_field(feat)` (default
-`:close`).
-
-# Pipeline Data Flow
-
-## Input
-- `bars::PriceBars`: the price data.
-
-## Output
-Return a `NamedTuple` with:
-- `bars::PriceBars`: the original price data (passthrough).
-- Feature-specific keys from [`_feature_result`](@ref) (e.g.,
-    `:ema_10`, `:cusum`).
-"""
-function (feat::AbstractFeature)(bars::PriceBars)
-    series = _extract_series(bars, _feature_field(feat))
-    result = _feature_result(feat, series)
-    return merge((bars=bars,), _wrap_result(feat, result))
+function (feats::Features)(bars::PriceBars)
+    feats_results = compute(feats, bars)
+    return (bars=bars, features=feats_results)
 end
 
-"""
-    (feat::AbstractFeature)(d::NamedTuple) -> NamedTuple
-
-Compute the feature on the pipeline `NamedTuple` and merge the named
-results into the existing data, preserving all upstream keys.
-
-The target series is determined by `_feature_field(feat)` (default
-`:close`).
-
-# Pipeline Data Flow
-
-## Input
-Expect a `NamedTuple` with at least:
-- `bars::PriceBars`: the price data.
-
-## Output
-Return the input `NamedTuple` merged with feature-specific keys
-from [`_feature_result`](@ref).
-"""
-function (feat::AbstractFeature)(d::NamedTuple)
-    series = _extract_series(d, _feature_field(feat))
-    result = _feature_result(feat, series)
-    return merge(d, _wrap_result(feat, result))
+@generated function compute(
+    feats::Features{T}, x::Union{PriceBars,NamedTuple}
+) where {T<:Tuple}
+    n = fieldcount(T)
+    exprs = [:(compute(feats.operations[$i], x)) for i in 1:n]
+    return :(merge($(exprs...)))
 end
 
-"""
-    _feature_field(feat::AbstractFeature) -> Symbol
+function compute(op::Pair{Symbol,<:AbstractFeature}, x::Union{PriceBars,NamedTuple})
+    feat = op.second
+    result = compute(feat, x)
+    return NamedTuple{(op.first,)}((result,))
+end
 
-Return the field name of the target series for `feat`. Defaults to
-`:close`. Override in subtypes to compute features on other series
-(e.g., `:volume`, `:high`).
-"""
-_feature_field(::AbstractFeature) = :close
+# ── Pipeline operator support for Features ──
+>>(f::Features, g::PipeOrFunc) = g ∘ f
+>>(f::PipeOrFunc, g::Features) = g ∘ f
+>>(f::Features, g::Features) = g ∘ f
+>>(data::Any, pipe::Features) = Job(data, pipe)
+>>(j::Job, next_step::Features) = Job(j.data, next_step ∘ j.pipeline)
