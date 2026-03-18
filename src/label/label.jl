@@ -1,6 +1,5 @@
 include("execution.jl")
 include("barrier.jl")
-include("weights.jl")
 
 # ── Output Buffers ──
 
@@ -36,8 +35,13 @@ end
 
 function ExitBuffers(n::Int, ::Type{T}, ::Type{TS}) where {T,TS}
     return ExitBuffers{T,TS}(
-        zeros(Int, n), Vector{TS}(undef, n), zeros(Int8, n), fill(Int8(-99), n),
-        zeros(Int8, n), zeros(T, n), zeros(T, n)
+        zeros(Int, n),
+        Vector{TS}(undef, n),
+        zeros(Int8, n),
+        fill(Int8(-99), n),
+        zeros(Int8, n),
+        zeros(T, n),
+        zeros(T, n),
     )
 end
 
@@ -78,13 +82,7 @@ function _LabelCore(
     multi_thread::Bool=false,
     barrier_args::NamedTuple=(;),
 )
-    return _LabelCore(
-        barriers,
-        entry_basis,
-        drop_unfinished,
-        multi_thread,
-        barrier_args,
-    )
+    return _LabelCore(barriers, entry_basis, drop_unfinished, multi_thread, barrier_args)
 end
 
 """
@@ -394,9 +392,7 @@ function calculate_label(
 
     trade_idx_range = [entry_idx[i]:exit_idx[i] for i in eachindex(entry_idx)]
 
-    return LabelResults(
-        trade_idx_range, sides, labels, bins, rets, log_rets,
-    )
+    return LabelResults(trade_idx_range, sides, labels, bins, rets, log_rets)
 end
 
 # ── Barrier Loop Context ──
@@ -565,7 +561,16 @@ exposes the following fields to barrier level functions via
         loop_args = BarrierArgs(full_args, j, entry_price, entry_ts, entry_side)
 
         hit = _check_barriers!(
-            i, j, barriers, loop_args, price_bars, entry_price, entry_side, full_args, n_prices, buf
+            i,
+            j,
+            barriers,
+            loop_args,
+            price_bars,
+            entry_price,
+            entry_side,
+            full_args,
+            n_prices,
+            buf,
         )
         hit && break
     end
@@ -688,7 +693,7 @@ time.
         return _record_exit!(
             i, j, barrier, open_price, entry_price, entry_side, full_args, n_prices, buf
         )
-    # Intra-bar check: did the trading range touch the barrier?
+        # Intra-bar check: did the trading range touch the barrier?
     elseif barrier_hit(
         barrier, level, price_bars.low[j], price_bars.high[j], price_bars.timestamp[j]
     )
