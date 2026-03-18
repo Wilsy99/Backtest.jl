@@ -4,7 +4,7 @@
 Exponential moving average feature parameterised by a single period.
 
 Compute EMA values using the recursive formula
-`EMA[t] = α * price[t] + (1 - α) * EMA[t-1]` where
+`EMA[t] = α * x[t] + (1 - α) * EMA[t-1]` where
 `α = 2 / (period + 1)`. The first `period - 1` values are `NaN`
 (warmup). The value at index `period` is the simple moving average
 seed.
@@ -61,7 +61,7 @@ result.features.ema_10  # access the EMA vector
 The EMA is seeded with the Simple Moving Average (SMA) of the first
 `period` values. Subsequent values use the recurrence:
 
-    EMA[i] = α * price[i] + (1 - α) * EMA[i-1]
+    EMA[i] = α * x[i] + (1 - α) * EMA[i-1]
 
 where `α = 2 / (period + 1)`.
 
@@ -84,17 +84,18 @@ function (feat::EMA)(bars::PriceBars)
 end
 
 """
-    compute(feat::EMA, prices::AbstractVector{T}) where {T<:Real} -> Vector{T}
+    compute(feat::EMA, x::AbstractVector{T}) where {T<:Real} -> Vector{T}
 
-Compute EMA values for `prices` at the period specified in `feat`.
+Compute EMA values for `x` at the period specified in `feat`.
 
-Return a `Vector{T}` of length `length(prices)`. The element type
-of the output matches the input. The first `period - 1` entries
-are `NaN` (warmup).
+Return a `Vector{T}` of length `length(x)`. The element type of
+the output matches the input. The first `period - 1` entries are
+`NaN` (warmup).
 
 # Arguments
 - `feat::EMA`: the EMA feature instance.
-- `prices::AbstractVector{T}`: price series.
+- `x::AbstractVector{T}`: input series (prices, volume, or any
+    numeric sequence).
 
 # Returns
 - `Vector{T}`: EMA values. First `period - 1` entries are `NaN`.
@@ -103,9 +104,9 @@ are `NaN` (warmup).
 ```jldoctest
 julia> using Backtest
 
-julia> prices = Float64[10, 11, 12, 13, 14, 15];
+julia> x = Float64[10, 11, 12, 13, 14, 15];
 
-julia> ema = compute(EMA(3), prices);
+julia> ema = compute(EMA(3), x);
 
 julia> ema[3] ≈ 11.0
 true
@@ -125,12 +126,12 @@ true
 The EMA is seeded with the Simple Moving Average (SMA) of the first
 `period` values. Subsequent values use the recurrence:
 
-    EMA[i] = α * price[i] + (1 - α) * EMA[i-1]
+    EMA[i] = α * x[i] + (1 - α) * EMA[i-1]
 
 where `α = 2 / (period + 1)`.
 """
-function compute(feat::EMA, prices::AbstractVector{T}) where {T<:Real}
-    return feat(prices)
+function compute(feat::EMA, x::AbstractVector{T}) where {T<:Real}
+    return feat(x)
 end
 
 function (feat::EMA)(x::AbstractVector{T}) where {T<:Real}
@@ -141,31 +142,32 @@ function (feat::EMA)(x::AbstractVector{T}) where {T<:Real}
 end
 
 """
-    compute!(dest::AbstractVector{T}, feat::EMA, prices::AbstractVector{T}) where {T<:AbstractFloat} -> dest
+    compute!(dest::AbstractVector{T}, feat::EMA, x::AbstractVector{T}) where {T<:AbstractFloat} -> dest
 
 Compute EMA in-place, writing results into the pre-allocated
 vector `dest`.
 
 # Arguments
-- `dest::AbstractVector{T}`: output vector, same length as `prices`.
+- `dest::AbstractVector{T}`: output vector, same length as `x`.
 - `feat::EMA`: the EMA feature instance.
-- `prices::AbstractVector{T}`: the input price series.
+- `x::AbstractVector{T}`: input series (prices, volume, or any
+    numeric sequence).
 
 # Returns
 - `dest`: the mutated output vector (returned for convenience).
 
 # Throws
-- `DimensionMismatch`: if `length(dest) != length(prices)`.
+- `DimensionMismatch`: if `length(dest) != length(x)`.
 
 # Examples
 ```jldoctest
 julia> using Backtest
 
-julia> prices = Float64[10, 11, 12, 13, 14, 15];
+julia> x = Float64[10, 11, 12, 13, 14, 15];
 
-julia> dest = similar(prices);
+julia> dest = similar(x);
 
-julia> compute!(dest, EMA(3), prices);
+julia> compute!(dest, EMA(3), x);
 
 julia> dest[3] ≈ 11.0
 true
@@ -176,12 +178,12 @@ true
 - [`EMA`](@ref): constructor and type documentation.
 """
 function compute!(
-    dest::AbstractVector{T}, feat::EMA, prices::AbstractVector{T}
+    dest::AbstractVector{T}, feat::EMA, x::AbstractVector{T}
 ) where {T<:AbstractFloat}
-    length(dest) == length(prices) || throw(
-        DimensionMismatch("dest length $(length(dest)) != prices length $(length(prices))"),
+    length(dest) == length(x) || throw(
+        DimensionMismatch("dest length $(length(dest)) != x length $(length(x))"),
     )
-    _compute_ema!(dest, prices, feat.period, length(prices))
+    _compute_ema!(dest, x, feat.period, length(x))
     return dest
 end
 

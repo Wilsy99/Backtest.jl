@@ -50,7 +50,7 @@ true
 
 ## Performance
 
-All features are computed back-to-back on the same price data via
+All features are computed back-to-back on the same input data via
 a `@generated` function that unrolls the pair tuple at compile time.
 The data stays hot in L1/L2 cache for subsequent feature
 computations. A single `merge()` of per-feature results replaces

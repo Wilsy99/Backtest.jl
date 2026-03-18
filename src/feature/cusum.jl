@@ -2,7 +2,7 @@
     CUSUM{T<:AbstractFloat} <: AbstractFeature
 
 Cumulative Sum (CUSUM) filter for detecting structural breaks in a
-price series.
+numeric series.
 
 Monitor the cumulative sum of log-returns against an adaptive
 threshold derived from a rolling EMA of squared returns. When the
@@ -118,19 +118,19 @@ function (feat::CUSUM)(bars::PriceBars)
 end
 
 """
-    compute(feat::CUSUM, prices::AbstractVector{T}) where {T<:Real} -> Vector{Int8}
+    compute(feat::CUSUM, x::AbstractVector{T}) where {T<:Real} -> Vector{Int8}
 
-Compute CUSUM filter signals for `prices`.
+Compute CUSUM filter signals for `x`.
 
-Return a `Vector{Int8}` of length `length(prices)` where each entry
-is `Int8(1)` (upward break), `Int8(-1)` (downward break), or
+Return a `Vector{Int8}` of length `length(x)` where each entry is
+`Int8(1)` (upward break), `Int8(-1)` (downward break), or
 `Int8(0)` (no signal). The first `span + 1` entries are always zero
 (warmup period).
 
 # Arguments
 - `feat::CUSUM`: the CUSUM feature instance.
-- `prices::AbstractVector{T}`: price series. Must contain strictly
-    positive values (log-returns require `log(price)`).
+- `x::AbstractVector{T}`: input series. Must contain strictly
+    positive values (log-returns require `log(x)`).
 
 # Returns
 - `Vector{Int8}`: signal vector. Values are in `{-1, 0, 1}`.
@@ -139,9 +139,9 @@ is `Int8(1)` (upward break), `Int8(-1)` (downward break), or
 ```jldoctest
 julia> using Backtest
 
-julia> prices = vcat(fill(100.0, 11), [200.0]);
+julia> x = vcat(fill(100.0, 11), [200.0]);
 
-julia> vals = compute(CUSUM(1.0; span=10), prices);
+julia> vals = compute(CUSUM(1.0; span=10), x);
 
 julia> vals[12]
 1
@@ -151,8 +151,8 @@ julia> vals[12]
 - [`CUSUM`](@ref): constructor and type documentation.
 - [`compute!`](@ref): in-place version.
 """
-function compute(feat::CUSUM, prices::AbstractVector{T}) where {T<:Real}
-    return feat(prices)
+function compute(feat::CUSUM, x::AbstractVector{T}) where {T<:Real}
+    return feat(x)
 end
 
 function (feat::CUSUM)(x::AbstractVector{T}) where {T<:Real}
@@ -167,7 +167,7 @@ function (feat::CUSUM)(x::AbstractVector{T}) where {T<:Real}
 end
 
 """
-    compute!(dest::AbstractVector{Int8}, feat::CUSUM, prices::AbstractVector{T}) where {T<:AbstractFloat} -> dest
+    compute!(dest::AbstractVector{Int8}, feat::CUSUM, x::AbstractVector{T}) where {T<:AbstractFloat} -> dest
 
 Compute CUSUM filter signals in-place, writing results into the
 pre-allocated vector `dest`.
@@ -176,33 +176,33 @@ pre-allocated vector `dest`.
 `Int8(-1)`, or `Int8(0)`).
 
 # Arguments
-- `dest::AbstractVector{Int8}`: output vector, same length as
-    `prices`.
+- `dest::AbstractVector{Int8}`: output vector, same length as `x`.
 - `feat::CUSUM`: the CUSUM feature instance.
-- `prices::AbstractVector{T}`: the input price series.
+- `x::AbstractVector{T}`: input series (prices, volume, or any
+    numeric sequence).
 
 # Returns
 - `dest`: the mutated output vector (returned for convenience).
 
 # Throws
-- `DimensionMismatch`: if `length(dest) != length(prices)`.
+- `DimensionMismatch`: if `length(dest) != length(x)`.
 
 # See also
 - [`compute`](@ref): allocating version.
 - [`CUSUM`](@ref): constructor and type documentation.
 """
 function compute!(
-    dest::AbstractVector{Int8}, feat::CUSUM, prices::AbstractVector{T}
+    dest::AbstractVector{Int8}, feat::CUSUM, x::AbstractVector{T}
 ) where {T<:AbstractFloat}
-    length(dest) == length(prices) ||
-        throw(DimensionMismatch("dest length $(length(dest)) != prices length $(length(prices))"))
+    length(dest) == length(x) ||
+        throw(DimensionMismatch("dest length $(length(dest)) != x length $(length(x))"))
     fill!(dest, Int8(0))
-    n = length(prices)
+    n = length(x)
     warmup_idx = feat.span + 1
     if n <= warmup_idx
         return dest
     end
-    _compute_cusum!(feat, dest, prices, warmup_idx)
+    _compute_cusum!(feat, dest, x, warmup_idx)
     return dest
 end
 
@@ -245,7 +245,7 @@ function _compute_cusum!(
             log_return = curr_log - prev_log
             prev_log = curr_log
 
-            # Floor prevents sqrt(0) when prices are flat during warmup
+            # Floor prevents sqrt(0) when series is flat during warmup
             threshold = sqrt(max(T(1e-16), ema_sq_mean)) * feat.multiplier
 
             s_pos = max(zero(T), s_pos + log_return - feat.expected_value)
