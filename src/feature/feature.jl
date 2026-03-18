@@ -1,6 +1,30 @@
 include("ema.jl")
 include("cusum.jl")
 
+# ── Feature: type-stable named wrapper ──────────────────────────────────────
+
+"""
+    Feature{Name, F<:AbstractFeature}
+
+Type-stable wrapper that pairs a compile-time `Symbol` name with an
+[`AbstractFeature`](@ref) instance. The name is a type parameter,
+so `NamedTuple{(Name,)}` constructions are fully inferrable.
+
+Constructed automatically by [`Features`](@ref) from
+`Symbol => AbstractFeature` pairs — not intended for direct use.
+"""
+struct Feature{Name, F<:AbstractFeature}
+    feat::F
+    function Feature{Name}(feat::F) where {Name, F<:AbstractFeature}
+        return new{Name, F}(feat)
+    end
+end
+
+function (op::Feature{Name})(bars::PriceBars) where {Name}
+    result = op.feat(bars)
+    return NamedTuple{(Name,)}((result,))
+end
+
 # ── Features: named feature collection ──────────────────────────────────────
 
 """
@@ -22,10 +46,10 @@ vectors. Feature names are user-supplied via the `Pair` syntax —
 no automatic naming.
 
 # Type Parameters
-- `T<:Tuple`: tuple of `Pair{Symbol, <:AbstractFeature}` instances.
+- `T<:Tuple`: tuple of `Feature{Name, F}` instances.
 
 # Fields
-- `operations::T`: tuple of `Symbol => AbstractFeature` pairs
+- `operations::T`: tuple of `Feature` instances
     defining feature names and their computations.
 
 # Constructors
@@ -51,7 +75,10 @@ true
 ## Performance
 
 All features are computed back-to-back on the same input data via
-a `@generated` function that unrolls the pair tuple at compile time.
+a `@generated` function that unrolls the tuple at compile time.
+Because feature names are type parameters on [`Feature`](@ref),
+the `NamedTuple` construction in each per-feature call is fully
+type-stable — the compiler knows every return type at compile time.
 The data stays hot in L1/L2 cache for subsequent feature
 computations. A single `merge()` of per-feature results replaces
 `N` sequential merges into the growing pipeline `NamedTuple`.
@@ -80,7 +107,8 @@ result.features.ema_10  # access the EMA(10) result
 struct Features{T<:Tuple}
     operations::T
     function Features(ops::Pair{Symbol,<:AbstractFeature}...)
-        return new{typeof(ops)}(ops)
+        wrapped = map(p -> Feature{p.first}(p.second), ops)
+        return new{typeof(wrapped)}(wrapped)
     end
 end
 
@@ -111,24 +139,19 @@ end
 """
     (feats::Features{T})(bars::PriceBars) where {T<:Tuple} -> NamedTuple
 
-`@generated` function that unrolls the `Features` pair tuple at
-compile time, calling each feature's `Pair` functor independently
-and merging results in a single `merge()` call.
+`@generated` function that unrolls the `Features` tuple at compile
+time, calling each `Feature{Name, F}` functor independently and
+merging results in a single `merge()` call.
 
-The generated code is fully unrolled for the concrete pair tuple
-type, eliminating all runtime dispatch.
+Because each `Feature` carries its name as a type parameter, every
+per-feature call is type-stable and the generated code is fully
+unrolled for the concrete tuple type, eliminating all runtime
+dispatch.
 """
 @generated function (feats::Features{T})(bars::PriceBars) where {T<:Tuple}
     n = fieldcount(T)
     exprs = [:(feats.operations[$i](bars)) for i in 1:n]
     return :((bars=bars, features=merge($(exprs...))))
-end
-
-function (op::Pair{Symbol,<:AbstractFeature})(bars::PriceBars)
-    name = op.first
-    feat = op.second
-    result = feat(bars)
-    return NamedTuple{(name,)}((result,))
 end
 
 # ── @Features macro ─────────────────────────────────────────────────────────
