@@ -10,13 +10,15 @@ Compute EMA values using the recursive formula
 seed.
 
 # Fields
-- `period::Int`: the EMA period. Must be a positive integer.
+- `period::Int`: the EMA lookback window. Must be a positive integer.
+- `field::Symbol`: the [`PriceBars`](@ref) field to compute on
+    (default `:close`).
 
 # Constructors
-    EMA(period::Int)
+    EMA(period::Int; field::Symbol=:close)
 
 # Throws
-- `ArgumentError`: if period is non-positive.
+- `ArgumentError`: if `period` is non-positive.
 
 # Examples
 ```jldoctest
@@ -30,31 +32,28 @@ true
 
 # See also
 - [`CUSUM`](@ref): cumulative sum feature for structural breaks.
-- [`compute`](@ref): the dispatch point for all features.
+- [`Features`](@ref): named collection for pipeline composition.
+- [`compute`](@ref): standalone computation function.
+- [`compute!`](@ref): in-place computation function.
 
 # Extended help
 
 ## Callable Interface
 
-`EMA` instances are callable. When called with [`PriceBars`](@ref)
-or a `NamedTuple` from a previous pipeline stage, they compute the
-EMA on `bars.close` and merge the result into the pipeline data:
+`EMA` instances are callable. When called with [`PriceBars`](@ref),
+they extract the target field and return the raw EMA vector:
 
 ```julia
 bars = get_data("AAPL")
-result = EMA(10)(bars)
-# result is a NamedTuple with fields :bars, :ema_10
+ema_vals = EMA(10)(bars)  # Vector{Float64}
 ```
 
-The field names follow the pattern `:ema_<period>`.
-
-## Pipeline Composition
-
-Use `>>` to compose into a pipeline:
+To compose into a pipeline, wrap in [`Features`](@ref):
 
 ```julia
-job = bars >> EMA(10) >> evt >> lab
+job = bars >> Features(:ema_10 => EMA(10)) >> event >> label
 result = job()
+result.features.ema_10  # access the EMA vector
 ```
 
 ## Algorithm
@@ -66,7 +65,7 @@ The EMA is seeded with the Simple Moving Average (SMA) of the first
 
 where `α = 2 / (period + 1)`.
 
-The kernel (`_ema_kernel_unrolled!`) processes 4 elements per
+The kernel ([`_ema_kernel_unrolled!`]) processes 4 elements per
 iteration to improve instruction-level parallelism on modern CPUs.
 A scalar tail loop handles the remainder.
 """
@@ -79,23 +78,26 @@ struct EMA <: AbstractFeature
     end
 end
 
-_feature_field(feat::EMA) = feat.field
+function (feat::EMA)(bars::PriceBars)
+    series = getproperty(bars, feat.field)
+    return feat(series)
+end
 
 """
-    compute(feat::EMA, prices::AbstractVector{T}) where {T<:AbstractFloat} -> Vector{T}
+    compute(feat::EMA, prices::AbstractVector{T}) where {T<:Real} -> Vector{T}
 
 Compute EMA values for `prices` at the period specified in `feat`.
 
 Return a `Vector{T}` of length `length(prices)`. The element type
-of the output matches the input.
+of the output matches the input. The first `period - 1` entries
+are `NaN` (warmup).
 
 # Arguments
 - `feat::EMA`: the EMA feature instance.
-- `prices::AbstractVector{T}`: price series. Must have at least
-    `feat.period` elements for meaningful output.
+- `prices::AbstractVector{T}`: price series.
 
 # Returns
-- `Vector{T}`: first `period - 1` entries are `NaN`.
+- `Vector{T}`: EMA values. First `period - 1` entries are `NaN`.
 
 # Examples
 ```jldoctest
@@ -114,6 +116,7 @@ true
 
 # See also
 - [`EMA`](@ref): constructor and type documentation.
+- [`compute!`](@ref): in-place version.
 
 # Extended help
 
@@ -125,27 +128,26 @@ The EMA is seeded with the Simple Moving Average (SMA) of the first
     EMA[i] = α * price[i] + (1 - α) * EMA[i-1]
 
 where `α = 2 / (period + 1)`.
-
-The kernel (`_ema_kernel_unrolled!`) processes 4 elements per
-iteration to improve instruction-level parallelism on modern CPUs.
-A scalar tail loop handles the remainder.
 """
+function compute(feat::EMA, prices::AbstractVector{T}) where {T<:Real}
+    return feat(prices)
+end
 
-function compute(feat::EMA, prices::AbstractVector{T}) where {T<:AbstractFloat}
-    return _calculate_ema(prices, feat.period)
+function (feat::EMA)(x::AbstractVector{T}) where {T<:Real}
+    n = length(x)
+    dest = Vector{T}(undef, n)
+    _compute_ema!(dest, x, feat.period, n)
+    return dest
 end
 
 """
     compute!(dest::AbstractVector{T}, feat::EMA, prices::AbstractVector{T}) where {T<:AbstractFloat} -> dest
 
-Compute a single-period EMA in-place, writing results into the
-pre-allocated vector `dest`. This avoids allocation for
-performance-critical paths such as Monte Carlo simulations or
-high-frequency backtests.
+Compute EMA in-place, writing results into the pre-allocated
+vector `dest`.
 
 # Arguments
-- `dest::AbstractVector{T}`: output vector. Must have the same
-    length as `prices`.
+- `dest::AbstractVector{T}`: output vector, same length as `prices`.
 - `feat::EMA`: the EMA feature instance.
 - `prices::AbstractVector{T}`: the input price series.
 
@@ -179,106 +181,79 @@ function compute!(
     length(dest) == length(prices) || throw(
         DimensionMismatch("dest length $(length(dest)) != prices length $(length(prices))"),
     )
-    _single_ema!(dest, prices, feat.period, length(prices))
+    _compute_ema!(dest, prices, feat.period, length(prices))
     return dest
 end
 
 """
-    _feature_result(feat::EMA, prices) -> Vector
+    _compute_ema!(dest, x, p, n) -> Nothing
 
-Compute the EMA and return the result vector for pipeline
-composition.
-"""
-function _feature_result(feat::EMA, prices::AbstractVector{T}) where {T<:AbstractFloat}
-    return compute(feat, prices)
-end
-
-"""
-    _feature_names(feat::EMA) -> Tuple{Symbol}
-
-Return the named keys for this feature's pipeline output.
-"""
-_feature_names(feat::EMA) = (Symbol(:ema_, feat.period),)
-
-"""
-    _calculate_ema(prices::AbstractVector{T}, period::Int) -> Vector{T}
-
-Allocate a result vector and compute a single EMA of `period` over
-`prices`.
-"""
-function _calculate_ema(prices::AbstractVector{T}, period::Int) where {T<:AbstractFloat}
-    n_prices = length(prices)
-    results = Vector{T}(undef, n_prices)
-    _single_ema!(results, prices, period, n_prices)
-    return results
-end
-
-"""
-    _single_ema!(dest, prices, p, n) -> Nothing
-
-Compute a single EMA of period `p` over `prices[1:n]`, writing
-results into `dest`. Fill `dest[1:p-1]` with `NaN` (warmup), set
-`dest[p]` to the SMA seed, then delegate to the unrolled kernel.
+Compute a single EMA of period `p` over `x[1:n]`, writing results
+into `dest`. Fill `dest[1:p-1]` with `NaN` (warmup), set `dest[p]`
+to the SMA seed, then delegate to the unrolled kernel.
 
 When `p > n`, fill the entire output with `NaN`.
 """
-function _single_ema!(
-    dest::AbstractVector{T}, prices::AbstractVector{T}, p::Int, n::Int
-) where {T<:AbstractFloat}
+function _compute_ema!(
+    dest::AbstractVector{T}, x::AbstractVector{T}, p::Int, n::Int
+) where {T<:Real}
     if p > n
         fill!(dest, T(NaN))
         return nothing
     end
     @views fill!(dest[1:(p - 1)], T(NaN))
-    dest[p] = _sma_seed(prices, p)
-    α = T(2) / T(p + 1)
-    β = one(T) - α
-    _ema_kernel_unrolled!(dest, prices, p, n, α, β)
+    dest[p] = _sma_seed(x, p)
+    alpha = T(2) / T(p + 1)
+    beta = one(T) - alpha
+    _ema_kernel_unrolled!(dest, x, p, n, alpha, beta)
     return nothing
 end
 
-"""Return the simple moving average of `prices[1:p]`."""
-@inline function _sma_seed(prices::AbstractVector{T}, p::Int) where {T<:AbstractFloat}
-    s = zero(T)
-    @fastmath @inbounds @simd for i in 1:p
-        s += prices[i]
+"""Return the simple moving average of `x[1:p]`."""
+@inline function _sma_seed(x::AbstractVector{T}, p::Int) where {T<:AbstractFloat}
+    @fastmath @inbounds begin
+        s = zero(T)
+        @simd for i in 1:p
+            s += x[i]
+        end
+        return s / T(p)
     end
-    return s / T(p)
 end
 
 """
-    _ema_kernel_unrolled!(ema, prices, p, n, α, β) -> Nothing
+    _ema_kernel_unrolled!(ema, x, p, n, alpha, beta) -> Nothing
 
 Fill `ema[p+1:n]` with EMA values using 4-wide loop unrolling for
 instruction-level parallelism.
 
 Mutate `ema` in-place. Assume `ema[p]` is already set to the SMA
-seed. This function is the hot path — it must remain zero-allocation
-and type-stable.
+seed. This function is the hot path — it must remain
+zero-allocation and type-stable.
 
-`α` is the smoothing factor `2/(period+1)` and `β = 1 - α`.
+`alpha` is the smoothing factor `2/(period+1)` and `beta = 1 - alpha`.
 """
 @inline function _ema_kernel_unrolled!(
-    ema::AbstractVector{T}, prices::AbstractVector{T}, p::Int, n::Int, α::T, β::T
-) where {T<:AbstractFloat}
-    # Pre-compute powers for the 4-wide unrolled recurrence
-    β2, β3, β4 = β^2, β^3, β^4
-    c0, c1, c2, c3 = α, α * β, α * β2, α * β3
-    @inbounds prev = ema[p]
-    i = p + 1
-    @fastmath @inbounds while i <= n - 3
-        p1, p2, p3, p4 = prices[i], prices[i + 1], prices[i + 2], prices[i + 3]
-        ema[i] = c0 * p1 + β * prev
-        ema[i + 1] = c0 * p2 + c1 * p1 + β2 * prev
-        ema[i + 2] = c0 * p3 + c1 * p2 + c2 * p1 + β3 * prev
-        ema[i + 3] = c0 * p4 + c1 * p3 + c2 * p2 + c3 * p1 + β4 * prev
-        prev = ema[i + 3]
-        i += 4
-    end
-    # Scalar tail for remaining elements
-    @fastmath @inbounds while i <= n
-        prev = α * prices[i] + β * prev
-        ema[i] = prev
-        i += 1
+    ema::AbstractVector{T}, x::AbstractVector{T}, p::Int, n::Int, alpha::T, beta::T
+) where {T<:Real}
+    @fastmath @inbounds begin
+        # Powers for 4-wide unrolled recurrence
+        beta2, beta3, beta4 = beta^2, beta^3, beta^4
+        c0, c1, c2, c3 = alpha, alpha * beta, alpha * beta2, alpha * beta3
+        prev = ema[p]
+        i = p + 1
+        while i <= n - 3
+            p1, p2, p3, p4 = x[i], x[i + 1], x[i + 2], x[i + 3]
+            ema[i] = c0 * p1 + beta * prev
+            ema[i + 1] = c0 * p2 + c1 * p1 + beta2 * prev
+            ema[i + 2] = c0 * p3 + c1 * p2 + c2 * p1 + beta3 * prev
+            ema[i + 3] = c0 * p4 + c1 * p3 + c2 * p2 + c3 * p1 + beta4 * prev
+            prev = ema[i + 3]
+            i += 4
+        end
+        while i <= n
+            prev = alpha * x[i] + beta * prev
+            ema[i] = prev
+            i += 1
+        end
     end
 end

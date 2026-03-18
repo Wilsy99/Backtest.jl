@@ -19,9 +19,11 @@ accumulator exceeds the threshold, a structural break is signalled
 - `span::Int`: lookback window for the EMA of squared returns.
 - `expected_value::T`: assumed expected return, subtracted from
     log-returns before accumulation.
+- `field::Symbol`: the [`PriceBars`](@ref) field to compute on
+    (default `:close`).
 
 # Constructors
-    CUSUM(multiplier::Real; span=100, expected_value=0.0)
+    CUSUM(multiplier::Real; span=100, expected_value=0.0, field::Symbol=:close)
 
 # Throws
 - `ArgumentError`: if `multiplier` is non-positive or `span` is not
@@ -43,7 +45,9 @@ true
 # See also
 - [`EMA`](@ref): a smoothing feature (contrast with CUSUM's
     change-detection approach).
-- [`compute`](@ref): the dispatch point for all features.
+- [`Features`](@ref): named collection for pipeline composition.
+- [`compute`](@ref): standalone computation function.
+- [`compute!`](@ref): in-place computation function.
 
 # Extended help
 
@@ -62,10 +66,28 @@ as a volatility estimate, scaled by `multiplier`.
 
 ## Warmup
 
-The first `span` + 1 bars are used to initialise the EMA of squared
+The first `span + 1` bars initialise the EMA of squared
 log-returns. No signals are produced during this warmup period. If
-the input has `span` + 1 or fewer bars, a warning is emitted and all-zeros
-are returned.
+the input has `span + 1` or fewer bars, a warning is emitted and
+all-zeros are returned.
+
+## Callable Interface
+
+`CUSUM` instances are callable. When called with [`PriceBars`](@ref),
+they extract the target field and return the raw signal vector:
+
+```julia
+bars = get_data("AAPL")
+signals = CUSUM(1.0)(bars)  # Vector{Int8}
+```
+
+To compose into a pipeline, wrap in [`Features`](@ref):
+
+```julia
+job = bars >> Features(:cusum => CUSUM(1.0)) >> event >> label
+result = job()
+result.features.cusum  # access the signal vector
+```
 
 ## References
 
@@ -73,18 +95,6 @@ are returned.
   *Biometrika*, 41(1/2), 100–115.
 - De Prado, M. L. (2018). *Advances in Financial Machine Learning*.
   Chapter 2: CUSUM Filter.
-
-## Callable Interface
-
-`CUSUM` instances are callable. When called with [`PriceBars`](@ref)
-or a `NamedTuple` from a previous pipeline stage, they compute the
-CUSUM on `bars.close` and merge the result:
-
-```julia
-bars = get_data("AAPL")
-result = CUSUM(1.0)(bars)
-# result is a NamedTuple with fields :bars, :cusum
-```
 """
 struct CUSUM{T<:AbstractFloat} <: AbstractFeature
     multiplier::T
@@ -102,16 +112,19 @@ function CUSUM(multiplier::Real; span=100, expected_value=0.0, field::Symbol=:cl
     return CUSUM{T}(multiplier, span, expected_value, field)
 end
 
-_feature_field(feat::CUSUM) = feat.field
+function (feat::CUSUM)(bars::PriceBars)
+    series = getproperty(bars, feat.field)
+    return feat(series)
+end
 
 """
-    compute(feat::CUSUM, prices::AbstractVector{T}) where {T<:AbstractFloat} -> Vector{Int8}
+    compute(feat::CUSUM, prices::AbstractVector{T}) where {T<:Real} -> Vector{Int8}
 
 Compute CUSUM filter signals for `prices`.
 
 Return a `Vector{Int8}` of length `length(prices)` where each entry
 is `Int8(1)` (upward break), `Int8(-1)` (downward break), or
-`Int8(0)` (no signal). The first `span` + 1 entries are always zero
+`Int8(0)` (no signal). The first `span + 1` entries are always zero
 (warmup period).
 
 # Arguments
@@ -121,9 +134,6 @@ is `Int8(1)` (upward break), `Int8(-1)` (downward break), or
 
 # Returns
 - `Vector{Int8}`: signal vector. Values are in `{-1, 0, 1}`.
-
-# Throws
-- `DomainError`: if any price is negative (from `log`).
 
 # Examples
 ```jldoctest
@@ -139,24 +149,35 @@ julia> vals[12]
 
 # See also
 - [`CUSUM`](@ref): constructor and type documentation.
+- [`compute!`](@ref): in-place version.
 """
-function compute(feat::CUSUM, prices::AbstractVector{T}) where {T<:AbstractFloat}
-    return _calculate_cusum(prices, feat.multiplier, feat.span, feat.expected_value)
+function compute(feat::CUSUM, prices::AbstractVector{T}) where {T<:Real}
+    return feat(prices)
+end
+
+function (feat::CUSUM)(x::AbstractVector{T}) where {T<:Real}
+    n = length(x)
+    warmup_idx = feat.span + 1
+    if n <= warmup_idx
+        return _warn_and_return_zeros(n, warmup_idx)
+    end
+    dest = zeros(Int8, n)
+    _compute_cusum!(feat, dest, x, warmup_idx)
+    return dest
 end
 
 """
     compute!(dest::AbstractVector{Int8}, feat::CUSUM, prices::AbstractVector{T}) where {T<:AbstractFloat} -> dest
 
 Compute CUSUM filter signals in-place, writing results into the
-pre-allocated vector `dest`. This avoids allocation for
-performance-critical paths.
+pre-allocated vector `dest`.
 
 `dest` is first zeroed, then filled with signals (`Int8(1)`,
 `Int8(-1)`, or `Int8(0)`).
 
 # Arguments
-- `dest::AbstractVector{Int8}`: output vector. Must have the same
-    length as `prices`.
+- `dest::AbstractVector{Int8}`: output vector, same length as
+    `prices`.
 - `feat::CUSUM`: the CUSUM feature instance.
 - `prices::AbstractVector{T}`: the input price series.
 
@@ -181,115 +202,73 @@ function compute!(
     if n <= warmup_idx
         return dest
     end
-    _calculate_cusum!(dest, prices, feat.multiplier, feat.span, feat.expected_value)
+    _compute_cusum!(feat, dest, prices, warmup_idx)
     return dest
 end
 
 """
-    _feature_result(feat::CUSUM, prices) -> Vector{Int8}
-
-Compute the CUSUM and return the result vector for pipeline
-composition.
-"""
-function _feature_result(feat::CUSUM, prices::AbstractVector{T}) where {T<:AbstractFloat}
-    return compute(feat, prices)
-end
-
-"""
-    _feature_names(feat::CUSUM) -> Tuple{Symbol}
-
-Return the named keys for this feature's pipeline output.
-"""
-_feature_names(::CUSUM) = (:cusum,)
-
-"""
-    _calculate_cusum(prices, multiplier, span, expected_value) -> Vector{Int8}
-
-Core CUSUM computation. Allocate a result vector and run the
-two-accumulator filter with adaptive volatility threshold.
-
-Assume all prices are strictly positive (caller must validate).
-"""
-function _calculate_cusum(
-    prices::AbstractVector{T}, multiplier::T, span::Int, expected_value::T
-) where {T<:AbstractFloat}
-    n = length(prices)
-    warmup_idx = span + 1
-    if n <= warmup_idx
-        return _warn_and_return_zeros(n, warmup_idx)
-    end
-    cusum_values = zeros(Int8, n)
-    _calculate_cusum!(cusum_values, prices, multiplier, span, expected_value)
-    return cusum_values
-end
-
-"""
-    _calculate_cusum!(dest, prices, multiplier, span, expected_value) -> Nothing
+    _compute_cusum!(feat, dest, x, warmup_idx) -> Nothing
 
 In-place CUSUM computation. `dest` must be pre-zeroed and have
-length `>= span + 2`.
+length `>= warmup_idx + 1`.
 
-The first `span` + 1 bars initialise the EMA of squared log-returns. Post-
-warmup, each bar updates the positive and negative accumulators. When
-either exceeds the adaptive threshold (`sqrt(ema_sq_mean) * mult`),
-a signal is recorded and the accumulator resets.
+The first `warmup_idx` bars initialise the EMA of squared
+log-returns. Post-warmup, each bar updates the positive and negative
+accumulators. When either exceeds the adaptive threshold
+(`sqrt(ema_sq_mean) * multiplier`), a signal is recorded and the
+accumulator resets.
 """
-function _calculate_cusum!(
-    dest::AbstractVector{Int8}, prices::AbstractVector{T},
-    multiplier::T, span::Int, expected_value::T
-) where {T<:AbstractFloat}
-    n = length(prices)
-    warmup_idx = span + 1
+function _compute_cusum!(
+    feat::CUSUM, dest::AbstractVector{Int8}, x::AbstractVector{T}, warmup_idx::Int
+) where {T<:Real}
+    n = length(x)
+    @fastmath @inbounds begin
+        alpha = T(2.0) / (T(feat.span) + one(T))
+        beta = one(T) - alpha
 
-    α = T(2.0) / (T(span) + one(T))
-    β = one(T) - α
-    expected = expected_value
-    mult = multiplier
+        # ── Warmup: accumulate squared log-returns for volatility seed ──
+        sum_sq_ret = zero(T)
+        prev_log = log(x[1])
 
-    # ── Warmup: accumulate squared log-returns for volatility seed ──
-    sum_sq_ret = zero(T)
-    prev_log = log(prices[1])
-
-    @fastmath @inbounds for k in 2:warmup_idx
-        curr_log = log(prices[k])
-        sum_sq_ret += (curr_log - prev_log)^2
-        prev_log = curr_log
-    end
-
-    ema_sq_mean = sum_sq_ret / T(warmup_idx - 1)
-    s_pos = zero(T)
-    s_neg = zero(T)
-
-    # ── Post-warmup: detect structural breaks ──
-    @fastmath @inbounds for i in (warmup_idx + 1):n
-        curr_log = log(prices[i])
-        log_return = curr_log - prev_log
-        prev_log = curr_log
-
-        # Floor prevents sqrt(0) when prices are flat during warmup
-        threshold = sqrt(max(T(1e-16), ema_sq_mean)) * mult
-
-        s_pos = max(zero(T), s_pos + log_return - expected)
-        s_neg = min(zero(T), s_neg + log_return + expected)
-
-        if s_pos > threshold
-            dest[i] = 1
-            s_pos = zero(T)
-        elseif s_neg < -threshold
-            dest[i] = -1
-            s_neg = zero(T)
+        for k in 2:warmup_idx
+            curr_log = log(x[k])
+            sum_sq_ret += (curr_log - prev_log)^2
+            prev_log = curr_log
         end
 
-        ema_sq_mean = α * log_return^2 + β * ema_sq_mean
-    end
+        ema_sq_mean = sum_sq_ret / T(warmup_idx - 1)
+        s_pos = zero(T)
+        s_neg = zero(T)
 
-    return nothing
+        for i in (warmup_idx + 1):n
+            curr_log = log(x[i])
+            log_return = curr_log - prev_log
+            prev_log = curr_log
+
+            # Floor prevents sqrt(0) when prices are flat during warmup
+            threshold = sqrt(max(T(1e-16), ema_sq_mean)) * feat.multiplier
+
+            s_pos = max(zero(T), s_pos + log_return - feat.expected_value)
+            s_neg = min(zero(T), s_neg + log_return + feat.expected_value)
+
+            if s_pos > threshold
+                dest[i] = 1
+                s_pos = zero(T)
+            elseif s_neg < -threshold
+                dest[i] = -1
+                s_neg = zero(T)
+            end
+
+            ema_sq_mean = alpha * log_return^2 + beta * ema_sq_mean
+        end
+        return nothing
+    end
 end
 
-"""Return zeros and warn when data is shorter than the warmup period"""
-# This helper is marked @noinline and separated from the main loop to prevent
-# the compiler from allocating memory for the warning infrastructure (string
-# formatting, etc.) during the nominal execution path of `_calculate_cusum`.
+# Separated from the hot path to prevent the compiler from allocating
+# memory for warning infrastructure (string formatting) during nominal
+# execution of `_compute_cusum!`.
+"""Return zeros and warn when data is shorter than the warmup period."""
 @noinline function _warn_and_return_zeros(n, warmup_idx)
     @warn "Data length ($n) is less than warmup ($warmup_idx). Returning zeros."
     return zeros(Int8, n)
