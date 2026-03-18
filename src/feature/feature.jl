@@ -131,6 +131,51 @@ function (op::Pair{Symbol,<:AbstractFeature})(bars::PriceBars)
     return NamedTuple{(name,)}((result,))
 end
 
+# ── @Features macro ─────────────────────────────────────────────────────────
+
+"""
+    @Features name = Feature(...) [name2 = Feature2(...) ...]
+
+Construct a [`Features`](@ref) collection using assignment syntax.
+
+Each argument is a `name = Feature(...)` expression. The left-hand
+side becomes the `Symbol` key and the right-hand side becomes the
+[`AbstractFeature`](@ref) instance.
+
+# Examples
+```jldoctest
+julia> using Backtest
+
+julia> f = @Features ema_10 = EMA(10) ema_20 = EMA(20);
+
+julia> f isa Features
+true
+```
+
+Equivalent to:
+```julia
+Features(:ema_10 => EMA(10), :ema_20 => EMA(20))
+```
+
+# See also
+- [`Features`](@ref): the underlying type.
+- [`@Event`](@ref): similar DSL macro for event construction.
+"""
+macro Features(args...)
+    pairs = Expr[]
+    for arg in args
+        if !(arg isa Expr && arg.head === :(=))
+            throw(ArgumentError(
+                "@Features expects `name = Feature(...)` syntax, got: $arg"
+            ))
+        end
+        sym = QuoteNode(arg.args[1])
+        feat = esc(arg.args[2])
+        push!(pairs, :($sym => $feat))
+    end
+    return :(Features($(pairs...)))
+end
+
 # ── compute wrappers ────────────────────────────────────────────────────────
 
 """
