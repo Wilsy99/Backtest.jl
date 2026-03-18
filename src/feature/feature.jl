@@ -131,6 +131,91 @@ function (op::Pair{Symbol,<:AbstractFeature})(bars::PriceBars)
     return NamedTuple{(name,)}((result,))
 end
 
+# ── @Features macro ─────────────────────────────────────────────────────────
+
+"""
+    @Features name = Feature(...) [name2 = Feature2(...) ...]
+
+Construct a [`Features`](@ref) collection using assignment syntax.
+
+Each argument is a `name = Feature(...)` expression. The left-hand
+side becomes the `Symbol` key and the right-hand side becomes the
+[`AbstractFeature`](@ref) instance.
+
+All four syntactic forms are accepted:
+
+    @Features ema_10 = EMA(10)           # preferred
+    @Features ema_10 .= EMA(10)          # broadcast-assign style
+    @Features :ema_10 = EMA(10)          # quoted symbol
+    @Features :ema_10 => EMA(10)         # pair syntax
+
+# Examples
+```jldoctest
+julia> using Backtest
+
+julia> f = @Features ema_10 = EMA(10) ema_20 = EMA(20);
+
+julia> f isa Features
+true
+```
+
+Equivalent to:
+```julia
+Features(:ema_10 => EMA(10), :ema_20 => EMA(20))
+```
+
+# See also
+- [`Features`](@ref): the underlying type.
+- [`@Event`](@ref): similar DSL macro for event construction.
+"""
+macro Features(args...)
+    pairs = Expr[]
+    for arg in args
+        sym, feat = _parse_feature_arg(arg)
+        push!(pairs, :($(QuoteNode(sym)) => $(esc(feat))))
+    end
+    return :(Features($(pairs...)))
+end
+
+"""
+    _parse_feature_arg(arg) -> (name::Symbol, feat)
+
+Extract a `(Symbol, feature_expr)` pair from a single `@Features`
+argument. Accept four forms:
+
+- `name = Feat(...)` — assignment (`head === :(=)`)
+- `name .= Feat(...)` — broadcast-assign (`head === :.=`)
+- `:name = Feat(...)` — quoted symbol on LHS (`args[1]` is a
+    `QuoteNode`)
+- `:name => Feat(...)` — pair literal (`head === :call`,
+    `args[1] === :(=>)`)
+"""
+function _parse_feature_arg(arg)
+    if arg isa Expr && (arg.head === :(=) || arg.head === :.=)
+        lhs = arg.args[1]
+        feat = arg.args[2]
+        # Unwrap QuoteNode for :name = Feat(...) form
+        sym = lhs isa QuoteNode ? lhs.value : lhs
+        sym isa Symbol || throw(ArgumentError(
+            "@Features: left-hand side must be a name, got: $lhs"
+        ))
+        return (sym, feat)
+    elseif arg isa Expr && arg.head === :call && arg.args[1] === :(=>)
+        lhs = arg.args[2]
+        feat = arg.args[3]
+        # :name => Feat(...) parses with lhs as QuoteNode
+        sym = lhs isa QuoteNode ? lhs.value : lhs
+        sym isa Symbol || throw(ArgumentError(
+            "@Features: left-hand side of => must be a :symbol, got: $lhs"
+        ))
+        return (sym, feat)
+    else
+        throw(ArgumentError(
+            "@Features expects `name = Feature(...)` syntax, got: $arg"
+        ))
+    end
+end
+
 # ── compute wrappers ────────────────────────────────────────────────────────
 
 """
