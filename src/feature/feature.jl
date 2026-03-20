@@ -110,6 +110,9 @@ struct Features{T<:Tuple}
         wrapped = map(p -> Feature{p.first}(p.second), ops)
         return new{typeof(wrapped)}(wrapped)
     end
+    function Features(ops::Feature...)
+        return new{typeof(ops)}(ops)
+    end
 end
 
 """
@@ -192,12 +195,12 @@ Features(:ema_10 => EMA(10), :ema_20 => EMA(20))
 - [`@Event`](@ref): similar DSL macro for event construction.
 """
 macro Features(args...)
-    pairs = Expr[]
+    feature_exprs = Expr[]
     for arg in args
         sym, feat = _parse_feature_arg(arg)
-        push!(pairs, :($(QuoteNode(sym)) => $(esc(feat))))
+        push!(feature_exprs, :(Feature{$(QuoteNode(sym))}($(esc(feat)))))
     end
-    return :(Features($(pairs...)))
+    return :(Features($(feature_exprs...)))
 end
 
 """
