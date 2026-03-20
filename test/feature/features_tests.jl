@@ -192,6 +192,27 @@ end
     @test result.bars === bars
 end
 
+@testitem "Features: Merges Existing Features Instead of Overwriting" tags = [
+    :feature, :features, :property
+] setup = [TestData] begin
+    using Backtest, Test
+
+    bars = TestData.make_pricebars(; n=200)
+
+    # First Features call adds :ema_10
+    step1 = Features(:ema_10 => EMA(10))(bars)
+    @test haskey(step1.features, :ema_10)
+
+    # Second Features call adds :ema_20 — should merge, not overwrite
+    step2 = Features(:ema_20 => EMA(20))(step1)
+    @test haskey(step2.features, :ema_10)
+    @test haskey(step2.features, :ema_20)
+
+    # Values are correct
+    @test isequal(step2.features.ema_10, compute(EMA(10), bars.close))
+    @test isequal(step2.features.ema_20, compute(EMA(20), bars.close))
+end
+
 @testitem "Features: Pipe Operator |>" tags = [:feature, :features, :unit] setup = [
     TestData
 ] begin
