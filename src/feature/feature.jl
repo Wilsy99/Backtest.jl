@@ -136,7 +136,12 @@ merge `(features=(...),)` into the input. When called with
 """
 function (feats::Features)(d::NamedTuple)
     feats_results = feats(d.bars)
-    return merge(d, feats_results)
+    if hasproperty(d, :features)
+        merged_features = merge(d.features, feats_results.features)
+        return merge(d, (features=merged_features,))
+    else
+        return merge(d, feats_results)
+    end
 end
 
 """
