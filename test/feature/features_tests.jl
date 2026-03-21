@@ -338,3 +338,70 @@ end
     @test actual <= budget
     @test actual > 0
 end
+
+# ── FeatureResults Container Tests ──
+
+@testitem "FeatureResults: Pipeline Returns FeatureResults" tags = [
+    :feature, :features, :unit
+] setup = [TestData] begin
+    using Backtest, Test
+
+    bars = TestData.make_pricebars(; n=200)
+    result = Features(:ema_10 => EMA(10))(bars)
+
+    @test result.features isa FeatureResults
+end
+
+@testitem "FeatureResults: getproperty Forwards to Inner NamedTuple" tags = [
+    :feature, :features, :unit
+] setup = [TestData] begin
+    using Backtest, Test
+
+    bars = TestData.make_pricebars(; n=200)
+    result = Features(:ema_10 => EMA(10), :ema_20 => EMA(20))(bars)
+
+    @test result.features.ema_10 isa Vector{Float64}
+    @test result.features.ema_20 isa Vector{Float64}
+    @test isequal(result.features.ema_10, compute(EMA(10), bars.close))
+end
+
+@testitem "FeatureResults: haskey and keys" tags = [
+    :feature, :features, :unit
+] setup = [TestData] begin
+    using Backtest, Test
+
+    bars = TestData.make_pricebars(; n=200)
+    result = Features(:ema_10 => EMA(10), :cusum => CUSUM(1.0))(bars)
+
+    @test haskey(result.features, :ema_10)
+    @test haskey(result.features, :cusum)
+    @test !haskey(result.features, :nonexistent)
+    @test Set(keys(result.features)) == Set([:ema_10, :cusum])
+    @test length(keys(result.features)) == 2
+end
+
+@testitem "FeatureResults: getindex with Symbol" tags = [
+    :feature, :features, :unit
+] setup = [TestData] begin
+    using Backtest, Test
+
+    bars = TestData.make_pricebars(; n=200)
+    result = Features(:ema_10 => EMA(10))(bars)
+
+    @test result.features[:ema_10] === result.features.ema_10
+end
+
+@testitem "FeatureResults: merge Preserves FeatureResults Type" tags = [
+    :feature, :features, :property
+] setup = [TestData] begin
+    using Backtest, Test
+
+    bars = TestData.make_pricebars(; n=200)
+
+    step1 = Features(:ema_10 => EMA(10))(bars)
+    step2 = Features(:ema_20 => EMA(20))(step1)
+
+    @test step2.features isa FeatureResults
+    @test haskey(step2.features, :ema_10)
+    @test haskey(step2.features, :ema_20)
+end
