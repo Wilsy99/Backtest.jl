@@ -15,6 +15,7 @@ include("label/label.jl")
 
 export PriceBars, TimeBar
 export AbstractFeature, EMA, CUSUM, Features, @Features, compute, compute!
+export FunctionFeature, StaticFeature, wrap_feature
 export AbstractDirection, LongOnly, ShortOnly, LongShort
 export AbstractSide, Crossover, calculate_side
 export AbstractEvent, Event, @Event, calculate_event

@@ -316,6 +316,137 @@ end
     @test actual > 0
 end
 
+# ── Phase 2: FunctionFeature and StaticFeature ──
+
+@testitem "Features: FunctionFeature — Custom Function" tags = [
+    :feature, :features, :unit
+] setup = [TestData] begin
+    using Backtest, Test
+
+    bars = TestData.make_pricebars(; n=200)
+
+    # User-supplied function that computes a simple rolling mean
+    my_indicator = bars -> cumsum(bars.close) ./ (1:length(bars.close))
+
+    f = Features(:custom => my_indicator, :ema_10 => EMA(10))
+    result = f(bars)
+
+    @test haskey(result, :bars)
+    @test haskey(result, :features)
+    @test haskey(result.features, :custom)
+    @test haskey(result.features, :ema_10)
+    @test result.features.custom ≈ cumsum(bars.close) ./ (1:length(bars.close))
+    @test isequal(result.features.ema_10, compute(EMA(10), bars.close))
+end
+
+@testitem "Features: StaticFeature — Pre-computed Vector" tags = [
+    :feature, :features, :unit
+] setup = [TestData] begin
+    using Backtest, Test
+
+    bars = TestData.make_pricebars(; n=200)
+
+    precomputed = collect(1.0:200.0)
+
+    f = Features(:static_val => precomputed, :ema_10 => EMA(10))
+    result = f(bars)
+
+    @test haskey(result.features, :static_val)
+    @test haskey(result.features, :ema_10)
+    @test result.features.static_val === precomputed
+    @test isequal(result.features.ema_10, compute(EMA(10), bars.close))
+end
+
+@testitem "Features: Mixed Types — AbstractFeature + Function + Vector" tags = [
+    :feature, :features, :unit
+] setup = [TestData] begin
+    using Backtest, Test
+
+    bars = TestData.make_pricebars(; n=200)
+
+    precomputed = fill(42.0, 200)
+    my_func = bars -> bars.high .- bars.low
+
+    f = Features(:ema_10 => EMA(10), :range => my_func, :constant => precomputed)
+    result = f(bars)
+
+    @test haskey(result.features, :ema_10)
+    @test haskey(result.features, :range)
+    @test haskey(result.features, :constant)
+    @test isequal(result.features.ema_10, compute(EMA(10), bars.close))
+    @test result.features.range ≈ bars.high .- bars.low
+    @test result.features.constant === precomputed
+end
+
+@testitem "Features: FunctionFeature Type Stability" tags = [
+    :feature, :features, :stability
+] setup = [TestData] begin
+    using Backtest, Test
+
+    bars = TestData.make_pricebars(; n=200)
+    f = Features(:custom => bars -> bars.close .* 2.0)
+
+    @test @inferred(f(bars)) isa NamedTuple
+end
+
+@testitem "Features: StaticFeature Type Stability" tags = [
+    :feature, :features, :stability
+] setup = [TestData] begin
+    using Backtest, Test
+
+    bars = TestData.make_pricebars(; n=200)
+    f = Features(:static_val => collect(1.0:200.0))
+
+    @test @inferred(f(bars)) isa NamedTuple
+end
+
+@testitem "Features: wrap_feature Dispatch" tags = [:feature, :features, :unit] begin
+    using Backtest, Test
+
+    ema = EMA(10)
+    @test wrap_feature(ema) === ema
+
+    f = x -> x
+    wrapped_f = wrap_feature(f)
+    @test wrapped_f isa FunctionFeature
+    @test wrapped_f.f === f
+
+    v = [1.0, 2.0, 3.0]
+    wrapped_v = wrap_feature(v)
+    @test wrapped_v isa StaticFeature
+    @test wrapped_v.values === v
+end
+
+@testitem "Features: @Features Macro with Function" tags = [
+    :feature, :features, :macro
+] setup = [TestData] begin
+    using Backtest, Test
+
+    bars = TestData.make_pricebars(; n=200)
+
+    f = @Features range = (bars -> bars.high .- bars.low) ema_10 = EMA(10)
+    result = f(bars)
+
+    @test haskey(result.features, :range)
+    @test haskey(result.features, :ema_10)
+    @test result.features.range ≈ bars.high .- bars.low
+end
+
+@testitem "Features: Pipeline with FunctionFeature" tags = [
+    :feature, :features, :integration
+] setup = [TestData] begin
+    using Backtest, Test
+
+    bars = TestData.make_pricebars(; n=200)
+
+    job = bars >> Features(:ema_10 => EMA(10), :spread => bars -> bars.high .- bars.low)
+    result = job()
+
+    @test haskey(result.features, :ema_10)
+    @test haskey(result.features, :spread)
+    @test result.bars === bars
+end
+
 @testitem "Features: Allocation — AbstractVector Path" tags = [
     :feature, :features, :allocation
 ] begin

@@ -1,5 +1,6 @@
 include("ema.jl")
 include("cusum.jl")
+include("wrappers.jl")
 
 # ── Feature: type-stable named wrapper ──────────────────────────────────────
 
@@ -34,16 +35,22 @@ Named feature collection that computes multiple features in a single
 pipeline step and nests results under a `:features` key.
 
 Replace individual feature calls with explicit
-`Symbol => AbstractFeature` pairs:
+`Symbol => value` pairs, where `value` can be an [`AbstractFeature`](@ref),
+a `Function`, or a pre-computed `AbstractVector`:
 
 ```julia
 bars |> Features(:ema_10 => EMA(10), :ema_20 => EMA(20), :cusum => CUSUM(1))
+bars |> Features(:my_rsi => bars -> my_rsi(bars.close, 14))
+bars |> Features(:vix => precomputed_vix_vector)
 ```
 
 Results are nested under a `:features` key in the pipeline
 `NamedTuple`, giving downstream stages a clean namespace for feature
 vectors. Feature names are user-supplied via the `Pair` syntax —
 no automatic naming.
+
+Functions and vectors are automatically wrapped via [`wrap_feature`](@ref)
+into [`FunctionFeature`](@ref) and [`StaticFeature`](@ref) respectively.
 
 # Type Parameters
 - `T<:Tuple`: tuple of `Feature{Name, F}` instances.
@@ -53,7 +60,7 @@ no automatic naming.
     defining feature names and their computations.
 
 # Constructors
-    Features(ops::Pair{Symbol, <:AbstractFeature}...)
+    Features(ops::Pair{Symbol}...)
 
 # Examples
 ```jldoctest
@@ -106,8 +113,8 @@ result.features.ema_10  # access the EMA(10) result
 """
 struct Features{T<:Tuple}
     operations::T
-    function Features(ops::Pair{Symbol,<:AbstractFeature}...)
-        wrapped = map(p -> Feature{p.first}(p.second), ops)
+    function Features(ops::Pair{Symbol}...)
+        wrapped = map(p -> Feature{p.first}(wrap_feature(p.second)), ops)
         return new{typeof(wrapped)}(wrapped)
     end
     function Features(ops::Feature...)
@@ -203,7 +210,7 @@ macro Features(args...)
     feature_exprs = Expr[]
     for arg in args
         sym, feat = _parse_feature_arg(arg)
-        push!(feature_exprs, :(Feature{$(QuoteNode(sym))}($(esc(feat)))))
+        push!(feature_exprs, :(Feature{$(QuoteNode(sym))}(wrap_feature($(esc(feat))))))
     end
     return :(Features($(feature_exprs...)))
 end
