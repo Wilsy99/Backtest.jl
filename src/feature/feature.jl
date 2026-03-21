@@ -30,6 +30,41 @@ end
 (f::PrecomputedFeature)(::AbstractVector) = f.data
 (f::PrecomputedFeature)(::NamedTuple) = f.data
 
+# ── FeatureResults: typed container for computed features ──────────────────
+
+"""
+    FeatureResults{T<:NamedTuple}
+
+Typed container wrapping the `NamedTuple` of computed feature vectors.
+Stored under the `:features` key of the pipeline `NamedTuple`,
+accessed transparently via `d.features.ema_10`.
+
+Supports `getproperty`, `haskey`, `keys`, `merge`, and `getindex`
+so it behaves like a `NamedTuple` in downstream code while giving
+the type system a concrete nominal type to dispatch on.
+
+Constructed automatically by [`Features`](@ref) — not intended for
+direct use.
+"""
+struct FeatureResults{T<:NamedTuple}
+    data::T
+end
+
+Base.getproperty(fr::FeatureResults, s::Symbol) =
+    s === :data ? getfield(fr, :data) : getproperty(getfield(fr, :data), s)
+Base.haskey(fr::FeatureResults, s::Symbol) = haskey(getfield(fr, :data), s)
+Base.keys(fr::FeatureResults) = keys(getfield(fr, :data))
+Base.getindex(fr::FeatureResults, s::Symbol) = getfield(fr, :data)[s]
+Base.merge(a::FeatureResults, b::FeatureResults) =
+    FeatureResults(merge(getfield(a, :data), getfield(b, :data)))
+Base.merge(a::FeatureResults, b::NamedTuple) =
+    FeatureResults(merge(getfield(a, :data), b))
+Base.merge(a::NamedTuple, b::FeatureResults) =
+    FeatureResults(merge(a, getfield(b, :data)))
+Base.hasproperty(fr::FeatureResults, s::Symbol) = haskey(fr, s)
+Base.propertynames(fr::FeatureResults) = keys(fr)
+Base.length(fr::FeatureResults) = length(getfield(fr, :data))
+
 # ── Feature: type-stable named wrapper ──────────────────────────────────────
 
 """
@@ -128,9 +163,9 @@ computations. A single `merge()` of per-feature results replaces
 - `NamedTuple` with at least `bars::PriceBars` (pipeline call).
 
 ### Output
-- **PriceBars input**: `(bars=bars, features=(name1=vec1, ...))`.
+- **PriceBars input**: `(bars=bars, features=FeatureResults(...))`.
 - **NamedTuple input**: input merged with
-    `(features=(name1=vec1, ...),)`.
+    `(features=FeatureResults(...),)`.
 
 ## Callable Interface
 
@@ -178,7 +213,7 @@ merge `(features=(...),)` into the input. When called with
 - `PriceBars` directly.
 
 ## Output
-- `(bars=bars, features=(name1=vec1, name2=vec2, ...))`.
+- `(bars=bars, features=FeatureResults(...))`.
 """
 function (feats::Features)(d::NamedTuple)
     feats_results = feats(d.bars)
@@ -205,7 +240,7 @@ dispatch.
 @generated function (feats::Features{T})(bars::PriceBars) where {T<:Tuple}
     n = fieldcount(T)
     exprs = [:(feats.operations[$i](bars)) for i in 1:n]
-    return :((bars=bars, features=merge($(exprs...))))
+    return :((bars=bars, features=FeatureResults(merge($(exprs...)))))
 end
 
 # ── @Features macro ─────────────────────────────────────────────────────────
