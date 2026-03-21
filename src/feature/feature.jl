@@ -180,12 +180,13 @@ Each argument is a `name = Feature(...)` expression. The left-hand
 side becomes the `Symbol` key and the right-hand side becomes the
 [`AbstractFeature`](@ref) instance.
 
-All four syntactic forms are accepted:
+All five syntactic forms are accepted:
 
     @Features ema_10 = EMA(10)           # preferred
     @Features ema_10 .= EMA(10)          # broadcast-assign style
     @Features :ema_10 = EMA(10)          # quoted symbol
     @Features :ema_10 => EMA(10)         # pair syntax
+    @Features(ema_10 = EMA(10))          # paren/call style
 
 # Examples
 ```jldoctest
@@ -223,13 +224,14 @@ argument. Accept four forms:
 
 - `name = Feat(...)` — assignment (`head === :(=)`)
 - `name .= Feat(...)` — broadcast-assign (`head === :.=`)
+- `name = Feat(...)` inside parens — keyword (`head === :kw`)
 - `:name = Feat(...)` — quoted symbol on LHS (`args[1]` is a
     `QuoteNode`)
 - `:name => Feat(...)` — pair literal (`head === :call`,
     `args[1] === :(=>)`)
 """
 function _parse_feature_arg(arg)
-    if arg isa Expr && (arg.head === :(=) || arg.head === :.=)
+    if arg isa Expr && (arg.head === :(=) || arg.head === :.= || arg.head === :kw)
         lhs = arg.args[1]
         feat = arg.args[2]
         # Unwrap QuoteNode for :name = Feat(...) form

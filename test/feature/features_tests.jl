@@ -432,6 +432,22 @@ end
     @test result.features.range ≈ bars.high .- bars.low
 end
 
+@testitem "Features: @Features Macro Paren Form" tags = [
+    :feature, :features, :macro
+] setup = [TestData] begin
+    using Backtest, Test
+
+    bars = TestData.make_pricebars(; n=200)
+
+    f = @Features(ema_10 = EMA(10), ema_20 = EMA(20))
+    result = f(bars)
+
+    @test haskey(result.features, :ema_10)
+    @test haskey(result.features, :ema_20)
+    @test isequal(result.features.ema_10, compute(EMA(10), bars.close))
+    @test isequal(result.features.ema_20, compute(EMA(20), bars.close))
+end
+
 @testitem "Features: Pipeline with FunctionFeature" tags = [
     :feature, :features, :integration
 ] setup = [TestData] begin
