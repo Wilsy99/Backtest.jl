@@ -1,6 +1,35 @@
 include("ema.jl")
 include("cusum.jl")
 
+# ── PrecomputedFeature: wrapper for user-supplied vectors ──────────────────
+
+"""
+    PrecomputedFeature{V<:AbstractVector} <: AbstractFeature
+
+Wrapper for pre-computed feature vectors or vectors returned by
+external indicator functions. Stores the data and returns it
+unchanged when called.
+
+Constructed automatically by [`Features`](@ref) when a value in a
+`Symbol => AbstractVector` pair is not an `AbstractFeature` —
+not intended for direct use.
+
+# Examples
+```julia
+# All three produce vectors that get wrapped in PrecomputedFeature:
+@Features sma_10 = SMA(10, data.close)     # external library call
+@Features atr = calc_atr(bars)              # custom function
+@Features rsi = pre_computed_rsi            # existing vector
+```
+"""
+struct PrecomputedFeature{V<:AbstractVector} <: AbstractFeature
+    data::V
+end
+
+(f::PrecomputedFeature)(::PriceBars) = f.data
+(f::PrecomputedFeature)(::AbstractVector) = f.data
+(f::PrecomputedFeature)(::NamedTuple) = f.data
+
 # ── Feature: type-stable named wrapper ──────────────────────────────────────
 
 """
@@ -34,11 +63,19 @@ Named feature collection that computes multiple features in a single
 pipeline step and nests results under a `:features` key.
 
 Replace individual feature calls with explicit
-`Symbol => AbstractFeature` pairs:
+`Symbol => AbstractFeature` pairs, or supply pre-computed vectors
+and external indicator results directly:
 
 ```julia
+# Built-in features
 bars |> Features(:ema_10 => EMA(10), :ema_20 => EMA(20), :cusum => CUSUM(1))
+
+# External / custom features (vectors passed directly)
+@Features sma_10 = SMA(10, bars.close) atr = calc_atr(bars) rsi = pre_computed_rsi
 ```
+
+Any value that is not an `AbstractFeature` is wrapped in a
+[`PrecomputedFeature`](@ref) automatically.
 
 Results are nested under a `:features` key in the pipeline
 `NamedTuple`, giving downstream stages a clean namespace for feature
@@ -54,6 +91,7 @@ no automatic naming.
 
 # Constructors
     Features(ops::Pair{Symbol, <:AbstractFeature}...)
+    Features(ops::Pair{Symbol}...)
 
 # Examples
 ```jldoctest
@@ -108,6 +146,14 @@ struct Features{T<:Tuple}
     operations::T
     function Features(ops::Pair{Symbol,<:AbstractFeature}...)
         wrapped = map(p -> Feature{p.first}(p.second), ops)
+        return new{typeof(wrapped)}(wrapped)
+    end
+    function Features(ops::Pair{Symbol}...)
+        wrapped = map(ops) do p
+            val = p.second
+            feat = val isa AbstractFeature ? val : PrecomputedFeature(val)
+            Feature{p.first}(feat)
+        end
         return new{typeof(wrapped)}(wrapped)
     end
     function Features(ops::Feature...)
@@ -169,16 +215,23 @@ end
 
 Construct a [`Features`](@ref) collection using assignment syntax.
 
-Each argument is a `name = Feature(...)` expression. The left-hand
-side becomes the `Symbol` key and the right-hand side becomes the
-[`AbstractFeature`](@ref) instance.
+Each argument is a `name = expr` expression. The left-hand side
+becomes the `Symbol` key. The right-hand side can be an
+[`AbstractFeature`](@ref) instance or any expression that evaluates
+to an `AbstractVector` (external indicator calls, pre-computed
+vectors, etc.). Non-`AbstractFeature` values are automatically
+wrapped in [`PrecomputedFeature`](@ref).
 
 All four syntactic forms are accepted:
 
-    @Features ema_10 = EMA(10)           # preferred
+    @Features ema_10 = EMA(10)           # preferred (built-in)
     @Features ema_10 .= EMA(10)          # broadcast-assign style
     @Features :ema_10 = EMA(10)          # quoted symbol
     @Features :ema_10 => EMA(10)         # pair syntax
+
+Custom / external features:
+
+    @Features sma_10 = SMA(10, data.close) atr = calc_atr(bars) rsi = pre_calced_rsi
 
 # Examples
 ```jldoctest
@@ -197,16 +250,27 @@ Features(:ema_10 => EMA(10), :ema_20 => EMA(20))
 
 # See also
 - [`Features`](@ref): the underlying type.
+- [`PrecomputedFeature`](@ref): wrapper for external vectors.
 - [`@Event`](@ref): similar DSL macro for event construction.
 """
 macro Features(args...)
     feature_exprs = Expr[]
     for arg in args
         sym, feat = _parse_feature_arg(arg)
-        push!(feature_exprs, :(Feature{$(QuoteNode(sym))}($(esc(feat)))))
+        push!(feature_exprs, :(_wrap_feature(Val($(QuoteNode(sym))), $(esc(feat)))))
     end
     return :(Features($(feature_exprs...)))
 end
+
+"""
+    _wrap_feature(::Val{Name}, value) -> Feature{Name}
+
+Wrap a value into a `Feature{Name}`. If the value is already an
+`AbstractFeature`, wrap directly. Otherwise (e.g. an
+`AbstractVector`), wrap in a [`PrecomputedFeature`](@ref) first.
+"""
+_wrap_feature(::Val{Name}, feat::AbstractFeature) where {Name} = Feature{Name}(feat)
+_wrap_feature(::Val{Name}, data::AbstractVector) where {Name} = Feature{Name}(PrecomputedFeature(data))
 
 """
     _parse_feature_arg(arg) -> (name::Symbol, feat)
