@@ -17,16 +17,17 @@ Side(args...) = Side(args)
 
 function (side::Side)(d::NamedTuple)
     sides = Vector{Int8}(undef, length(d.bars))
-    @inbounds @simd for i in eachindex(d.bars)
+    @inbounds for i in eachindex(d.bars)
         sides[i] = _check_side(side.directions, d, i)
     end
 
-    return sides
+    return merge(d, (; side=sides))
 end
 
 _check_side(::Tuple{}, d::NamedTuple, i::Int) = Int8(0)
 
-#Recursive Case: Evaluates EVERYTHING to keep the pipeline flat.
+# Recursive case: evaluates all directions (first match wins).
+# Earlier directions in the tuple take priority over later ones.
 @inline function _check_side(directions::Tuple, d::NamedTuple, i::Int)
     dir = first(directions)
 
