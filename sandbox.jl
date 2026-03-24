@@ -33,6 +33,14 @@ bars |>
     @Event(:cusum .!= 0, :side .!= 0)
 #! format: on
 
+range(highs, lows) = highs .- lows
+
+#! format: off
+tst = bars |> 
+    @Features(ema_10 = EMA(10), cusum = CUSUM(1)) |> 
+    @Features(:ema_20 .= EMA(20), range => range(data.high, data.low))
+#! format: on
+
 #! format: off
 @time bars |>
     Features(:ema_10 => EMA(10), :ema_20 => EMA(20), :cusum => CUSUM(1)) |>

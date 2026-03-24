@@ -77,7 +77,9 @@ struct LongOnly <: AbstractDirection end
 struct ShortOnly <: AbstractDirection end
 struct LongShort <: AbstractDirection end
 
-const PipelineObject = Union{AbstractFeature,AbstractSide,AbstractEvent,AbstractLabel,AbstractWeights}
+const PipelineObject = Union{
+    AbstractFeature,AbstractSide,AbstractEvent,AbstractLabel,AbstractWeights
+}
 const PipeOrFunc = Union{PipelineObject,Function}
 
 struct Job{D,F}
@@ -105,3 +107,4 @@ struct PriceBars{B<:AbstractBarType,T<:AbstractFloat,V<:AbstractVector{T}}
 end
 
 Base.length(pb::PriceBars) = length(pb.close)
+Base.axes(pb::PriceBars) = axes(pb.close)
