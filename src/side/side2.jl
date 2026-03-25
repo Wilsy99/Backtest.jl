@@ -126,8 +126,9 @@ function _rewrite_side_expr(ex::Expr, max_lag::Ref{Int})
     if ex.head == :call
         if ex.args[1] == :lag
             length(ex.args) == 3 || error("lag requires exactly 2 arguments: lag(field, n)")
-            sym = ex.args[2]
+            raw = ex.args[2]
             n = ex.args[3]
+            sym = raw isa QuoteNode ? raw.value : raw
             sym isa Symbol || error("First argument to lag must be a field name")
             n isa Integer || error("Second argument to lag must be an integer literal")
             max_lag[] = max(max_lag[], n)
