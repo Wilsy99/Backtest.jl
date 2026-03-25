@@ -10,7 +10,6 @@ include("utility.jl")
 include("data.jl")
 include("feature/feature.jl")
 include("side/side.jl")
-include("side/side2.jl")
 include("event.jl")
 include("label/label.jl")
 
