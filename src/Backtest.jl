@@ -17,6 +17,7 @@ export PriceBars, TimeBar
 export AbstractFeature, EMA, CUSUM, PrecomputedFeature, FeatureResults, Features, @Features, compute, compute!
 export AbstractDirection, LongOnly, ShortOnly, LongShort
 export AbstractSide, Crossover, calculate_side
+export AbstractDirectionFunc, Long, Short, Side, @Long, @Short
 export AbstractEvent, Event, @Event, calculate_event
 export AbstractExecutionBasis, CurrentOpen, CurrentClose, NextOpen, NextClose, Immediate
 export AbstractBarrier,
