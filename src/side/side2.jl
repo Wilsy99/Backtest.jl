@@ -54,18 +54,73 @@ function _is_data_symbol(sym::Symbol)
     return !isempty(s) && (isletter(first(s)) || first(s) == '_')
 end
 
-function _side_sym(sym::Symbol)
+# Extract property chain from nested dot exprs: d.bars.close → [:d, :bars, :close]
+function _dot_chain(ex::Expr)
+    ex.head == :. || return nothing
+    field = ex.args[2]
+    field isa QuoteNode || return nothing
+    parent = ex.args[1]
+    if parent isa Symbol
+        return Symbol[parent, field.value]
+    elseif parent isa Expr
+        chain = _dot_chain(parent)
+        chain === nothing && return nothing
+        push!(chain, field.value)
+        return chain
+    end
+    return nothing
+end
+
+# Build d.x.y from a chain of symbols
+function _build_dot(chain)
+    ex = chain[1]
+    for j in 2:length(chain)
+        ex = Expr(:., ex, QuoteNode(chain[j]))
+    end
+    return ex
+end
+
+# Resolve a bare symbol to its qualified base (no [i]).
+# close → d.bars.close, ema_10 → d.features.ema_10
+function _resolve_sym(sym::Symbol)
     if sym in _BAR_FIELDS
-        return :(d.bars.$sym[i])
+        return :(d.bars.$sym)
     else
-        return :(d.features.$sym[i])
+        return :(d.features.$sym)
     end
 end
 
+# Normalize a dot chain: bars.close → d.bars.close, features.ema → d.features.ema
+function _normalize_dot(ex::Expr)
+    chain = _dot_chain(ex)
+    chain === nothing && return ex
+
+    # bars.X → d.bars.X, features.X → d.features.X
+    if length(chain) >= 2 && chain[1] in (:bars, :features)
+        pushfirst!(chain, :d)
+    end
+
+    return _build_dot(chain)
+end
+
 function _rewrite_side_expr(ex::Expr, max_lag::Ref{Int})
-    # Property access (e.g. d.features.ema_20) — append [i] indexing
+    # Indexing: close[i], bars.close[i-1], d.bars.close[i], etc.
+    # Normalize the base, keep original index expressions unchanged (don't rewrite i).
+    if ex.head == :ref
+        base = ex.args[1]
+        if base isa Symbol && _is_data_symbol(base)
+            base = _resolve_sym(base)
+        elseif base isa Expr && base.head == :.
+            base = _normalize_dot(base)
+        end
+        return Expr(:ref, base, ex.args[2:end]...)
+    end
+
+    # Property access: bars.close, d.features.ema_20, etc.
+    # Normalize and append [i].
     if ex.head == :.
-        return :($ex[i])
+        base = _normalize_dot(ex)
+        return :($base[i])
     end
 
     if ex.head == :call
@@ -76,11 +131,7 @@ function _rewrite_side_expr(ex::Expr, max_lag::Ref{Int})
             sym isa Symbol || error("First argument to lag must be a field name")
             n isa Integer || error("Second argument to lag must be an integer literal")
             max_lag[] = max(max_lag[], n)
-            if sym in _BAR_FIELDS
-                return :(d.bars.$sym[i - $n])
-            else
-                return :(d.features.$sym[i - $n])
-            end
+            return :($(_resolve_sym(sym))[i - $n])
         else
             # Recurse into arguments but skip the function name (position 1)
             new_args = Any[ex.args[1]]
@@ -111,13 +162,13 @@ end
 
 function _rewrite_side_expr(sym::Symbol, ::Ref{Int})
     _is_data_symbol(sym) || return sym
-    return _side_sym(sym)
+    return :($(_resolve_sym(sym))[i])
 end
 
 function _rewrite_side_expr(ex::QuoteNode, ::Ref{Int})
     sym = ex.value
     sym isa Symbol || return ex
-    return _side_sym(sym)
+    return :($(_resolve_sym(sym))[i])
 end
 
 # Fallback for literals (numbers, strings, etc.)
