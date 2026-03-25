@@ -63,9 +63,9 @@ function _side_sym(sym::Symbol)
 end
 
 function _rewrite_side_expr(ex::Expr, max_lag::Ref{Int})
-    # Property access (e.g. some_obj.field) — leave as-is
+    # Property access (e.g. d.features.ema_20) — append [i] indexing
     if ex.head == :.
-        return ex
+        return :($ex[i])
     end
 
     if ex.head == :call
