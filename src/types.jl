@@ -107,4 +107,4 @@ struct PriceBars{B<:AbstractBarType,T<:AbstractFloat,V<:AbstractVector{T}}
 end
 
 Base.length(pb::PriceBars) = length(pb.close)
-Base.axes(pb::PriceBars) = axes(pb.close)
+Base.eachindex(bars::PriceBars) = 1:length(bars)

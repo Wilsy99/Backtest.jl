@@ -36,9 +36,22 @@ bars |>
 range(highs, lows) = highs .- lows
 
 #! format: off
-tst = bars |> 
+bars |> 
     @Features(ema_10 = EMA(10), cusum = CUSUM(1)) |> 
     @Features(:ema_20 .= EMA(20), range => range(data.high, data.low))
+
+bars |> 
+    Features(:ema_10 => EMA(10), :ema_20 => EMA(20), :cusum => CUSUM(1)) |> 
+    Side(
+        Long((d, i) -> d.features.ema_10[i] > d.features.ema_20[i]),
+        Short((d, i) -> d.features.ema_10[i] < d.features.ema_20[i])
+        ) |> 
+    Event(d -> d.features.cusum .!= 0 .&& d.side .!= 0)
+
+bars |> 
+    @Features(ema_10 = EMA(10), ema_20 = EMA(20), cusum = CUSUM(1)) |> 
+    Side(@Long(ema_10 > ema_20 && close > lag(open, 10)), @Short(ema_20 < ema_10)) |> 
+    @Event(:cusum != 0, side .!= 0)
 #! format: on
 
 #! format: off
