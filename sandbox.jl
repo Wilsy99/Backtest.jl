@@ -30,7 +30,7 @@ EMA(20)(bars.open)
 bars |> 
     Features(:ema_10 => EMA(10), :ema_20 => EMA(20), :cusum => CUSUM(1)) |>
     Crossover(:ema_10, :ema_20; direction=LongShort()) |> 
-    @Event(:cusum .!= 0, :side .!= 0)
+    Event((d, i) -> d.side[i] == 1 && d.features.cusum[i] == 1)
 #! format: on
 
 range(highs, lows) = highs .- lows
@@ -46,12 +46,15 @@ bars |>
         Long((d, i) -> d.features.ema_10[i] > d.features.ema_20[i]),
         Short((d, i) -> d.features.ema_10[i] < d.features.ema_20[i])
         ) |> 
-    Event(d -> d.features.cusum .!= 0 .&& d.side .!= 0)
+    Event((d, i) -> d.features.cusum[i] .!= 0 .&& d.side[i] .!= 0)
 
 bars |> 
     @Features(ema_10 = EMA(10), ema_20 = EMA(20), cusum = CUSUM(1)) |> 
-    Side(@Long(ema_10 > ema_20 && close > lag(open, 10)), @Short(ema_20 < ema_10)) |> 
-    @Event(:cusum != 0, side .!= 0)
+    Side(
+        @Long(ema_10 > ema_20 && close > lag(open, 10)), 
+        @Short(ema_20 < ema_10)
+        ) |> 
+    @Event(:cusum != 0 && side .!= 0)
 #! format: on
 
 #! format: off
