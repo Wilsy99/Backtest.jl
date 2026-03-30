@@ -242,7 +242,7 @@ end
 ] begin
     using Backtest, Test, Dates
 
-    # :close in BarrierContext should rewrite to d.bars.close[d.idx]
+    # :close rewrites to d.bars.close[i] via _rewrite_expr
     cb = @ConditionBarrier :close > :entry_price
     manual_cb = ConditionBarrier(d -> d.bars.close[d.idx] > d.entry_price)
 
@@ -262,7 +262,7 @@ end
 ] begin
     using Backtest, Test, Dates
 
-    # :ema_10 in BarrierContext should rewrite to d.features.ema_10[d.idx]
+    # :ema_10 rewrites to d.features.ema_10[i] via _rewrite_expr
     ub = @UpperBarrier :entry_price + :ema_10
 
     bars = PriceBars(

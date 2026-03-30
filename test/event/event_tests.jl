@@ -570,11 +570,11 @@ end
 
 # ── @Event bars-field symbol scoping ──
 #
-# EventContext maps bars fields (:open, :high, :low, :close, :volume, :timestamp)
-# to d.bars.symbol, matching the BarrierContext routing. Feature fields (:ema_10,
-# etc.) remain as d.symbol (flat lookup). The Event(bars::PriceBars) callable
-# wraps bars as d=(bars=bars,) so that d.bars.close works in both direct and
-# pipeline contexts.
+# _rewrite_expr routes bars fields (:open, :high, :low, :close, :volume,
+# :timestamp) to d.bars.field[i]. Feature fields (:ema_10, etc.) route to
+# d.features.field[i]. The Event(bars::PriceBars) callable wraps bars as
+# d=(bars=bars,) so that d.bars.close works in both direct and pipeline
+# contexts.
 
 @testitem "Macro: @Event — :close symbol resolves on PriceBars directly" tags = [
     :macro, :event
@@ -591,7 +591,7 @@ end
         TimeBar(),
     )
 
-    # EventContext: :close → d.bars.close. Works on PriceBars (wrapped as (bars=bars,)).
+    # :close → d.bars.close. Works on PriceBars (wrapped as (bars=bars,)).
     evt = @Event :close .> 100.0
     result = evt(bars)
     @test result.event_indices == [2, 3]
@@ -605,7 +605,7 @@ end
     bars = TestData.make_pricebars(; n=100)
     nt = Features(:ema_10 => EMA(10))(bars)
 
-    # EventContext routes :close → d.bars.close, matching BarrierContext.
+    # _rewrite_expr routes :close → d.bars.close[i].
     # :close in @Event works correctly in both direct (PriceBars) and pipeline
     # (NamedTuple) contexts.
     evt = @Event :close .> 100.0

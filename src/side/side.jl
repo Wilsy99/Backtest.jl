@@ -45,13 +45,20 @@ end
     @Long(expr) -> Long
 
 Construct a [`Long`](@ref) direction from a scalar condition expression
-with automatic symbol rewriting and `lag` support.
+with automatic symbol rewriting and `lag` support via
+[`_rewrite_expr`](@ref).
 
-Bare symbols are rewritten to indexed field access on the pipeline
-data `d`:
-- Bar fields (`close`, `open`, `high`, `low`, `volume`,
-    `timestamp`) become `d.bars.field[i]`.
-- All other symbols become `d.features.field[i]`.
+Generate a `(d, i) -> expr` lambda. Symbol routing (see
+[`_resolve_sym`](@ref)):
+- **Bar fields** (`close`, `open`, `high`, `low`, `volume`,
+    `timestamp`): rewritten to `d.bars.field[i]`.
+- **Pipeline fields** (`side`, `event_indices`): rewritten to
+    `d.field[i]`.
+- **Direct fields** (`entry_price`, `entry_ts`, `entry_side`,
+    `idx`): rewritten to `d.field` (scalar, no indexing). Only
+    meaningful in barrier context.
+- **Feature fields** (everything else): rewritten to
+    `d.features.field[i]`.
 
 Partial paths (`bars.close`, `features.ema_10`) and fully qualified
 paths (`d.bars.close`) are normalised and indexed automatically.
@@ -105,7 +112,8 @@ end
     @Short(expr) -> Short
 
 Construct a [`Short`](@ref) direction from a scalar condition
-expression with automatic symbol rewriting and `lag` support.
+expression with automatic symbol rewriting and `lag` support via
+[`_rewrite_expr`](@ref).
 
 Identical rewriting rules to [`@Long`](@ref) — see its documentation
 for the full symbol resolution and `lag` behaviour.
@@ -148,6 +156,12 @@ end
 
 Recursively rewrite an expression AST for per-bar evaluation.
 
+Shared rewrite engine used by all macros (`@Long`, `@Short`,
+`@Event`, `@UpperBarrier`, `@LowerBarrier`, `@TimeBarrier`,
+`@ConditionBarrier`). Produce expressions suitable for a
+`(d, i) -> expr` lambda where `d` is the data context and `i` is
+the bar index.
+
 Dispatch on `ex.head` to handle each node type:
 - `:ref` — pre-indexed access (`close[i]`): normalise the base,
     keep original indices unchanged (avoids rewriting `i` as data).
@@ -157,6 +171,10 @@ Dispatch on `ex.head` to handle each node type:
 - `:call` (other) — recurse into arguments, skip the function name.
 - `:comparison` — rewrite value positions only, skip operators.
 - General (`:&&`, `:||`, etc.) — recurse into all arguments.
+
+Symbol routing is delegated to [`_resolve_sym`](@ref). See its
+docstring for the four field categories (bar, pipeline, direct,
+feature).
 """
 function _rewrite_expr(ex::Expr, max_lag::Ref{Int})
     if ex.head == :ref
@@ -208,14 +226,14 @@ function _rewrite_expr(ex::Expr, max_lag::Ref{Int})
     return Expr(ex.head, [_rewrite_expr(a, max_lag) for a in ex.args]...)
 end
 
-"""Rewrite a bare `Symbol` to indexed data access (`d.bars.close[i]` or `d.features.ema[i]`). Direct fields (`entry_price`, etc.) are not indexed."""
+"""Rewrite a bare `Symbol` to data access. Indexed (`d.bars.close[i]`) for bar, pipeline, and feature fields; unindexed (`d.entry_price`) for direct fields."""
 function _rewrite_expr(sym::Symbol, ::Ref{Int})
     _is_data_symbol(sym) || return sym
     sym in _DIRECT_FIELDS && return _resolve_sym(sym)
     return :($(_resolve_sym(sym))[i])
 end
 
-"""Rewrite a `QuoteNode` (`:close`) to indexed data access. Direct fields (`entry_price`, etc.) are not indexed."""
+"""Rewrite a `QuoteNode` (`:close`) to data access. Indexed for bar, pipeline, and feature fields; unindexed for direct fields."""
 function _rewrite_expr(ex::QuoteNode, ::Ref{Int})
     sym = ex.value
     sym isa Symbol || return ex
@@ -240,7 +258,23 @@ function _is_data_symbol(sym::Symbol)
     return !isempty(s) && (isletter(first(s)) || first(s) == '_')
 end
 
-"""Resolve a bare symbol to its qualified base without indexing. `close` → `d.bars.close`, `side` → `d.side`, `entry_price` → `d.entry_price`, `ema_10` → `d.features.ema_10`."""
+"""
+    _resolve_sym(sym::Symbol) -> Expr
+
+Resolve a bare symbol to its qualified data-access base (no indexing).
+
+Four routing categories:
+- **Bar fields** (`_BAR_FIELDS`): `close` → `d.bars.close`.
+- **Pipeline fields** (`_PIPELINE_FIELDS`): `side` → `d.side`.
+- **Direct fields** (`_DIRECT_FIELDS`): `entry_price` →
+    `d.entry_price`. Only meaningful in barrier context where `d` is a
+    `BarrierArgs`.
+- **Feature fields** (everything else): `ema_10` →
+    `d.features.ema_10`.
+
+Callers (`_rewrite_expr`) append `[i]` for indexed fields; direct
+fields are used as-is (scalars in the loop context).
+"""
 function _resolve_sym(sym::Symbol)
     if sym in _BAR_FIELDS
         return :(d.bars.$sym)
