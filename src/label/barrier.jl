@@ -180,7 +180,7 @@ Return type depends on barrier kind: a price (`AbstractFloat`) for
 [`UpperBarrier`](@ref)/[`LowerBarrier`](@ref), a `DateTime` for
 [`TimeBarrier`](@ref), or a `Bool` for [`ConditionBarrier`](@ref).
 """
-@inline barrier_level(b::AbstractBarrier, args) = b.level_func(args)
+@inline barrier_level(b::AbstractBarrier, args) = b.level_func(args, args.idx)
 
 """
     gap_hit(barrier::AbstractBarrier, level, open_price) -> Bool
@@ -213,24 +213,34 @@ Check whether the barrier was hit during the bar's trading range.
     ts >= level
 @inline barrier_hit(::ConditionBarrier, level, ::Any, ::Any, ::Any) = level
 
-struct BarrierContext end
-
 """
     _build_barrier_expr(type::Symbol, default_label, args) -> Expr
 
 Build an escaped constructor expression for a barrier macro.
 
-Parse `args` via `_build_macro_components` to separate the level
-expression from keyword arguments. If the user did not supply a
-`label` keyword, inject the `default_label` for the barrier type.
+Separate the level expression from keyword arguments. Rewrite the
+expression via `_rewrite_expr` into a `(d, i) -> expr` lambda.
+If the user did not supply a `label` keyword, inject the
+`default_label` for the barrier type.
 """
 function _build_barrier_expr(type::Symbol, default_label, args)
-    funcs, kwargs = _build_macro_components(BarrierContext(), args)
+    exprs = []
+    kwargs = []
+    for arg in args
+        if isa(arg, Expr) && arg.head == :(=)
+            push!(kwargs, arg)
+        else
+            push!(exprs, arg)
+        end
+    end
+    max_lag = Ref(0)
+    body = _rewrite_expr(exprs[1], max_lag)
+    func = :((d, i) -> $body)
     has_label = any(kw -> kw.args[1] == :label, kwargs)
     if has_label
-        return esc(:($type($(funcs[1]); $(kwargs...))))
+        return esc(:($type($func; $(kwargs...))))
     else
-        return esc(:($type($(funcs[1]); label=$default_label, $(kwargs...))))
+        return esc(:($type($func; label=$default_label, $(kwargs...))))
     end
 end
 
@@ -330,36 +340,3 @@ macro ConditionBarrier(ex, args...)
     return _build_barrier_expr(:ConditionBarrier, 0, (ex, args...))
 end
 
-"""
-    _replace_symbols(::BarrierContext, ex::QuoteNode) -> Expr
-
-Rewrite a quoted symbol to a field access on the barrier loop
-variable `d`.
-
-Four routing categories:
-- **Direct fields** (`:entry_price`, `:entry_ts`, `:entry_side`,
-    `:idx`): rewritten to `d.field` — these are scalar values in the
-    loop context.
-- **Bar fields** (`:open`, `:high`, `:low`, `:close`, `:volume`,
-    `:timestamp`): rewritten to `d.bars.field[d.idx]` — indexed into
-    the price bar arrays at the current bar.
-- **Pipeline fields** (`:side`): rewritten to `d.symbol[d.idx]` —
-    top-level pipeline vectors indexed at the current bar.
-- **All other symbols** (e.g., `:ema_10`): rewritten to
-    `d.features.symbol[d.idx]` — feature vectors live under the
-    `d.features` `NamedTuple`, indexed at the current bar.
-"""
-function _replace_symbols(::BarrierContext, ex::QuoteNode)
-    direct_fields = (:entry_price, :entry_ts, :idx, :entry_side)
-    bars_fields = (:open, :high, :low, :close, :volume, :timestamp)
-    pipeline_fields = (:side,)
-    if ex.value in direct_fields
-        return :(d.$(ex.value))
-    elseif ex.value in bars_fields
-        return :(d.bars.$(ex.value)[d.idx])
-    elseif ex.value in pipeline_fields
-        return :(d.$(ex.value)[d.idx])
-    else
-        return :(d.features.$(ex.value)[d.idx])
-    end
-end
