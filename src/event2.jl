@@ -1,15 +1,19 @@
 struct Event{F}
     func::F
+    warmup::Int
 end
+Event(func) = Event(func, 0)
 
 #(d, i) -> d.features.ema_10[i] > d.features.cusum[i]
 
 function (event::Event)(d::NamedTuple)
-    event_indices = Vector{Int}(undef, 1)
+    event_indices = int[]
     @inbounds for i in eachindex(d.bars)
-        ifelse(event.func(d, i), push!(event_indices, i), continue)
+        if event.func(d, i)
+            push!(event_indices, i)
+        end
     end
-    return event_indices
+    return merge(d, (; event=event_indices))
 end
 
 macro Event(ex)
