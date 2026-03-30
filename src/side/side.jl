@@ -96,7 +96,7 @@ side = Side(@Long(d.bars.close > d.features.ema_20))
 """
 macro Long(ex)
     max_lag = Ref(0)
-    body = _rewrite_side_expr(ex, max_lag)
+    body = _rewrite_expr(ex, max_lag)
     warmup = max_lag[]
     return esc(:(Long((d, i) -> $body, $warmup)))
 end
@@ -136,7 +136,7 @@ side = Side(
 """
 macro Short(ex)
     max_lag = Ref(0)
-    body = _rewrite_side_expr(ex, max_lag)
+    body = _rewrite_expr(ex, max_lag)
     warmup = max_lag[]
     return esc(:(Short((d, i) -> $body, $warmup)))
 end
@@ -144,7 +144,7 @@ end
 # ── AST Rewriting ──
 
 """
-    _rewrite_side_expr(ex::Expr, max_lag::Ref{Int}) -> Expr
+    _rewrite_expr(ex::Expr, max_lag::Ref{Int}) -> Expr
 
 Recursively rewrite an expression AST for per-bar evaluation.
 
@@ -158,7 +158,7 @@ Dispatch on `ex.head` to handle each node type:
 - `:comparison` — rewrite value positions only, skip operators.
 - General (`:&&`, `:||`, etc.) — recurse into all arguments.
 """
-function _rewrite_side_expr(ex::Expr, max_lag::Ref{Int})
+function _rewrite_expr(ex::Expr, max_lag::Ref{Int})
     if ex.head == :ref
         base = ex.args[1]
         if base isa Symbol && _is_data_symbol(base)
@@ -187,7 +187,7 @@ function _rewrite_side_expr(ex::Expr, max_lag::Ref{Int})
         else
             new_args = Any[ex.args[1]]
             for j in 2:length(ex.args)
-                push!(new_args, _rewrite_side_expr(ex.args[j], max_lag))
+                push!(new_args, _rewrite_expr(ex.args[j], max_lag))
             end
             return Expr(:call, new_args...)
         end
@@ -197,7 +197,7 @@ function _rewrite_side_expr(ex::Expr, max_lag::Ref{Int})
         new_args = Any[]
         for (j, a) in enumerate(ex.args)
             if isodd(j)
-                push!(new_args, _rewrite_side_expr(a, max_lag))
+                push!(new_args, _rewrite_expr(a, max_lag))
             else
                 push!(new_args, a)
             end
@@ -205,24 +205,24 @@ function _rewrite_side_expr(ex::Expr, max_lag::Ref{Int})
         return Expr(:comparison, new_args...)
     end
 
-    return Expr(ex.head, [_rewrite_side_expr(a, max_lag) for a in ex.args]...)
+    return Expr(ex.head, [_rewrite_expr(a, max_lag) for a in ex.args]...)
 end
 
 """Rewrite a bare `Symbol` to indexed data access (`d.bars.close[i]` or `d.features.ema[i]`)."""
-function _rewrite_side_expr(sym::Symbol, ::Ref{Int})
+function _rewrite_expr(sym::Symbol, ::Ref{Int})
     _is_data_symbol(sym) || return sym
     return :($(_resolve_sym(sym))[i])
 end
 
 """Rewrite a `QuoteNode` (`:close`) to indexed data access."""
-function _rewrite_side_expr(ex::QuoteNode, ::Ref{Int})
+function _rewrite_expr(ex::QuoteNode, ::Ref{Int})
     sym = ex.value
     sym isa Symbol || return ex
     return :($(_resolve_sym(sym))[i])
 end
 
 # Fallback for literals (numbers, strings, etc.)
-_rewrite_side_expr(ex, ::Ref{Int}) = ex
+_rewrite_expr(ex, ::Ref{Int}) = ex
 
 # ── Symbol Resolution Helpers ──
 
