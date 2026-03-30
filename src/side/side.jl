@@ -208,16 +208,18 @@ function _rewrite_expr(ex::Expr, max_lag::Ref{Int})
     return Expr(ex.head, [_rewrite_expr(a, max_lag) for a in ex.args]...)
 end
 
-"""Rewrite a bare `Symbol` to indexed data access (`d.bars.close[i]` or `d.features.ema[i]`)."""
+"""Rewrite a bare `Symbol` to indexed data access (`d.bars.close[i]` or `d.features.ema[i]`). Direct fields (`entry_price`, etc.) are not indexed."""
 function _rewrite_expr(sym::Symbol, ::Ref{Int})
     _is_data_symbol(sym) || return sym
+    sym in _DIRECT_FIELDS && return _resolve_sym(sym)
     return :($(_resolve_sym(sym))[i])
 end
 
-"""Rewrite a `QuoteNode` (`:close`) to indexed data access."""
+"""Rewrite a `QuoteNode` (`:close`) to indexed data access. Direct fields (`entry_price`, etc.) are not indexed."""
 function _rewrite_expr(ex::QuoteNode, ::Ref{Int})
     sym = ex.value
     sym isa Symbol || return ex
+    sym in _DIRECT_FIELDS && return _resolve_sym(sym)
     return :($(_resolve_sym(sym))[i])
 end
 
@@ -228,6 +230,7 @@ _rewrite_expr(ex, ::Ref{Int}) = ex
 
 const _BAR_FIELDS = (:open, :high, :low, :close, :volume, :timestamp)
 const _PIPELINE_FIELDS = (:side, :event_indices)
+const _DIRECT_FIELDS = (:entry_price, :entry_ts, :entry_side, :idx)
 const _SKIP_SYMBOLS = (:NaN, :Inf, :pi, :nothing, :missing)
 
 """Return `true` if `sym` looks like a data field name (starts with a letter or underscore, not a Julia constant)."""
@@ -237,11 +240,13 @@ function _is_data_symbol(sym::Symbol)
     return !isempty(s) && (isletter(first(s)) || first(s) == '_')
 end
 
-"""Resolve a bare symbol to its qualified base without indexing. `close` → `d.bars.close`, `side` → `d.side`, `ema_10` → `d.features.ema_10`."""
+"""Resolve a bare symbol to its qualified base without indexing. `close` → `d.bars.close`, `side` → `d.side`, `entry_price` → `d.entry_price`, `ema_10` → `d.features.ema_10`."""
 function _resolve_sym(sym::Symbol)
     if sym in _BAR_FIELDS
         return :(d.bars.$sym)
     elseif sym in _PIPELINE_FIELDS
+        return :(d.$sym)
+    elseif sym in _DIRECT_FIELDS
         return :(d.$sym)
     else
         return :(d.features.$sym)
