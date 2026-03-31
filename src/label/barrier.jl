@@ -8,8 +8,8 @@ Used to model stop-loss exits for long positions or take-profit exits
 for short positions.
 
 # Fields
-- `level_func::F`: function `(args) -> price_level` computing the
-    barrier threshold from the loop context.
+- `level_func::F`: function `(d, i) -> price_level` computing the
+    barrier threshold from the loop context `d` at bar index `i`.
 - `label::Int8`: ternary label assigned when this barrier triggers;
     must be `-1`, `0`, or `1`. Default `Int8(-1)`.
 - `exit_basis::E`: execution basis for the exit fill price. Default
@@ -21,10 +21,10 @@ for short positions.
 # Examples
 ```julia
 # Fixed 5% stop below entry
-lb = LowerBarrier(d -> d.entry_price * 0.95)
+lb = LowerBarrier((d, i) -> d.entry_price * 0.95)
 
 # Custom exit basis
-lb = LowerBarrier(d -> d.entry_price * 0.95; label=-1, exit_basis=NextOpen())
+lb = LowerBarrier((d, i) -> d.entry_price * 0.95; label=-1, exit_basis=NextOpen())
 ```
 
 # See also
@@ -49,8 +49,8 @@ Used to model take-profit exits for long positions or stop-loss exits
 for short positions.
 
 # Fields
-- `level_func::F`: function `(args) -> price_level` computing the
-    barrier threshold from the loop context.
+- `level_func::F`: function `(d, i) -> price_level` computing the
+    barrier threshold from the loop context `d` at bar index `i`.
 - `label::Int8`: ternary label assigned when this barrier triggers;
     must be `-1`, `0`, or `1`. Default `Int8(1)`.
 - `exit_basis::E`: execution basis for the exit fill price. Default
@@ -62,7 +62,7 @@ for short positions.
 # Examples
 ```julia
 # Fixed 5% take-profit above entry
-ub = UpperBarrier(d -> d.entry_price * 1.05)
+ub = UpperBarrier((d, i) -> d.entry_price * 1.05)
 ```
 
 # See also
@@ -85,8 +85,8 @@ Used to enforce a maximum holding period. The level function must
 return a `TimeType` (e.g., `DateTime`).
 
 # Fields
-- `level_func::F`: function `(args) -> TimeType` computing the
-    expiry timestamp from the loop context.
+- `level_func::F`: function `(d, i) -> TimeType` computing the
+    expiry timestamp from the loop context `d` at bar index `i`.
 - `label::Int8`: ternary label assigned when this barrier triggers;
     must be `-1`, `0`, or `1`. Default `Int8(0)` (neutral / no-signal).
 - `exit_basis::E`: execution basis for the exit fill price. Default
@@ -99,7 +99,7 @@ return a `TimeType` (e.g., `DateTime`).
 ```julia
 using Dates
 # Exit after 20 trading days
-tb = TimeBarrier(d -> d.entry_ts + Day(20))
+tb = TimeBarrier((d, i) -> d.entry_ts + Day(20))
 ```
 
 # See also
@@ -125,8 +125,8 @@ that a condition observed at bar close can only be acted on at the
 next bar's open.
 
 # Fields
-- `level_func::F`: function `(args) -> Bool` evaluating the exit
-    condition from the loop context.
+- `level_func::F`: function `(d, i) -> Bool` evaluating the exit
+    condition from the loop context `d` at bar index `i`.
 - `label::Int8`: ternary label assigned when this barrier triggers;
     must be `-1`, `0`, or `1`. Default `Int8(0)`.
 - `exit_basis::E`: execution basis for the exit fill price. Default
@@ -138,7 +138,7 @@ next bar's open.
 # Examples
 ```julia
 # Exit when short EMA crosses below long EMA
-cb = ConditionBarrier(d -> d.features.ema_10[d.idx] < d.features.ema_50[d.idx])
+cb = ConditionBarrier((d, i) -> d.features.ema_10[i] < d.features.ema_50[i])
 ```
 
 # See also
@@ -175,6 +175,10 @@ end
     barrier_level(b::AbstractBarrier, args) -> Any
 
 Evaluate the barrier's level function with the current loop context.
+
+Call `b.level_func(args, args.idx)`, passing the loop context and the
+current bar index as separate arguments to match the unified
+`(d, i) -> expr` calling convention shared by all macros.
 
 Return type depends on barrier kind: a price (`AbstractFloat`) for
 [`UpperBarrier`](@ref)/[`LowerBarrier`](@ref), a `DateTime` for
@@ -248,14 +252,17 @@ end
     @UpperBarrier expr [key=val ...]
 
 Construct an [`UpperBarrier`](@ref) using a DSL expression with
-automatic symbol rewriting.
+automatic symbol rewriting via [`_rewrite_expr`](@ref).
 
-Symbols prefixed with `:` are rewritten to access fields of the
-barrier loop context `d`:
-- `:entry_price`, `:entry_ts`, `:idx` → `d.field`
-- `:open`, `:high`, `:low`, `:close`, `:volume`, `:timestamp` →
-    `d.bars.field[d.idx]`
-- All other symbols (e.g., `:ema_10`) → `d.features.symbol[d.idx]`
+Generate a `(d, i) -> expr` lambda. Symbol routing:
+- **Direct fields** (`entry_price`, `entry_ts`, `entry_side`,
+    `idx`): rewritten to `d.field` (scalar, no indexing).
+- **Bar fields** (`close`, `open`, `high`, `low`, `volume`,
+    `timestamp`): rewritten to `d.bars.field[i]`.
+- **Pipeline fields** (`side`, `event_indices`): rewritten to
+    `d.field[i]`.
+- **All other symbols** (e.g., `ema_10`): rewritten to
+    `d.features.field[i]`.
 
 Default label is `Int8(1)`.
 
@@ -268,6 +275,7 @@ ub = @UpperBarrier :entry_price + (:ema_10 - :ema_50) label=1
 # See also
 - [`UpperBarrier`](@ref): the underlying type.
 - [`@LowerBarrier`](@ref): lower barrier macro.
+- [`_rewrite_expr`](@ref): the shared rewrite engine.
 """
 macro UpperBarrier(ex, args...)
     return _build_barrier_expr(:UpperBarrier, 1, (ex, args...))
@@ -277,7 +285,7 @@ end
     @LowerBarrier expr [key=val ...]
 
 Construct a [`LowerBarrier`](@ref) using a DSL expression with
-automatic symbol rewriting.
+automatic symbol rewriting via [`_rewrite_expr`](@ref).
 
 Symbol rewriting rules are identical to [`@UpperBarrier`](@ref).
 Default label is `Int8(-1)`.
@@ -300,7 +308,7 @@ end
     @TimeBarrier expr [key=val ...]
 
 Construct a [`TimeBarrier`](@ref) using a DSL expression with
-automatic symbol rewriting.
+automatic symbol rewriting via [`_rewrite_expr`](@ref).
 
 Symbol rewriting rules are identical to [`@UpperBarrier`](@ref).
 Default label is `Int8(0)`.
@@ -322,7 +330,7 @@ end
     @ConditionBarrier expr [key=val ...]
 
 Construct a [`ConditionBarrier`](@ref) using a DSL expression with
-automatic symbol rewriting.
+automatic symbol rewriting via [`_rewrite_expr`](@ref).
 
 Symbol rewriting rules are identical to [`@UpperBarrier`](@ref).
 Default label is `Int8(0)`.
