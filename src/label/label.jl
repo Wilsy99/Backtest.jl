@@ -63,14 +63,18 @@ pipeline `NamedTuple`, while `Label!` returns the raw
 - `entry_basis::E`: execution basis for trade entry pricing.
 - `drop_unfinished::Bool`: whether to drop events whose barriers
     are not resolved by end of data.
+- `time_decay_start::T`: starting value for linear time decay
+    in weight calculation. Ramps from this value to `1.0` across
+    events in temporal order.
 - `multi_thread::Bool`: enable multi-threaded event loop.
 - `barrier_args::NT`: additional keyword arguments forwarded to
     barrier level functions via `merge`.
 """
-struct _LabelCore{B<:Tuple,E<:AbstractExecutionBasis,NT<:NamedTuple}
+struct _LabelCore{B<:Tuple,E<:AbstractExecutionBasis,NT<:NamedTuple,T<:Real}
     barriers::B
     entry_basis::E
     drop_unfinished::Bool
+    time_decay_start::T
     multi_thread::Bool
     barrier_args::NT
 end
@@ -79,10 +83,18 @@ function _LabelCore(
     barriers::AbstractBarrier...;
     entry_basis::AbstractExecutionBasis=NextOpen(),
     drop_unfinished::Bool=true,
+    time_decay_start::Real=1.0,
     multi_thread::Bool=false,
     barrier_args::NamedTuple=(;),
 )
-    return _LabelCore(barriers, entry_basis, drop_unfinished, multi_thread, barrier_args)
+    return _LabelCore(
+        barriers,
+        entry_basis,
+        drop_unfinished,
+        float(time_decay_start),
+        multi_thread,
+        barrier_args,
+    )
 end
 
 """
@@ -103,6 +115,8 @@ When called on a pipeline `NamedTuple` containing `event_indices` and
     for trade entry pricing.
 - `drop_unfinished::Bool = true`: drop events whose barriers are not
     resolved by end of data.
+- `time_decay_start::Real = 1.0`: starting value for linear time
+    decay (`1.0` disables decay).
 - `multi_thread::Bool = false`: enable multi-threaded event loop.
 - `barrier_args::NamedTuple = (;)`: additional arguments forwarded to
     barrier level functions.
@@ -137,7 +151,7 @@ lab2 = Label(
 )
 
 # In a pipeline:
-# result = bars >> Features(:ema_10 => EMA(10), :ema_50 => EMA(50)) >> Crossover(:ema_10, :ema_50) >> evt >> lab2
+# result = bars >> EMA(10, 50) >> Crossover(:ema_10, :ema_50) >> evt >> lab2
 ```
 
 # Pipeline Data Flow
@@ -163,35 +177,8 @@ struct Label{C<:_LabelCore} <: AbstractLabel
     core::C
 end
 
-"""
-    Label!{C<:_LabelCore} <: AbstractLabel
-
-Triple-barrier labelling functor that returns only the
-[`LabelResults`](@ref) without merging into the pipeline.
-
-Identical to [`Label`](@ref) in computation, but returns the raw
-`LabelResults` struct instead of merging it into the input
-`NamedTuple`. Useful when the upstream pipeline data is not needed
-downstream.
-
-# Constructors
-    Label!(barriers::AbstractBarrier...; kwargs...)
-
-Keywords are identical to [`Label`](@ref).
-
-# See also
-- [`Label`](@ref): variant that merges results into the pipeline.
-"""
-struct Label!{C<:_LabelCore} <: AbstractLabel
-    core::C
-end
-
 function Label(barriers::AbstractBarrier...; kwargs...)
     return Label(_LabelCore(barriers...; kwargs...))
-end
-
-function Label!(barriers::AbstractBarrier...; kwargs...)
-    return Label!(_LabelCore(barriers...; kwargs...))
 end
 
 """
@@ -214,19 +201,21 @@ have the same length (one entry per resolved event, or per event if
 - `bin::Vector{Int8}`: meta label `max(side * label, 0)`. Equals
     `1` when the trade direction agrees with the barrier outcome,
     `0` otherwise.
+- `weight::Vector{T}`: sample weight incorporating attribution,
+    time decay, and class-imbalance correction.
 - `ret::Vector{T}`: arithmetic return `(exit_price / entry_price) - 1`.
 - `log_ret::Vector{T}`: log return `log1p(ret)`.
 
 # See also
 - [`Label`](@ref), [`Label!`](@ref): functors that produce this.
 - [`calculate_label`](@ref): the computation function.
-- [`compute_weights`](@ref): compute sample weights from label results.
 """
 struct LabelResults{I<:Int,T<:AbstractFloat}
     trade_idx_range::Vector{UnitRange{I}}
     side::Vector{Int8}
     label::Vector{Int8}
     bin::Vector{Int8}
+    weight::Vector{T}
     ret::Vector{T}
     log_ret::Vector{T}
 end
@@ -243,13 +232,13 @@ Base.length(r::LabelResults) = length(r.trade_idx_range)
         side=d.side,
         entry_basis=core.entry_basis,
         drop_unfinished=core.drop_unfinished,
+        time_decay_start=core.time_decay_start,
         multi_thread=core.multi_thread,
         barrier_args=merge(d, core.barrier_args),
     )
 end
 
 (lab::Label)(d::NamedTuple) = merge(d, (; labels=_run_label(lab.core, d)))
-(lab::Label!)(d::NamedTuple) = _run_label(lab.core, d)
 
 # ── Main Label Calculation ──
 
@@ -261,7 +250,9 @@ Compute triple-barrier labels for a set of event indices.
 
 For each event, walk forward through subsequent bars and check each
 barrier in priority order. The first barrier hit determines the exit
-bar, label, and return.
+bar, label, and return. Events are processed in temporal order for
+correct time-decay weighting, then restored to the caller's original
+ordering.
 
 # Arguments
 - `event_indices::AbstractVector{Int}`: bar indices where events were
@@ -277,17 +268,18 @@ bar, label, and return.
     entry fill price and index offset.
 - `drop_unfinished::Bool = true`: drop events whose barriers are not
     resolved by end of data.
+- `time_decay_start::Real = 1.0`: starting value for linear time
+    decay in weight calculation. `1.0` disables decay.
 - `multi_thread::Bool = false`: enable multi-threaded event loop.
 - `barrier_args::NamedTuple = (;)`: additional context forwarded to
     barrier level functions.
 
 # Returns
 - [`LabelResults`](@ref): labelling output with trade index ranges,
-    side, labels, bin (meta label), and returns.
+    side, labels, bin (meta label), weights, and returns.
 
 # See also
 - [`Label`](@ref), [`Label!`](@ref): functor wrappers for pipeline use.
-- [`compute_weights`](@ref): compute sample weights from label results.
 """
 function calculate_label(
     event_indices::AbstractVector{Int},
@@ -301,6 +293,7 @@ function calculate_label(
     side::AbstractVector{Int8},
     entry_basis::AbstractExecutionBasis=NextOpen(),
     drop_unfinished::Bool=true,
+    time_decay_start::Real=1.0,
     multi_thread::Bool=false,
     barrier_args::NamedTuple=(;),
 ) where {T<:AbstractFloat}
@@ -312,6 +305,7 @@ function calculate_label(
         side,
         entry_basis,
         drop_unfinished,
+        time_decay_start,
         multi_thread,
         barrier_args,
     )
@@ -324,12 +318,13 @@ function calculate_label(
     side::AbstractVector{Int8},
     entry_basis::AbstractExecutionBasis=NextOpen(),
     drop_unfinished::Bool=true,
+    time_decay_start::Real=1.0,
     multi_thread::Bool=false,
     barrier_args::NamedTuple=(;),
 )
     _warn_barrier_ordering(barriers)
 
-    # Sort events; keep permutation to restore caller order
+    # Sort for correct time-decay ordering; keep permutation to restore caller order
     if issorted(event_indices)
         sorted_events = event_indices
         sort_perm = nothing
@@ -378,7 +373,23 @@ function calculate_label(
     rets = buf.rets[mask]
     log_rets = buf.log_rets[mask]
 
-    # Restore caller's original ordering
+    # Weights applied in temporal (sorted) order for correct time decay
+    label_classes = unique(labels)
+    exposure_offset = _get_exposure_adj(entry_basis)
+
+    weights = _attribution_weights(
+        label_classes,
+        length(entry_idx),
+        n_prices,
+        entry_idx,
+        exit_idx,
+        labels,
+        price_bars.close,
+        T(time_decay_start),
+        exposure_offset,
+    )
+
+    # Restore caller's original ordering after weights are computed
     if sort_perm !== nothing
         reorder = sortperm(invperm(sort_perm)[mask])
         entry_idx = entry_idx[reorder]
@@ -386,13 +397,14 @@ function calculate_label(
         sides = sides[reorder]
         labels = labels[reorder]
         bins = bins[reorder]
+        weights = weights[reorder]
         rets = rets[reorder]
         log_rets = log_rets[reorder]
     end
 
     trade_idx_range = [entry_idx[i]:exit_idx[i] for i in eachindex(entry_idx)]
 
-    return LabelResults(trade_idx_range, sides, labels, bins, rets, log_rets)
+    return LabelResults(trade_idx_range, sides, labels, bins, weights, rets, log_rets)
 end
 
 # ── Barrier Loop Context ──
@@ -411,7 +423,7 @@ when callers are inlined, achieving zero heap allocations per bar.
 
 Transparent field access via `Base.getproperty` makes this a drop-in
 replacement for the `NamedTuple` that barrier level functions expect:
-`d.entry_price`, `d.bars`, `d.features.ema_20[d.idx]` all work unchanged.
+`d.entry_price`, `d.bars`, `d.ema_20[d.idx]` all work unchanged.
 
 # Fields
 - `data::NT`: pipeline context (bars, side, barrier_args).
@@ -748,4 +760,150 @@ exit index, timestamp, side, label, bin, and returns, then return `true`.
     buf.rets[i] = raw_ret
     buf.log_rets[i] = log1p(raw_ret)
     return true
+end
+
+# ── Weight Calculation ──
+
+"""
+    _attribution_weights(label_classes, n_labels, n_prices, entry_indices, exit_indices, labels, closes, time_decay_start, exposure_offset) -> Vector{T}
+
+Compute sample weights via uniqueness-weighted attribution returns,
+linear time decay, and class-imbalance correction.
+
+The algorithm has three passes:
+1. **Sweep-line attributed returns**: compute per-bar log returns
+   weighted by `1/concurrency` where concurrency is the number of
+   overlapping trades. Accumulated via `_cumulative_attributed_returns`.
+2. **Time decay**: multiply each event's attribution weight by a
+   linear ramp from `time_decay_start` to `1.0` across events in
+   temporal order.
+3. **Class-imbalance correction**: rebalance so each label class
+   contributes equally to total weight, then normalise so
+   `sum(weights) == n_labels`.
+"""
+@inline function _attribution_weights(
+    label_classes::Vector{Int8},
+    n_labels::Int,
+    n_prices::Int,
+    entry_indices::AbstractVector{Int},
+    exit_indices::AbstractVector{Int},
+    labels::AbstractVector{Int8},
+    closes::AbstractVector{T},
+    time_decay_start::T,
+    exposure_offset::Int,
+) where {T}
+    weights = Vector{T}(undef, n_labels)
+    n_labels == 0 && return weights
+
+    n_label_classes = length(label_classes)
+
+    # 1. Sweep-line cumulative attributed returns
+    cum_attrib_rets = _cumulative_attributed_returns(
+        n_prices, entry_indices, exit_indices, closes, exposure_offset, T
+    )
+
+    # 2. Linear time decay: ramps from time_decay_start → 1.0 across labels
+    time_decay = time_decay_start
+    time_decay_incr = n_labels > 1 ? (one(T) - time_decay_start) / T(n_labels - 1) : zero(T)
+
+    classes_weights = zeros(T, n_label_classes)
+
+    # ── Pass 1: Raw weight × decay, tallied per class ──
+    @inbounds for i in 1:n_labels
+        entry_idx = entry_indices[i]
+        exit_idx = exit_indices[i]
+        label_number = findfirst(==(labels[i]), label_classes)
+
+        start_lookup = entry_idx + exposure_offset
+        weight =
+            abs(cum_attrib_rets[exit_idx + 1] - cum_attrib_rets[start_lookup]) * time_decay
+
+        weights[i] = weight
+        classes_weights[label_number] += weight
+        time_decay += time_decay_incr
+    end
+
+    # 3. Class imbalance correction
+    total_decayed_weight = sum(classes_weights)
+    target_class_weight = total_decayed_weight / n_label_classes
+
+    class_multipliers = zeros(T, n_label_classes)
+    for c in 1:n_label_classes
+        class_multipliers[c] =
+            classes_weights[c] > zero(T) ? target_class_weight / classes_weights[c] : one(T)
+    end
+
+    # ── Pass 2: Apply class balance & normalize so sum(weights) == n_labels ──
+    sum_of_weights = zero(T)
+    @inbounds for i in 1:n_labels
+        label_number = findfirst(==(labels[i]), label_classes)
+        weights[i] *= class_multipliers[label_number]
+        sum_of_weights += weights[i]
+    end
+
+    if sum_of_weights > zero(T)
+        norm_factor = T(n_labels) / sum_of_weights
+        @inbounds for i in 1:n_labels
+            weights[i] *= norm_factor
+        end
+    else
+        fill!(weights, one(T))
+    end
+
+    return weights
+end
+
+"""
+    _cumulative_attributed_returns(n_prices, entry_indices, exit_indices, closes, exposure_offset, ::Type{T}) -> Vector{T}
+
+Compute a prefix-sum array of uniqueness-weighted log returns.
+
+Use a sweep-line approach: increment a concurrency counter at each
+entry and decrement at each exit. Each bar's log return is divided by
+the number of concurrent trades to produce "attributed" returns. The
+result is a cumulative sum array of length `n_prices + 1` where
+`cum[t+1] - cum[s]` gives the total attributed return over bars
+`s` through `t`.
+
+The `+2` buffer on `concur_deltas` prevents out-of-bounds when
+`exit_idx == n_prices`.
+"""
+@inline function _cumulative_attributed_returns(
+    n_prices, entry_indices, exit_indices, closes, exposure_offset, ::Type{T}
+) where {T}
+    # +2 buffer: safely handles exit_idx + 1 decrement when exit_idx == n_prices
+    # Int32 halves memory vs Int since this is sized to n_prices; concurrency
+    # counts (overlapping trades per bar) won't approach the ~2.1B Int32 limit.
+    concur_deltas = zeros(Int32, n_prices + 2)
+
+    @inbounds for i in eachindex(entry_indices)
+        entry_idx = entry_indices[i]
+        exit_idx = exit_indices[i]
+
+        if entry_idx > 0 && exit_idx > 0
+            start_idx = entry_idx + exposure_offset
+            if start_idx <= n_prices
+                concur_deltas[start_idx] += 1
+                concur_deltas[exit_idx + 1] -= 1
+            end
+        end
+    end
+
+    # cum_attrib_rets[t+1] holds cumulative attributed return through bar t
+    cum_attrib_rets = zeros(T, n_prices + 1)
+    concur = 0
+    current_cum_val = zero(T)
+
+    @inbounds for t in 1:n_prices
+        concur += concur_deltas[t]
+        if t > 1
+            bar_ret = log(closes[t] / closes[t - 1])
+            if concur > 0
+                current_cum_val += bar_ret / concur
+            end
+        end
+        cum_attrib_rets[t + 1] = current_cum_val
+    end
+
+    return cum_attrib_rets
 end

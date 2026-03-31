@@ -48,20 +48,33 @@ bars |>
         ) |> 
     Event((d, i) -> d.features.cusum[i] .!= 0 .&& d.side[i] .!= 0)
 
-bars |> 
+@time bars |> 
     @Features(ema_10 = EMA(10), ema_20 = EMA(20), cusum = CUSUM(1)) |> 
     Side(
         @Long(ema_10 > ema_20 && close > lag(open, 10)), 
         @Short(ema_20 < ema_10)
         ) |> 
-    @Event(:cusum != 0 && side .!= 0)
+    @Event(cusum != 0 && side != 0) |> 
+    Label(
+        @LowerBarrier(
+            entry_side == 1 ? entry_price * 0.95 : entry_price * 0.90,
+            label = Int8(-1),
+            exit_basis = Immediate()
+        ),
+        @UpperBarrier(
+            entry_side == 1 ? entry_price * 1.2 : entry_price * 1.1,
+            label = Int8(1),
+            exit_basis = Immediate()
+        ),
+        @TimeBarrier(:entry_ts + Day(10), label = Int8(0), exit_basis = NextOpen())
+        )
 #! format: on
 
 #! format: off
 @time bars |>
     Features(:ema_10 => EMA(10), :ema_20 => EMA(20), :cusum => CUSUM(1)) |>
     Crossover(:ema_10, :ema_20; direction=LongShort()) |>
-    @Event(:cusum .!= 0, :side .!= 0) |>
+    @Event(:cusum .!= 0 && :side .!= 0) |>
     Label!(
         @LowerBarrier(
             :entry_side == 1 ? :entry_price * 0.95 : :entry_price * 0.90,
