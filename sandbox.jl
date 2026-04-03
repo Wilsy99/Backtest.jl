@@ -27,10 +27,9 @@ compute(EMA(10), bars.volume)
 EMA(20; field=:open)(bars)
 EMA(20)(bars.open)
 #! format: off
-bars |> 
+@time bars |> 
     Features(:ema_10 => EMA(10), :ema_20 => EMA(20), :cusum => CUSUM(1)) |>
-    Crossover(:ema_10, :ema_20; direction=LongShort()) |> 
-    Event((d, i) -> d.side[i] == 1 && d.features.cusum[i] == 1)
+    Crossover(:ema_10, :ema_20; direction=LongShort())
 #! format: on
 
 range(highs, lows) = highs .- lows
@@ -48,7 +47,7 @@ bars |>
         ) |> 
     Event((d, i) -> d.features.cusum[i] .!= 0 .&& d.side[i] .!= 0)
 
-@time bars |> 
+bars |> 
     @Features(ema_10 = EMA(10), ema_20 = EMA(20), cusum = CUSUM(1)) |> 
     Side(
         @Long(ema_10 > ema_20 && close > lag(open, 10)), 
@@ -75,7 +74,7 @@ bars |>
     Features(:ema_10 => EMA(10), :ema_20 => EMA(20), :cusum => CUSUM(1)) |>
     Crossover(:ema_10, :ema_20; direction=LongShort()) |>
     @Event(:cusum .!= 0 && :side .!= 0) |>
-    Label!(
+    Label(
         @LowerBarrier(
             :entry_side == 1 ? :entry_price * 0.95 : :entry_price * 0.90,
             label = Int8(-1),

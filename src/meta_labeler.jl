@@ -1,7 +1,3 @@
-struct MetaLabeler{ML<:MLJModelInterface.Probalistic,CV<:AbstractCrossValidation}
-    model::ML
-    cross_validation::CV
-end
 
 struct SplitMetrics{T<:AbstractFloat}
     split_id::Int
@@ -15,16 +11,30 @@ struct MetaLabelResults{T<:AbstractFloat}
     split_metrics::Vector{SplitMetrics{T}}
 end
 
-function run(
-    meta_labeler::MetaLabeler{<:Any,<:CPCV},
+struct MetaLabelValidation{MLJ<:MLJModelInterface.Probalistic,CV<:AbstractCrossValidation,F}
+    model::MLJ
+    cross_validation::CV
+    scoring_fn::F
+end
+
+function (mlv::MetaLabelValidation)(d::NamedTuple; multi_thread::Bool=false)
+    result = evaluate(
+        mlv.model, mlv.cross_validation, d.features.d.labels, mlv.scoring_fn; multi_thread
+    )
+    return merge(d, (; meta_label_cv=result))
+end
+
+function evaluate(
+    model::MLJ,
+    cpcv::CPCV,
+    feats::FeatureResults,
     labels::LabelResults,
-    weights::AbstractVector{T},
     scoring_fn::F;
     multi_thread=false,
-    mask_type::Type{<:M}=Vector{Bool},
-) where {T<:AbstractFloat,F,M<:AbstractVector{Bool}}
+) where {MLJ<:MLJModelInterface.Probalistic,F}
+    T = typeof(labels.log_ret)
+
     n_labels = length(labels)
-    cpcv = meta_labeler.cross_validation
 
     meta_label_results = MetaLabelResults{T}(
         Matrix{T}(undef, n_labels, cpcv.n_paths),
@@ -32,13 +42,12 @@ function run(
     )
 
     _split_metrics!(
-        meta_labeler.model,
+        model,
         cpcv,
+        feats,
         labels,
-        weights,
         scoring_fn,
         n_labels,
-        mask_type,
         meta_label_results,
         Val(multi_thread),
     )
@@ -47,25 +56,24 @@ function run(
 end
 
 function _split_metrics!(
-    model::ML,
+    model::MLJ,
     cpcv::CPCV,
+    feats::FeatureResults,
     labels::LabelResults,
-    weights::AbstractVector,
     scoring_fn::F,
     n_labels::Int,
-    mask_type::Type{<:M},
     meta_label_results::MetaLabelResults,
     ::Val{false},
-) where {ML<:MLJModelInterface.Probalistic,F,M<:AbstractVector{Bool}}
-    cpcv_buf = CPCVBuffers(cpcv, n_labels, mask_type)
+) where {MLJ<:MLJModelInterface.Probalistic,F}
+    cpcv_buf = CPCVBuffers(cpcv, n_labels)
 
     @inbounds for split_num in 1:(cpcv.n_splits)
         _reset!(cpcv_buf)
         _split_metrics!(
             model,
             cpcv,
+            feats,
             labels,
-            weights,
             scoring_fn,
             n_labels,
             meta_label_results,
@@ -76,18 +84,17 @@ function _split_metrics!(
 end
 
 function _split_metrics!(
-    model::ML,
+    model::MLJ,
     cpcv::CPCV,
+    feats::FeatureResults,
     labels::LabelResults,
-    weights::AbstractVector,
     scoring_fn::F,
     n_labels::Int,
-    mask_type::Type{<:M},
     meta_label_results::MetaLabelResults,
     ::Val{true},
-) where {ML<:MLJModelInterface.Probalistic,F,M<:AbstractVector{Bool}}
+) where {MLJ<:MLJModelInterface.Probalistic,F}
     nt = nthreads()
-    cpcv_bufs = [CPCVBuffers(cpcv, n_labels, mask_type) for _ in 1:nt]
+    cpcv_bufs = [CPCVBuffers(cpcv, n_labels) for _ in 1:nt]
 
     @inbounds @threads :static for split_num in 1:(cpcv.n_splits)
         cpcv_buf = cpcv_bufs[threadid()]
@@ -95,8 +102,8 @@ function _split_metrics!(
         _split_metrics!(
             model,
             cpcv,
+            feats,
             labels,
-            weights,
             scoring_fn,
             n_labels,
             meta_label_results,
@@ -107,20 +114,20 @@ function _split_metrics!(
 end
 
 function _split_metrics!(
-    model::ML,
+    model::MLJ,
     cpcv::CPCV,
+    feats::FeatureResults,
     labels::LabelResults,
-    weights::AbstractVector,
     scoring_fn::F,
     n_labels::Int,
     meta_label_results::MetaLabelResults,
     cpcv_buf::CPCVBuffers,
     split_num::Int,
-) where {ML<:MLJModelInterface.Probalistic,F}
+) where {MLJ<:MLJModelInterface.Probalistic,F}
     cpcv_masks = _get_split_data_masks!(cpcv, labels, cpcv_buf, n_labels, split_num)
-    mach = _train_model(model, labels, weights, cpcv_masks.train)
+    mach = _train_model(model, labels, feats, cpcv_masks.train)
 
-    test_preds = _test_model(mach, labels, cpcv_masks.test)
+    test_preds = _test_model(mach, feats, cpcv_masks.test)
 
     test_true = @view labels.bin[cpcv_masks.test]
     score = scoring_fn(test_true, test_preds)
@@ -137,19 +144,19 @@ function _split_metrics!(
 end
 
 function _train_model(
-    model::ML, labels::LabelResults, weights::AbstractVector, train_mask::M
-) where {ML<:MLJModelInterface.Probalistic,M<:AbstractVector{Bool}}
-    train_feats = @view labels.feature[train_mask]
+    model::MLJ, labels::LabelResults, feats::FeatureResults, train_mask::M
+) where {MLJ<:MLJModelInterface.Probalistic,M<:AbstractVector{Bool}}
+    train_feats = @view feats[train_mask]
     train_bins = @view labels.bin[train_mask]
-    train_weights = @view weights[train_mask]
+    train_weights = @view labels.weight[train_mask]
     mach = machine(model, train_feats, train_bins, train_weights)
     return fit!(mach)
 end
 
 function _test_model(
-    mach, labels::LabelResults, test_mask::M
+    mach, feats::FeatureResults, test_mask::M
 ) where {M<:AbstractVector{Bool}}
-    test_feats = @view labels.feature[test_mask]
+    test_feats = @view feats[test_mask]
     preds = predict(mach, test_feats)
     return pdf.(preds, 1)
 end
