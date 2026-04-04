@@ -61,6 +61,10 @@ Base.merge(a::FeatureResults, b::NamedTuple) =
     FeatureResults(merge(getfield(a, :data), b))
 Base.merge(a::NamedTuple, b::FeatureResults) =
     FeatureResults(merge(a, getfield(b, :data)))
+Base.getindex(fr::FeatureResults, mask::AbstractVector{Bool}) =
+    FeatureResults(map(v -> v[mask], getfield(fr, :data)))
+Base.view(fr::FeatureResults, mask::AbstractVector{Bool}) =
+    FeatureResults(map(v -> view(v, mask), getfield(fr, :data)))
 Base.hasproperty(fr::FeatureResults, s::Symbol) = haskey(fr, s)
 Base.propertynames(fr::FeatureResults) = keys(fr)
 Base.length(fr::FeatureResults) = length(getfield(fr, :data))
@@ -217,11 +221,14 @@ merge `(features=(...),)` into the input. When called with
 """
 function (feats::Features)(d::NamedTuple)
     feats_results = feats(d.bars)
-    if hasproperty(d, :features)
-        merged_features = merge(d.features, feats_results.features)
-        return merge(d, (features=merged_features,))
+    return _merge_features(d, feats_results)
+end
+
+@generated function _merge_features(d::NamedTuple{K}, feats_results) where {K}
+    if :features in K
+        :(merge(d, (features=merge(d.features, feats_results.features),)))
     else
-        return merge(d, feats_results)
+        :(merge(d, feats_results))
     end
 end
 

@@ -11,7 +11,7 @@ struct MetaLabelResults{T<:AbstractFloat}
     split_metrics::Vector{SplitMetrics{T}}
 end
 
-struct MetaLabelValidation{MLJ<:MLJModelInterface.Probalistic,CV<:AbstractCrossValidation,F}
+struct MetaLabelValidation{MLJ<:MLJModelInterface.Probabilistic,CV<:AbstractCrossValidation,F}
     model::MLJ
     cross_validation::CV
     scoring_fn::F
@@ -19,7 +19,7 @@ end
 
 function (mlv::MetaLabelValidation)(d::NamedTuple; multi_thread::Bool=false)
     result = evaluate(
-        mlv.model, mlv.cross_validation, d.features.d.labels, mlv.scoring_fn; multi_thread
+        mlv.model, mlv.cross_validation, d.features, d.labels, mlv.scoring_fn; multi_thread
     )
     return merge(d, (; meta_label_cv=result))
 end
@@ -31,8 +31,8 @@ function evaluate(
     labels::LabelResults,
     scoring_fn::F;
     multi_thread=false,
-) where {MLJ<:MLJModelInterface.Probalistic,F}
-    T = typeof(labels.log_ret)
+) where {MLJ<:MLJModelInterface.Probabilistic,F}
+    T = eltype(labels.log_ret)
 
     n_labels = length(labels)
 
@@ -64,7 +64,7 @@ function _split_metrics!(
     n_labels::Int,
     meta_label_results::MetaLabelResults,
     ::Val{false},
-) where {MLJ<:MLJModelInterface.Probalistic,F}
+) where {MLJ<:MLJModelInterface.Probabilistic,F}
     cpcv_buf = CPCVBuffers(cpcv, n_labels)
 
     @inbounds for split_num in 1:(cpcv.n_splits)
@@ -92,7 +92,7 @@ function _split_metrics!(
     n_labels::Int,
     meta_label_results::MetaLabelResults,
     ::Val{true},
-) where {MLJ<:MLJModelInterface.Probalistic,F}
+) where {MLJ<:MLJModelInterface.Probabilistic,F}
     nt = nthreads()
     cpcv_bufs = [CPCVBuffers(cpcv, n_labels) for _ in 1:nt]
 
@@ -123,7 +123,7 @@ function _split_metrics!(
     meta_label_results::MetaLabelResults,
     cpcv_buf::CPCVBuffers,
     split_num::Int,
-) where {MLJ<:MLJModelInterface.Probalistic,F}
+) where {MLJ<:MLJModelInterface.Probabilistic,F}
     cpcv_masks = _get_split_data_masks!(cpcv, labels, cpcv_buf, n_labels, split_num)
     mach = _train_model(model, labels, feats, cpcv_masks.train)
 
@@ -145,7 +145,7 @@ end
 
 function _train_model(
     model::MLJ, labels::LabelResults, feats::FeatureResults, train_mask::M
-) where {MLJ<:MLJModelInterface.Probalistic,M<:AbstractVector{Bool}}
+) where {MLJ<:MLJModelInterface.Probabilistic,M<:AbstractVector{Bool}}
     train_feats = @view feats[train_mask]
     train_bins = @view labels.bin[train_mask]
     train_weights = @view labels.weight[train_mask]
