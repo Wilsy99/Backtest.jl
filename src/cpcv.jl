@@ -115,14 +115,14 @@ function _get_split_data_masks!(
         label_idx_range = _get_group_idx_range(cpcv, n_labels, group_id)
         buf.test_data_mask[label_idx_range] .= true
 
-        trade_idx_range = @view labels.trade_idx_ranges[label_idx_range]
+        trade_idx_range = @view labels.trade_idx_range[label_idx_range]
         obs_start = minimum(r.start for r in trade_idx_range)
         obs_stop = maximum(r.stop for r in trade_idx_range)
         push!(buf.test_ranges, obs_start:obs_stop)
     end
 
     # 3. Merge test windows, then snapshot purge zones before embargo extension
-    max_data_idx = maximum(r.stop for r in labels.trade_idx_ranges)
+    max_data_idx = maximum(r.stop for r in labels.trade_idx_range)
     _merge_intervals!(buf.test_ranges)
 
     # Snapshot: purge_ranges = merged test windows (no embargo)
@@ -142,7 +142,7 @@ function _get_split_data_masks!(
     n_purge = length(buf.purge_ranges)
 
     @inbounds for i in 1:n_labels
-        label_range = labels.trade_idx_ranges[i]
+        label_range = labels.trade_idx_range[i]
 
         while fi <= n_forbidden && buf.test_ranges[fi].stop < label_range.start
             fi += 1

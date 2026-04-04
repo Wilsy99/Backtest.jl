@@ -61,6 +61,10 @@ Base.merge(a::FeatureResults, b::NamedTuple) =
     FeatureResults(merge(getfield(a, :data), b))
 Base.merge(a::NamedTuple, b::FeatureResults) =
     FeatureResults(merge(a, getfield(b, :data)))
+Base.getindex(fr::FeatureResults, mask::AbstractVector{Bool}) =
+    FeatureResults(map(v -> v[mask], getfield(fr, :data)))
+Base.view(fr::FeatureResults, mask::AbstractVector{Bool}) =
+    FeatureResults(map(v -> view(v, mask), getfield(fr, :data)))
 Base.hasproperty(fr::FeatureResults, s::Symbol) = haskey(fr, s)
 Base.propertynames(fr::FeatureResults) = keys(fr)
 Base.length(fr::FeatureResults) = length(getfield(fr, :data))
