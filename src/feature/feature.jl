@@ -221,14 +221,10 @@ merge `(features=(...),)` into the input. When called with
 """
 function (feats::Features)(d::NamedTuple)
     feats_results = feats(d.bars)
-    return _merge_features(d, feats_results)
-end
-
-@generated function _merge_features(d::NamedTuple{K}, feats_results) where {K}
-    if :features in K
-        :(merge(d, (features=merge(d.features, feats_results.features),)))
+    if haskey(d, :features)
+        return merge(d, (features=merge(d.features, feats_results.features),))
     else
-        :(merge(d, feats_results))
+        return merge(d, feats_results)
     end
 end
 
