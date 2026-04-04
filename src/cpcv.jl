@@ -1,4 +1,4 @@
-struct CPCV <: AbstractCrossValidation
+struct CPCV{M<:AbstractVector{Bool}} <: AbstractCrossValidation
     n_groups::Int
     n_test_groups::Int
     embargo::Int
@@ -6,8 +6,14 @@ struct CPCV <: AbstractCrossValidation
     n_paths::Int
     n_adj::Int
     k_adj::Int
+    mask_type::Type{M}
 
-    function CPCV(n_groups::Int, n_test_groups::Int, embargo::Int)
+    function CPCV(
+        n_groups::Int,
+        n_test_groups::Int,
+        embargo::Int,
+        mask_type::Type{M},
+    ) where {M<:AbstractVector{Bool}}
         _natural(n_groups)
         _natural(n_test_groups)
         _natural(embargo)
@@ -21,12 +27,12 @@ struct CPCV <: AbstractCrossValidation
         k_adj = n_test_groups - 1
         n_paths = binomial(n_adj, k_adj)
 
-        return new(n_groups, n_test_groups, embargo, n_splits, n_paths, n_adj, k_adj)
+        return new{M}(n_groups, n_test_groups, embargo, n_splits, n_paths, n_adj, k_adj, mask_type)
     end
 end
 
-function CPCV(embargo; n_groups=6, n_test_groups=2)
-    return CPCV(n_groups, n_test_groups, embargo)
+function CPCV(embargo; n_groups=6, n_test_groups=2, mask_type::Type{<:AbstractVector{Bool}}=Vector{Bool})
+    return CPCV(n_groups, n_test_groups, embargo, mask_type)
 end
 
 struct CPCVBuffers{T<:AbstractVector{Bool}}
@@ -55,6 +61,10 @@ struct CPCVBuffers{T<:AbstractVector{Bool}}
             UnitRange{Int}[],
         )
     end
+
+    function CPCVBuffers(cpcv::CPCV, n_labels::Int)
+        return CPCVBuffers(cpcv, n_labels, cpcv.mask_type)
+    end
 end
 
 function _reset!(buf::CPCVBuffers)
@@ -70,14 +80,9 @@ end
 # Public API
 # ============================================================================
 
-function get_split_data_masks(
-    cpcv::CPCV,
-    labels::LabelResults,
-    split_num::Int;
-    mask_type::Type{<:AbstractVector{Bool}}=Vector{Bool},
-)
+function get_split_data_masks(cpcv::CPCV, labels::LabelResults, split_num::Int)
     n_labels = length(labels)
-    buf = CPCVBuffers(cpcv, n_labels, mask_type)
+    buf = CPCVBuffers(cpcv, n_labels)
     return _get_split_data_masks!(cpcv, labels, buf, n_labels, split_num)
 end
 
